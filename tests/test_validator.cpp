@@ -6,6 +6,7 @@
 // Include all our headers
 #include "common/types.h"
 #include "network/gossip.h"
+#include "network/rpc_server.h"
 #include "ledger/manager.h"
 #include "validator/core.h"
 #include "staking/manager.h"
@@ -264,6 +265,44 @@ void test_full_validator() {
     ASSERT_FALSE(validator->is_running());
 }
 
+bool test_rpc_api() {
+    slonana::common::ValidatorConfig config;
+    config.rpc_bind_address = "127.0.0.1:18899";
+    
+    slonana::network::SolanaRpcServer rpc_server(config);
+    
+    // Test that the server starts/stops
+    ASSERT_FALSE(rpc_server.is_running());
+    auto start_result = rpc_server.start();
+    ASSERT_TRUE(start_result.is_ok());
+    ASSERT_TRUE(rpc_server.is_running());
+    
+    // Test JSON-RPC requests
+    std::string health_request = R"({"jsonrpc":"2.0","method":"getHealth","params":"","id":"1"})";
+    std::string health_response = rpc_server.handle_request(health_request);
+    ASSERT_TRUE(health_response.find("\"jsonrpc\":\"2.0\"") != std::string::npos);
+    ASSERT_TRUE(health_response.find("\"id\":\"1\"") != std::string::npos);
+    
+    std::string version_request = R"({"jsonrpc":"2.0","method":"getVersion","params":"","id":"2"})";
+    std::string version_response = rpc_server.handle_request(version_request);
+    ASSERT_TRUE(version_response.find("solana-core") != std::string::npos);
+    
+    std::string slot_request = R"({"jsonrpc":"2.0","method":"getSlot","params":"","id":"3"})";
+    std::string slot_response = rpc_server.handle_request(slot_request);
+    ASSERT_TRUE(slot_response.find("\"result\":0") != std::string::npos);
+    
+    // Test error handling for unknown method
+    std::string unknown_request = R"({"jsonrpc":"2.0","method":"unknownMethod","params":"","id":"4"})";
+    std::string unknown_response = rpc_server.handle_request(unknown_request);
+    ASSERT_TRUE(unknown_response.find("\"error\":") != std::string::npos);
+    ASSERT_TRUE(unknown_response.find("-32601") != std::string::npos);
+    
+    rpc_server.stop();
+    ASSERT_FALSE(rpc_server.is_running());
+    
+    return true;
+}
+
 int main() {
     std::cout << "=== Slonana C++ Validator Test Suite ===" << std::endl;
     
@@ -277,6 +316,7 @@ int main() {
     runner.run_test("Validator Core", test_validator_core);
     runner.run_test("Staking Manager", test_staking_manager);
     runner.run_test("SVM Execution", test_svm_execution);
+    runner.run_test("RPC API", test_rpc_api);
     runner.run_test("Full Validator", test_full_validator);
     
     runner.print_summary();
