@@ -1,0 +1,2 @@
+/usr/bin/ar qc libslonana_core.a CMakeFiles/slonana_core.dir/src/common/types.cpp.o CMakeFiles/slonana_core.dir/src/ledger/manager.cpp.o CMakeFiles/slonana_core.dir/src/network/gossip.cpp.o CMakeFiles/slonana_core.dir/src/slonana_validator.cpp.o CMakeFiles/slonana_core.dir/src/staking/manager.cpp.o CMakeFiles/slonana_core.dir/src/svm/engine.cpp.o CMakeFiles/slonana_core.dir/src/validator/core.cpp.o
+/usr/bin/ranlib libslonana_core.a

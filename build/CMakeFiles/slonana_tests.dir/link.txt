@@ -1,0 +1,1 @@
+/usr/bin/c++ -Wl,--dependency-file=CMakeFiles/slonana_tests.dir/link.d CMakeFiles/slonana_tests.dir/tests/test_validator.cpp.o -o slonana_tests  libslonana_core.a
