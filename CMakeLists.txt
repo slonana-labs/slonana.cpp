@@ -39,13 +39,48 @@ target_link_libraries(slonana_validator slonana_core)
 # Enable testing
 enable_testing()
 
-# Find and add tests
-file(GLOB TEST_SOURCES "${CMAKE_SOURCE_DIR}/tests/*.cpp")
-if(TEST_SOURCES)
-    add_executable(slonana_tests ${TEST_SOURCES})
+# Comprehensive test suite
+set(COMPREHENSIVE_TEST_SOURCES
+    "${CMAKE_SOURCE_DIR}/tests/test_comprehensive.cpp"
+    "${CMAKE_SOURCE_DIR}/tests/test_common.cpp"
+    "${CMAKE_SOURCE_DIR}/tests/test_ledger.cpp"
+    "${CMAKE_SOURCE_DIR}/tests/test_network.cpp"
+    "${CMAKE_SOURCE_DIR}/tests/test_consensus.cpp"
+    "${CMAKE_SOURCE_DIR}/tests/test_rpc_comprehensive.cpp"
+    "${CMAKE_SOURCE_DIR}/tests/test_integration.cpp"
+)
+
+# Original simple test suite (for backwards compatibility)
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/test_validator.cpp")
+    add_executable(slonana_tests "${CMAKE_SOURCE_DIR}/tests/test_validator.cpp")
     target_link_libraries(slonana_tests slonana_core)
-    add_test(NAME validator_tests COMMAND slonana_tests)
+    add_test(NAME validator_basic_tests COMMAND slonana_tests)
 endif()
+
+# Comprehensive test suite
+add_executable(slonana_comprehensive_tests ${COMPREHENSIVE_TEST_SOURCES})
+target_link_libraries(slonana_comprehensive_tests slonana_core)
+target_include_directories(slonana_comprehensive_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME validator_comprehensive_tests COMMAND slonana_comprehensive_tests)
+
+# Individual test modules (for granular testing)
+add_executable(slonana_common_tests 
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_common.cpp"
+)
+target_link_libraries(slonana_common_tests slonana_core)
+target_include_directories(slonana_common_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+
+add_executable(slonana_rpc_tests 
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_rpc_comprehensive.cpp"
+)
+target_link_libraries(slonana_rpc_tests slonana_core)
+target_include_directories(slonana_rpc_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+
+# Add individual test targets
+add_test(NAME common_tests COMMAND slonana_common_tests)
+add_test(NAME rpc_comprehensive_tests COMMAND slonana_rpc_tests)
 
 # Install targets
 install(TARGETS slonana_validator DESTINATION bin)
