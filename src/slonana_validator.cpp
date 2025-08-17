@@ -158,7 +158,7 @@ std::shared_ptr<network::GossipProtocol> SolanaValidator::get_gossip_protocol() 
     return gossip_protocol_;
 }
 
-std::shared_ptr<network::RpcServer> SolanaValidator::get_rpc_server() const {
+std::shared_ptr<network::SolanaRpcServer> SolanaValidator::get_rpc_server() const {
     return rpc_server_;
 }
 
@@ -249,7 +249,14 @@ common::Result<bool> SolanaValidator::initialize_components() {
         
         // Initialize network components
         gossip_protocol_ = std::make_shared<network::GossipProtocol>(config_);
-        rpc_server_ = std::make_shared<network::RpcServer>(config_);
+        rpc_server_ = std::make_shared<network::SolanaRpcServer>(config_);
+        
+        // Connect RPC server to validator components
+        rpc_server_->set_ledger_manager(ledger_manager_);
+        rpc_server_->set_validator_core(validator_core_);
+        rpc_server_->set_staking_manager(staking_manager_);
+        rpc_server_->set_execution_engine(execution_engine_);
+        rpc_server_->set_account_manager(account_manager_);
         
         std::cout << "All components initialized successfully" << std::endl;
         return common::Result<bool>(true);
@@ -284,15 +291,7 @@ common::Result<bool> SolanaValidator::setup_event_handlers() {
             this->on_gossip_message(message);
         });
     
-    // Setup RPC method handlers
-    rpc_server_->register_method("getHealth", [this](const std::string& params) -> std::string {
-        return is_running() ? R"({"status":"ok"})" : R"({"status":"unhealthy"})";
-    });
-    
-    rpc_server_->register_method("getSlot", [this](const std::string& params) -> std::string {
-        auto slot = validator_core_ ? validator_core_->get_current_slot() : 0;
-        return R"({"slot":)" + std::to_string(slot) + "}";
-    });
+    // Note: RPC methods are automatically registered by SolanaRpcServer
     
     std::cout << "Event handlers setup complete" << std::endl;
     return common::Result<bool>(true);

@@ -2,6 +2,7 @@
 
 #include "common/types.h"
 #include "network/gossip.h"
+#include "network/rpc_server.h"
 #include "ledger/manager.h"
 #include "validator/core.h"
 #include "staking/manager.h"
@@ -33,7 +34,7 @@ public:
     
     // Component access (for advanced usage)
     std::shared_ptr<network::GossipProtocol> get_gossip_protocol() const;
-    std::shared_ptr<network::RpcServer> get_rpc_server() const;
+    std::shared_ptr<network::SolanaRpcServer> get_rpc_server() const;
     std::shared_ptr<ledger::LedgerManager> get_ledger_manager() const;
     std::shared_ptr<validator::ValidatorCore> get_validator_core() const;
     std::shared_ptr<staking::StakingManager> get_staking_manager() const;
@@ -61,7 +62,7 @@ public:
 private:
     // Core components
     std::shared_ptr<network::GossipProtocol> gossip_protocol_;
-    std::shared_ptr<network::RpcServer> rpc_server_;
+    std::shared_ptr<network::SolanaRpcServer> rpc_server_;
     std::shared_ptr<ledger::LedgerManager> ledger_manager_;
     std::shared_ptr<validator::ValidatorCore> validator_core_;
     std::shared_ptr<staking::StakingManager> staking_manager_;
