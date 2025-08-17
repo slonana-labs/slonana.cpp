@@ -1,1 +1,0 @@
-/usr/bin/c++ -Wl,--dependency-file=CMakeFiles/slonana_validator.dir/link.d CMakeFiles/slonana_validator.dir/src/main.cpp.o -o slonana_validator  libslonana_core.a

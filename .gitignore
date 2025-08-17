@@ -39,3 +39,20 @@
 
 # debug information files
 *.dwo
+
+# Build directories
+build/
+**/CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+
+# Generated executables
+slonana_validator
+slonana_tests
+libslonana_core.a
+
+# Test directories
+**/tmp/
+**/temp/
