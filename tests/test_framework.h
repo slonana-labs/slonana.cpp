@@ -164,6 +164,10 @@ public:
 #define EXPECT_NO_THROW(statement) \
     try { \
         statement; \
+    } catch (const std::exception& e) { \
+        std::stringstream ss; \
+        ss << "Expected no exception, but got: " << e.what(); \
+        throw std::runtime_error(ss.str()); \
     } catch (...) { \
         throw std::runtime_error("Assertion failed: unexpected exception thrown"); \
     }
