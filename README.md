@@ -50,7 +50,38 @@ make -j$(nproc)
 ```bash
 # Run the test suite
 ./slonana_tests
+
+# Run comprehensive tests
+./slonana_comprehensive_tests
+
+# Run performance benchmarks
+./slonana_benchmarks
+
+# Or use the benchmark script
+cd ..
+./run_benchmarks.sh
 ```
+
+### Benchmarking
+Comprehensive performance benchmarks comparing with Anza/Agave reference implementation:
+
+```bash
+# Quick benchmark run
+./build/slonana_benchmarks
+
+# Full benchmark with build and reporting
+./run_benchmarks.sh
+```
+
+**Benchmark Categories**:
+- 🔧 Core Operations (hashing, serialization, parsing)
+- 🔐 Cryptographic Operations (signatures, hash chains, merkle trees)
+- 📊 Data Structures (account lookup, transaction queues, vote tracking)
+- 🌐 Network Simulation (message handling, gossip propagation)
+- 🧠 Memory Operations (allocation patterns, cache efficiency)
+- 📄 JSON Processing (RPC parsing, response generation)
+
+See [BENCHMARKING.md](BENCHMARKING.md) for detailed performance analysis and comparison with Anza/Agave.
 
 ## Usage
 

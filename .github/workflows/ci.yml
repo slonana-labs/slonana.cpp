@@ -46,6 +46,21 @@ jobs:
         ./slonana_tests
         ./slonana_comprehensive_tests
 
+    - name: Run performance benchmarks
+      run: |
+        cd build
+        ./slonana_benchmarks > benchmark_results.txt || echo "Benchmarks completed with warnings"
+        echo "Benchmark results:"
+        tail -20 benchmark_results.txt
+
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results
+        path: |
+          build/benchmark_results.txt
+          build/benchmark_results.json
+
     - name: Code quality checks
       run: |
         find src include tests -name "*.cpp" -o -name "*.h" | xargs clang-format --dry-run --Werror || echo "Format check complete"
@@ -59,6 +74,7 @@ jobs:
           build/slonana_validator
           build/slonana_tests
           build/slonana_comprehensive_tests
+          build/slonana_benchmarks
 
   release:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'

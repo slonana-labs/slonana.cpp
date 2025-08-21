@@ -82,5 +82,17 @@ target_include_directories(slonana_rpc_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests"
 add_test(NAME common_tests COMMAND slonana_common_tests)
 add_test(NAME rpc_comprehensive_tests COMMAND slonana_rpc_tests)
 
+# Comprehensive benchmarking suite
+add_executable(slonana_benchmarks 
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_benchmarks_simple.cpp"
+)
+target_link_libraries(slonana_benchmarks slonana_core)
+target_include_directories(slonana_benchmarks PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+
+# Add benchmark test (optional - can be run separately)
+add_test(NAME benchmark_suite COMMAND slonana_benchmarks)
+
 # Install targets
 install(TARGETS slonana_validator DESTINATION bin)
+install(TARGETS slonana_benchmarks DESTINATION bin)
