@@ -105,3 +105,37 @@ compile_commands.json
 
 # Test configurations
 test-config.json
+
+# Docker and deployment artifacts
+.docker/
+*.tar.gz
+*.zip
+*.deb
+*.rpm
+*.dmg
+*.msi
+
+# Configuration overrides
+config/local.*
+config/*.local.*
+*-keypair.json
+*.pem
+*.key
+secrets.*
+
+# Environment files
+.env
+.env.local
+local.toml
+
+# Benchmark results
+benchmark_results.*
+*.benchmark
+
+# Python files (for dev tools)
+__pycache__/
+*.pyc
+*.pyo
+
+# Package builds
+packages/
