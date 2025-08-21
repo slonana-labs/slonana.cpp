@@ -47,14 +47,19 @@ void test_full_validator_lifecycle() {
 void test_validator_with_rpc_integration() {
     slonana::common::ValidatorConfig config;
     config.ledger_path = "/tmp/test_rpc_integration_validator";
+    config.identity_keypair_path = "/tmp/test_rpc_integration_identity.json"; // Add missing identity path
     config.rpc_bind_address = "127.0.0.1:18899";
     config.enable_rpc = true;
     config.enable_gossip = false; // Disable gossip for this test
     
     auto validator = std::make_unique<slonana::SolanaValidator>(config);
     
-    validator->initialize();
-    validator->start();
+    // Add proper error checking for initialization
+    auto init_result = validator->initialize();
+    ASSERT_TRUE(init_result.is_ok());
+    
+    auto start_result = validator->start();
+    ASSERT_TRUE(start_result.is_ok());
     
     // Give validator time to start RPC server
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
@@ -259,16 +264,25 @@ void test_validator_multi_component_interaction() {
 void test_validator_error_recovery() {
     slonana::common::ValidatorConfig config;
     config.ledger_path = "/tmp/test_error_recovery_validator";
+    config.identity_keypair_path = "/tmp/test_error_recovery_identity.json"; // Add missing identity path
     config.enable_rpc = false;
     config.enable_gossip = false;
     
     auto validator = std::make_unique<slonana::SolanaValidator>(config);
     
-    validator->initialize();
-    validator->start();
+    // Add proper error checking for initialization
+    auto init_result = validator->initialize();
+    ASSERT_TRUE(init_result.is_ok());
+    
+    auto start_result = validator->start();
+    ASSERT_TRUE(start_result.is_ok());
     
     auto validator_core = validator->get_validator_core();
     auto ledger = validator->get_ledger_manager();
+    
+    // Add null pointer checks before using components
+    ASSERT_TRUE(validator_core != nullptr);
+    ASSERT_TRUE(ledger != nullptr);
     
     // Test processing of an invalid block (should be handled gracefully)
     slonana::ledger::Block invalid_block;
@@ -276,6 +290,7 @@ void test_validator_error_recovery() {
     invalid_block.block_hash.resize(32, 0xFF);
     invalid_block.parent_hash.resize(32, 0xEE); // Invalid parent
     invalid_block.validator.resize(32, 0x01);
+    invalid_block.block_signature.resize(64, 0xBB); // Add missing signature
     
     // This should not crash the validator
     EXPECT_NO_THROW(validator_core->process_block(invalid_block));
@@ -300,25 +315,38 @@ void test_validator_error_recovery() {
 void test_validator_performance_stress() {
     slonana::common::ValidatorConfig config;
     config.ledger_path = "/tmp/test_performance_validator";
+    config.identity_keypair_path = "/tmp/test_performance_identity.json"; // Add missing identity path
     config.enable_rpc = false;
     config.enable_gossip = false;
     
     auto validator = std::make_unique<slonana::SolanaValidator>(config);
     
-    validator->initialize();
-    validator->start();
+    // Add proper error checking for initialization
+    auto init_result = validator->initialize();
+    ASSERT_TRUE(init_result.is_ok());
+    
+    auto start_result = validator->start();
+    ASSERT_TRUE(start_result.is_ok());
     
     auto start_time = std::chrono::high_resolution_clock::now();
     
     auto validator_core = validator->get_validator_core();
     auto ledger = validator->get_ledger_manager();
     
-    // Process 50 blocks rapidly
-    for (uint64_t slot = 1; slot <= 50; ++slot) {
+    // Add null pointer checks before using components
+    ASSERT_TRUE(validator_core != nullptr);
+    ASSERT_TRUE(ledger != nullptr);
+    
+    // Process 50 blocks rapidly, starting from slot 0 (genesis)
+    for (uint64_t slot = 0; slot < 50; ++slot) {
         slonana::ledger::Block block;
         block.slot = slot;
-        block.block_hash.resize(32, static_cast<uint8_t>(slot % 256));
-        block.parent_hash.resize(32, static_cast<uint8_t>((slot - 1) % 256));
+        block.block_hash.resize(32, static_cast<uint8_t>((slot + 1) % 256));
+        if (slot == 0) {
+            block.parent_hash.resize(32, 0x00); // Genesis block has no parent
+        } else {
+            block.parent_hash.resize(32, static_cast<uint8_t>(slot % 256));
+        }
         block.validator.resize(32, 0x01);
         block.block_signature.resize(64, 0xAA);
         
@@ -330,7 +358,7 @@ void test_validator_performance_stress() {
     
     std::cout << "Performance: Processed 50 blocks in " << duration.count() << "ms" << std::endl;
     
-    ASSERT_EQ(50, ledger->get_latest_slot());
+    ASSERT_EQ(49, ledger->get_latest_slot()); // Latest slot should be 49 (0-49 = 50 blocks)
     ASSERT_EQ(50, ledger->get_ledger_size());
     
     validator->stop();
