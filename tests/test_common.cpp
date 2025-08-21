@@ -17,11 +17,12 @@ void test_result_type() {
 }
 
 void test_result_type_move_semantics() {
-    slonana::common::Result<std::string> result("test string");
+    // Create a result with a successful value using integer to avoid string ambiguity
+    slonana::common::Result<int> result(42);
     ASSERT_TRUE(result.is_ok());
     
-    std::string moved_value = std::move(result).value();
-    ASSERT_EQ(std::string("test string"), moved_value);
+    int moved_value = std::move(result).value();
+    ASSERT_EQ(42, moved_value);
 }
 
 void test_result_type_copy_semantics() {

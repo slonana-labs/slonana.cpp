@@ -22,10 +22,11 @@ void test_rpc_comprehensive_account_methods() {
         {"getMinimumBalanceForRentExemption", R"({"jsonrpc":"2.0","method":"getMinimumBalanceForRentExemption","params":[0],"id":"6"})"}
     };
     
-    for (const auto& test : account_tests) {
+    for (size_t i = 0; i < account_tests.size(); ++i) {
+        const auto& test = account_tests[i];
         std::string response = rpc_server.handle_request(test.second);
         ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
-        ASSERT_CONTAINS(response, "\"id\":\"" + test.first.substr(test.first.size() - 1) + "\"");
+        ASSERT_CONTAINS(response, "\"id\":\"" + std::to_string(i + 1) + "\"");
         // Each method should return either a result or a proper error
         ASSERT_TRUE(response.find("\"result\":") != std::string::npos || 
                    response.find("\"error\":") != std::string::npos);

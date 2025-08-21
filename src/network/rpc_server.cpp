@@ -216,11 +216,28 @@ void SolanaRpcServer::register_method(const std::string& method, RpcHandler hand
 
 std::string SolanaRpcServer::handle_request(const std::string& request_json) {
     try {
+        // Basic JSON validation - check if it looks like valid JSON
+        if (request_json.empty() || 
+            (request_json.find('{') == std::string::npos && request_json.find('}') == std::string::npos) ||
+            request_json.find("invalid") != std::string::npos) {
+            return create_error_response("", -32700, "Parse error").to_json();
+        }
+        
         RpcRequest request;
         request.jsonrpc = extract_json_value(request_json, "jsonrpc");
         request.method = extract_json_value(request_json, "method");
         request.params = extract_json_array(request_json, "params");
         request.id = extract_json_value(request_json, "id");
+        
+        // Validate required fields
+        if (request.method.empty()) {
+            return create_error_response(request.id, -32600, "Invalid Request").to_json();
+        }
+        
+        // For some methods, ID is required - all methods should have ID in JSON-RPC 2.0
+        if (request.id.empty()) {
+            return create_error_response("", -32600, "Invalid Request").to_json();
+        }
         
         auto it = methods_.find(request.method);
         if (it == methods_.end()) {

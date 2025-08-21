@@ -48,10 +48,41 @@ public:
     explicit Result(const char* error) : success_(false), error_(error) {}
     explicit Result(const std::string& error) : success_(false), error_(error) {}
     
+    // Copy constructor
+    Result(const Result& other) : success_(other.success_), value_(other.value_), error_(other.error_) {}
+    
+    // Move constructor
+    Result(Result&& other) noexcept 
+        : success_(other.success_), value_(std::move(other.value_)), error_(std::move(other.error_)) {
+        // Don't invalidate the moved-from object's success state
+    }
+    
+    // Copy assignment
+    Result& operator=(const Result& other) {
+        if (this != &other) {
+            success_ = other.success_;
+            value_ = other.value_;
+            error_ = other.error_;
+        }
+        return *this;
+    }
+    
+    // Move assignment
+    Result& operator=(Result&& other) noexcept {
+        if (this != &other) {
+            success_ = other.success_;
+            value_ = std::move(other.value_);
+            error_ = std::move(other.error_);
+            // Don't invalidate the moved-from object's success state
+        }
+        return *this;
+    }
+    
     bool is_ok() const { return success_; }
     bool is_err() const { return !success_; }
     
-    const T& value() const { return value_; }
+    const T& value() const & { return value_; }
+    T&& value() && { return std::move(value_); }
     const std::string& error() const { return error_; }
 };
 

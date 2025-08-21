@@ -9,16 +9,73 @@ namespace ledger {
 
 // Transaction implementation
 Transaction::Transaction(const std::vector<uint8_t>& raw_data) {
-    // Stub deserialization - would parse actual transaction format
-    if (raw_data.size() >= 32) {
-        hash.assign(raw_data.begin(), raw_data.begin() + 32);
+    if (raw_data.size() >= 8) { // At least 4 bytes for sig count + 4 bytes for msg length
+        size_t offset = 0;
+        
+        // Deserialize number of signatures (4 bytes)
+        uint32_t sig_count = 0;
+        for (int i = 0; i < 4 && offset + i < raw_data.size(); ++i) {
+            sig_count |= static_cast<uint32_t>(raw_data[offset + i]) << (i * 8);
+        }
+        offset += 4;
+        
+        // Deserialize signatures
+        signatures.resize(sig_count);
+        for (uint32_t i = 0; i < sig_count && offset + 64 <= raw_data.size(); ++i) {
+            signatures[i].assign(raw_data.begin() + offset, raw_data.begin() + offset + 64);
+            offset += 64;
+        }
+        
+        // Deserialize message length (4 bytes)
+        uint32_t msg_len = 0;
+        for (int i = 0; i < 4 && offset + i < raw_data.size(); ++i) {
+            msg_len |= static_cast<uint32_t>(raw_data[offset + i]) << (i * 8);
+        }
+        offset += 4;
+        
+        // Deserialize message
+        if (offset + msg_len <= raw_data.size()) {
+            message.assign(raw_data.begin() + offset, raw_data.begin() + offset + msg_len);
+        }
+        
+        // Compute hash from raw data (stub implementation)
+        if (raw_data.size() >= 32) {
+            hash.assign(raw_data.begin(), raw_data.begin() + 32);
+        } else {
+            hash = raw_data;
+        }
     }
 }
 
 std::vector<uint8_t> Transaction::serialize() const {
-    // Stub serialization - would create proper transaction bytes
     std::vector<uint8_t> result;
-    result.insert(result.end(), hash.begin(), hash.end());
+    
+    // Serialize number of signatures (4 bytes)
+    uint32_t sig_count = static_cast<uint32_t>(signatures.size());
+    for (int i = 0; i < 4; ++i) {
+        result.push_back((sig_count >> (i * 8)) & 0xFF);
+    }
+    
+    // Serialize signatures
+    for (const auto& sig : signatures) {
+        // Each signature should be 64 bytes
+        if (sig.size() >= 64) {
+            result.insert(result.end(), sig.begin(), sig.begin() + 64);
+        } else {
+            result.insert(result.end(), sig.begin(), sig.end());
+            result.resize(result.size() + (64 - sig.size()), 0);
+        }
+    }
+    
+    // Serialize message length (4 bytes)
+    uint32_t msg_len = static_cast<uint32_t>(message.size());
+    for (int i = 0; i < 4; ++i) {
+        result.push_back((msg_len >> (i * 8)) & 0xFF);
+    }
+    
+    // Serialize message
+    result.insert(result.end(), message.begin(), message.end());
+    
     return result;
 }
 
@@ -29,27 +86,91 @@ bool Transaction::verify() const {
 
 // Block implementation
 Block::Block(const std::vector<uint8_t>& raw_data) {
-    // Stub deserialization
-    if (raw_data.size() >= 72) { // 32 + 32 + 8 bytes minimum
-        parent_hash.assign(raw_data.begin(), raw_data.begin() + 32);
-        block_hash.assign(raw_data.begin() + 32, raw_data.begin() + 64);
+    // Initialize default values
+    slot = 0;
+    timestamp = 0;
+    
+    if (raw_data.size() >= 168) { // 32 + 32 + 8 + 8 + 32 + 64 = 176, but we'll accept 168 minimum
+        size_t offset = 0;
         
-        // Deserialize slot from 8 bytes
+        // Deserialize parent hash (32 bytes)
+        parent_hash.assign(raw_data.begin() + offset, raw_data.begin() + offset + 32);
+        offset += 32;
+        
+        // Deserialize block hash (32 bytes)
+        block_hash.assign(raw_data.begin() + offset, raw_data.begin() + offset + 32);
+        offset += 32;
+        
+        // Deserialize slot from 8 bytes (little endian)
         slot = 0;
-        for (int i = 0; i < 8; ++i) {
-            slot |= static_cast<uint64_t>(raw_data[64 + i]) << (i * 8);
+        for (int i = 0; i < 8 && offset + i < raw_data.size(); ++i) {
+            slot |= static_cast<uint64_t>(raw_data[offset + i]) << (i * 8);
+        }
+        offset += 8;
+        
+        // Deserialize timestamp from 8 bytes (little endian)
+        timestamp = 0;
+        for (int i = 0; i < 8 && offset + i < raw_data.size(); ++i) {
+            timestamp |= static_cast<uint64_t>(raw_data[offset + i]) << (i * 8);
+        }
+        offset += 8;
+        
+        // Deserialize validator (32 bytes)
+        if (offset + 32 <= raw_data.size()) {
+            validator.assign(raw_data.begin() + offset, raw_data.begin() + offset + 32);
+            offset += 32;
+        }
+        
+        // Deserialize block signature (64 bytes)
+        if (offset + 64 <= raw_data.size()) {
+            block_signature.assign(raw_data.begin() + offset, raw_data.begin() + offset + 64);
         }
     }
 }
 
 std::vector<uint8_t> Block::serialize() const {
     std::vector<uint8_t> result;
-    result.insert(result.end(), parent_hash.begin(), parent_hash.end());
-    result.insert(result.end(), block_hash.begin(), block_hash.end());
     
-    // Add slot as 8 bytes
+    // Serialize parent hash (32 bytes)
+    if (parent_hash.size() >= 32) {
+        result.insert(result.end(), parent_hash.begin(), parent_hash.begin() + 32);
+    } else {
+        result.insert(result.end(), parent_hash.begin(), parent_hash.end());
+        result.resize(result.size() + (32 - parent_hash.size()), 0);
+    }
+    
+    // Serialize block hash (32 bytes)
+    if (block_hash.size() >= 32) {
+        result.insert(result.end(), block_hash.begin(), block_hash.begin() + 32);
+    } else {
+        result.insert(result.end(), block_hash.begin(), block_hash.end());
+        result.resize(result.size() + (32 - block_hash.size()), 0);
+    }
+    
+    // Add slot as 8 bytes (little endian)
     for (int i = 0; i < 8; ++i) {
         result.push_back((slot >> (i * 8)) & 0xFF);
+    }
+    
+    // Add timestamp as 8 bytes (little endian)
+    for (int i = 0; i < 8; ++i) {
+        result.push_back((timestamp >> (i * 8)) & 0xFF);
+    }
+    
+    // Serialize validator (32 bytes)
+    if (validator.size() >= 32) {
+        result.insert(result.end(), validator.begin(), validator.begin() + 32);
+    } else {
+        result.insert(result.end(), validator.begin(), validator.end());
+        result.resize(result.size() + (32 - validator.size()), 0);
+    }
+    
+    // Serialize block signature (64 bytes)
+    if (block_signature.size() >= 64) {
+        result.insert(result.end(), block_signature.begin(), block_signature.begin() + 64);
+    } else {
+        result.insert(result.end(), block_signature.begin(), block_signature.end());
+        result.resize(result.size() + (64 - block_signature.size()), 0);
     }
     
     return result;
