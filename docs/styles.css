@@ -1,0 +1,435 @@
+/* New York Times Newspaper Style - Grayscale Only */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: "Times New Roman", Times, serif;
+    line-height: 1.6;
+    color: #000;
+    background-color: #f8f8f8;
+    padding: 20px;
+}
+
+.newspaper {
+    max-width: 1200px;
+    margin: 0 auto;
+    background-color: #fff;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+    padding: 40px;
+}
+
+/* Header/Masthead */
+.masthead {
+    text-align: center;
+    border-bottom: 4px solid #000;
+    padding-bottom: 20px;
+    margin-bottom: 30px;
+}
+
+.publication-info {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    margin-bottom: 10px;
+    font-weight: bold;
+}
+
+.newspaper-title {
+    font-size: 48px;
+    font-weight: bold;
+    letter-spacing: 4px;
+    margin: 15px 0;
+    text-transform: uppercase;
+    border-top: 2px solid #000;
+    border-bottom: 2px solid #000;
+    padding: 15px 0;
+}
+
+.tagline {
+    font-size: 14px;
+    font-style: italic;
+    margin-top: 10px;
+    color: #333;
+}
+
+.divider {
+    height: 3px;
+    background-color: #000;
+    margin: 20px 0;
+}
+
+/* Main Content */
+.content {
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+}
+
+/* Headline Section */
+.headline-section {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 30px;
+    border-bottom: 2px solid #ddd;
+    padding-bottom: 30px;
+}
+
+.main-story .headline {
+    font-size: 36px;
+    font-weight: bold;
+    line-height: 1.2;
+    margin-bottom: 10px;
+    color: #000;
+}
+
+.main-story .subheading {
+    font-size: 18px;
+    font-style: italic;
+    margin-bottom: 20px;
+    color: #333;
+}
+
+.lead {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 15px;
+    text-indent: 20px;
+}
+
+.story-content p {
+    margin-bottom: 15px;
+    text-align: justify;
+    text-indent: 20px;
+    font-size: 14px;
+    line-height: 1.7;
+}
+
+/* Sidebar */
+.sidebar {
+    border-left: 2px solid #000;
+    padding-left: 20px;
+}
+
+.box-story {
+    border: 2px solid #000;
+    padding: 15px;
+    margin-bottom: 20px;
+    background-color: #f9f9f9;
+}
+
+.box-story h4 {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.box-story ul {
+    list-style: none;
+    padding-left: 0;
+}
+
+.box-story li {
+    font-size: 12px;
+    margin-bottom: 5px;
+    padding-left: 15px;
+    position: relative;
+}
+
+.box-story li:before {
+    content: "▪";
+    position: absolute;
+    left: 0;
+    font-weight: bold;
+}
+
+/* Three Column Section */
+.three-column {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 30px;
+    border-bottom: 2px solid #ddd;
+    padding-bottom: 30px;
+}
+
+.column h3 {
+    font-size: 20px;
+    font-weight: bold;
+    margin-bottom: 15px;
+    border-bottom: 1px solid #000;
+    padding-bottom: 5px;
+}
+
+.column h4 {
+    font-size: 16px;
+    font-weight: bold;
+    margin: 15px 0 10px 0;
+    color: #333;
+}
+
+.column p {
+    font-size: 13px;
+    margin-bottom: 12px;
+    text-align: justify;
+    line-height: 1.6;
+}
+
+.column ul {
+    margin: 10px 0;
+    padding-left: 20px;
+}
+
+.column li {
+    font-size: 12px;
+    margin-bottom: 5px;
+    line-height: 1.5;
+}
+
+.column strong {
+    font-weight: bold;
+    color: #000;
+}
+
+/* Roadmap Section */
+.roadmap-section {
+    background-color: #f5f5f5;
+    border: 3px solid #000;
+    padding: 30px;
+    margin: 30px 0;
+}
+
+.section-title {
+    font-size: 32px;
+    font-weight: bold;
+    text-align: center;
+    letter-spacing: 3px;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+}
+
+.roadmap-subtitle {
+    font-size: 16px;
+    font-style: italic;
+    text-align: center;
+    margin-bottom: 25px;
+    color: #333;
+}
+
+.roadmap-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 25px;
+    margin-bottom: 25px;
+}
+
+.roadmap-phase {
+    border: 1px solid #666;
+    padding: 20px;
+    background-color: #fff;
+}
+
+.roadmap-phase h3 {
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 15px;
+    color: #000;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 5px;
+}
+
+.roadmap-phase ul {
+    list-style: none;
+    padding-left: 0;
+}
+
+.roadmap-phase li {
+    font-size: 13px;
+    margin-bottom: 8px;
+    padding-left: 20px;
+    position: relative;
+    line-height: 1.5;
+}
+
+.roadmap-phase li:before {
+    content: "→";
+    position: absolute;
+    left: 0;
+    font-weight: bold;
+}
+
+.technical-innovation {
+    background-color: #fff;
+    border: 2px solid #000;
+    padding: 20px;
+    margin-top: 20px;
+}
+
+.technical-innovation h4 {
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 15px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.technical-innovation p {
+    font-size: 14px;
+    margin-bottom: 15px;
+    text-align: justify;
+}
+
+.technical-innovation ul {
+    padding-left: 20px;
+}
+
+.technical-innovation li {
+    font-size: 13px;
+    margin-bottom: 8px;
+    line-height: 1.6;
+}
+
+/* Bottom Stories */
+.bottom-stories {
+    border-top: 2px solid #000;
+    padding-top: 20px;
+}
+
+.story-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 25px;
+}
+
+.small-story {
+    padding: 15px;
+    border: 1px solid #ccc;
+    background-color: #fafafa;
+}
+
+.small-story h4 {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    color: #000;
+}
+
+.small-story p {
+    font-size: 12px;
+    line-height: 1.6;
+    text-align: justify;
+}
+
+/* Footer */
+.newspaper-footer {
+    margin-top: 40px;
+    border-top: 3px solid #000;
+    padding-top: 20px;
+}
+
+.footer-divider {
+    height: 1px;
+    background-color: #666;
+    margin-bottom: 15px;
+}
+
+.footer-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 30px;
+    margin-bottom: 15px;
+}
+
+.footer-section h5 {
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.footer-section p {
+    font-size: 11px;
+    margin-bottom: 3px;
+    color: #333;
+}
+
+.copyright {
+    text-align: center;
+    font-size: 10px;
+    color: #666;
+    border-top: 1px solid #ccc;
+    padding-top: 10px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .newspaper {
+        padding: 20px;
+    }
+    
+    .newspaper-title {
+        font-size: 32px;
+        letter-spacing: 2px;
+    }
+    
+    .headline-section {
+        grid-template-columns: 1fr;
+    }
+    
+    .three-column {
+        grid-template-columns: 1fr;
+    }
+    
+    .roadmap-content {
+        grid-template-columns: 1fr;
+    }
+    
+    .story-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .footer-content {
+        grid-template-columns: 1fr;
+    }
+    
+    .main-story .headline {
+        font-size: 24px;
+    }
+}
+
+@media (max-width: 480px) {
+    body {
+        padding: 10px;
+    }
+    
+    .newspaper {
+        padding: 15px;
+    }
+    
+    .newspaper-title {
+        font-size: 24px;
+        letter-spacing: 1px;
+    }
+}
+
+/* Print Styles */
+@media print {
+    body {
+        background-color: #fff;
+        padding: 0;
+    }
+    
+    .newspaper {
+        box-shadow: none;
+        max-width: none;
+        padding: 20px;
+    }
+    
+    .roadmap-section {
+        page-break-inside: avoid;
+    }
+}

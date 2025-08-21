@@ -1,0 +1,305 @@
+#include "ledger/manager.h"
+#include <iostream>
+#include <fstream>
+#include <filesystem>
+#include <algorithm>
+
+namespace slonana {
+namespace ledger {
+
+// Transaction implementation
+Transaction::Transaction(const std::vector<uint8_t>& raw_data) {
+    if (raw_data.size() >= 8) { // At least 4 bytes for sig count + 4 bytes for msg length
+        size_t offset = 0;
+        
+        // Deserialize number of signatures (4 bytes)
+        uint32_t sig_count = 0;
+        for (int i = 0; i < 4 && offset + i < raw_data.size(); ++i) {
+            sig_count |= static_cast<uint32_t>(raw_data[offset + i]) << (i * 8);
+        }
+        offset += 4;
+        
+        // Deserialize signatures
+        signatures.resize(sig_count);
+        for (uint32_t i = 0; i < sig_count && offset + 64 <= raw_data.size(); ++i) {
+            signatures[i].assign(raw_data.begin() + offset, raw_data.begin() + offset + 64);
+            offset += 64;
+        }
+        
+        // Deserialize message length (4 bytes)
+        uint32_t msg_len = 0;
+        for (int i = 0; i < 4 && offset + i < raw_data.size(); ++i) {
+            msg_len |= static_cast<uint32_t>(raw_data[offset + i]) << (i * 8);
+        }
+        offset += 4;
+        
+        // Deserialize message
+        if (offset + msg_len <= raw_data.size()) {
+            message.assign(raw_data.begin() + offset, raw_data.begin() + offset + msg_len);
+        }
+        
+        // Compute hash from raw data (stub implementation)
+        if (raw_data.size() >= 32) {
+            hash.assign(raw_data.begin(), raw_data.begin() + 32);
+        } else {
+            hash = raw_data;
+        }
+    }
+}
+
+std::vector<uint8_t> Transaction::serialize() const {
+    std::vector<uint8_t> result;
+    
+    // Serialize number of signatures (4 bytes)
+    uint32_t sig_count = static_cast<uint32_t>(signatures.size());
+    for (int i = 0; i < 4; ++i) {
+        result.push_back((sig_count >> (i * 8)) & 0xFF);
+    }
+    
+    // Serialize signatures
+    for (const auto& sig : signatures) {
+        // Each signature should be 64 bytes
+        if (sig.size() >= 64) {
+            result.insert(result.end(), sig.begin(), sig.begin() + 64);
+        } else {
+            result.insert(result.end(), sig.begin(), sig.end());
+            result.resize(result.size() + (64 - sig.size()), 0);
+        }
+    }
+    
+    // Serialize message length (4 bytes)
+    uint32_t msg_len = static_cast<uint32_t>(message.size());
+    for (int i = 0; i < 4; ++i) {
+        result.push_back((msg_len >> (i * 8)) & 0xFF);
+    }
+    
+    // Serialize message
+    result.insert(result.end(), message.begin(), message.end());
+    
+    return result;
+}
+
+bool Transaction::verify() const {
+    // Stub verification - would verify signatures and structure
+    return !signatures.empty() && !hash.empty();
+}
+
+// Block implementation
+Block::Block(const std::vector<uint8_t>& raw_data) {
+    // Initialize default values
+    slot = 0;
+    timestamp = 0;
+    
+    if (raw_data.size() >= 168) { // 32 + 32 + 8 + 8 + 32 + 64 = 176, but we'll accept 168 minimum
+        size_t offset = 0;
+        
+        // Deserialize parent hash (32 bytes)
+        parent_hash.assign(raw_data.begin() + offset, raw_data.begin() + offset + 32);
+        offset += 32;
+        
+        // Deserialize block hash (32 bytes)
+        block_hash.assign(raw_data.begin() + offset, raw_data.begin() + offset + 32);
+        offset += 32;
+        
+        // Deserialize slot from 8 bytes (little endian)
+        slot = 0;
+        for (int i = 0; i < 8 && offset + i < raw_data.size(); ++i) {
+            slot |= static_cast<uint64_t>(raw_data[offset + i]) << (i * 8);
+        }
+        offset += 8;
+        
+        // Deserialize timestamp from 8 bytes (little endian)
+        timestamp = 0;
+        for (int i = 0; i < 8 && offset + i < raw_data.size(); ++i) {
+            timestamp |= static_cast<uint64_t>(raw_data[offset + i]) << (i * 8);
+        }
+        offset += 8;
+        
+        // Deserialize validator (32 bytes)
+        if (offset + 32 <= raw_data.size()) {
+            validator.assign(raw_data.begin() + offset, raw_data.begin() + offset + 32);
+            offset += 32;
+        }
+        
+        // Deserialize block signature (64 bytes)
+        if (offset + 64 <= raw_data.size()) {
+            block_signature.assign(raw_data.begin() + offset, raw_data.begin() + offset + 64);
+        }
+    }
+}
+
+std::vector<uint8_t> Block::serialize() const {
+    std::vector<uint8_t> result;
+    
+    // Serialize parent hash (32 bytes)
+    if (parent_hash.size() >= 32) {
+        result.insert(result.end(), parent_hash.begin(), parent_hash.begin() + 32);
+    } else {
+        result.insert(result.end(), parent_hash.begin(), parent_hash.end());
+        result.resize(result.size() + (32 - parent_hash.size()), 0);
+    }
+    
+    // Serialize block hash (32 bytes)
+    if (block_hash.size() >= 32) {
+        result.insert(result.end(), block_hash.begin(), block_hash.begin() + 32);
+    } else {
+        result.insert(result.end(), block_hash.begin(), block_hash.end());
+        result.resize(result.size() + (32 - block_hash.size()), 0);
+    }
+    
+    // Add slot as 8 bytes (little endian)
+    for (int i = 0; i < 8; ++i) {
+        result.push_back((slot >> (i * 8)) & 0xFF);
+    }
+    
+    // Add timestamp as 8 bytes (little endian)
+    for (int i = 0; i < 8; ++i) {
+        result.push_back((timestamp >> (i * 8)) & 0xFF);
+    }
+    
+    // Serialize validator (32 bytes)
+    if (validator.size() >= 32) {
+        result.insert(result.end(), validator.begin(), validator.begin() + 32);
+    } else {
+        result.insert(result.end(), validator.begin(), validator.end());
+        result.resize(result.size() + (32 - validator.size()), 0);
+    }
+    
+    // Serialize block signature (64 bytes)
+    if (block_signature.size() >= 64) {
+        result.insert(result.end(), block_signature.begin(), block_signature.begin() + 64);
+    } else {
+        result.insert(result.end(), block_signature.begin(), block_signature.end());
+        result.resize(result.size() + (64 - block_signature.size()), 0);
+    }
+    
+    return result;
+}
+
+bool Block::verify() const {
+    return !parent_hash.empty() && !block_hash.empty() && slot >= 0;
+}
+
+Hash Block::compute_hash() const {
+    // Stub hash computation - would use SHA256 or similar
+    Hash result(32, 0);
+    auto serialized = serialize();
+    
+    // Simple hash computation for stub
+    for (size_t i = 0; i < serialized.size() && i < 32; ++i) {
+        result[i] = serialized[i];
+    }
+    
+    return result;
+}
+
+// LedgerManager implementation
+class LedgerManager::Impl {
+public:
+    explicit Impl(const std::string& ledger_path) : ledger_path_(ledger_path) {
+        std::filesystem::create_directories(ledger_path);
+    }
+    
+    std::string ledger_path_;
+    std::vector<Block> blocks_;
+    Hash latest_hash_;
+    common::Slot latest_slot_ = 0;
+};
+
+LedgerManager::LedgerManager(const std::string& ledger_path)
+    : impl_(std::make_unique<Impl>(ledger_path)) {
+    std::cout << "Initialized ledger manager at: " << ledger_path << std::endl;
+}
+
+LedgerManager::~LedgerManager() = default;
+
+common::Result<bool> LedgerManager::store_block(const Block& block) {
+    if (!is_block_valid(block)) {
+        return common::Result<bool>("Invalid block structure");
+    }
+    
+    impl_->blocks_.push_back(block);
+    impl_->latest_hash_ = block.block_hash;
+    impl_->latest_slot_ = block.slot;
+    
+    std::cout << "Stored block at slot " << block.slot << std::endl;
+    return common::Result<bool>(true);
+}
+
+std::optional<Block> LedgerManager::get_block(const Hash& block_hash) const {
+    auto it = std::find_if(impl_->blocks_.begin(), impl_->blocks_.end(),
+                          [&block_hash](const Block& block) {
+                              return block.block_hash == block_hash;
+                          });
+    
+    if (it != impl_->blocks_.end()) {
+        return *it;
+    }
+    return std::nullopt;
+}
+
+std::optional<Block> LedgerManager::get_block_by_slot(common::Slot slot) const {
+    auto it = std::find_if(impl_->blocks_.begin(), impl_->blocks_.end(),
+                          [slot](const Block& block) {
+                              return block.slot == slot;
+                          });
+    
+    if (it != impl_->blocks_.end()) {
+        return *it;
+    }
+    return std::nullopt;
+}
+
+Hash LedgerManager::get_latest_block_hash() const {
+    return impl_->latest_hash_;
+}
+
+common::Slot LedgerManager::get_latest_slot() const {
+    return impl_->latest_slot_;
+}
+
+std::vector<Hash> LedgerManager::get_block_chain(const Hash& from_hash, size_t count) const {
+    std::vector<Hash> result;
+    
+    // Stub implementation - would traverse the actual chain
+    for (const auto& block : impl_->blocks_) {
+        if (result.size() >= count) break;
+        result.push_back(block.block_hash);
+    }
+    
+    return result;
+}
+
+std::optional<Transaction> LedgerManager::get_transaction(const Hash& tx_hash) const {
+    // Stub implementation - would search through block transactions
+    return std::nullopt;
+}
+
+std::vector<Transaction> LedgerManager::get_transactions_by_slot(common::Slot slot) const {
+    auto block = get_block_by_slot(slot);
+    if (block) {
+        return block->transactions;
+    }
+    return {};
+}
+
+bool LedgerManager::is_block_valid(const Block& block) const {
+    return block.verify() && !block.block_hash.empty();
+}
+
+bool LedgerManager::is_chain_consistent() const {
+    // Stub implementation - would verify parent-child relationships
+    return true;
+}
+
+common::Result<bool> LedgerManager::compact_ledger() {
+    std::cout << "Compacting ledger (stub implementation)" << std::endl;
+    return common::Result<bool>(true);
+}
+
+uint64_t LedgerManager::get_ledger_size() const {
+    return impl_->blocks_.size();
+}
+
+} // namespace ledger
+} // namespace slonana

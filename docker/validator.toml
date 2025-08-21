@@ -1,0 +1,145 @@
+# Slonana.cpp Validator Configuration
+# This is the main configuration file for the Slonana validator
+
+[network]
+# Network binding addresses
+rpc_bind_address = "0.0.0.0:8899"
+gossip_bind_address = "0.0.0.0:8001"
+websocket_bind_address = "0.0.0.0:8900"
+tpu_bind_address = "0.0.0.0:8003"
+
+# Bootstrap peers for network discovery
+bootstrap_peers = []
+
+# Network limits and timeouts
+max_connections = 1000
+connection_timeout_ms = 30000
+keepalive_interval_ms = 60000
+
+[consensus]
+# Voting configuration
+vote_threshold = 0.67
+confirmation_blocks = 32
+max_lockout_slots = 8192
+vote_interval_ms = 400
+
+# Fork choice parameters
+fork_choice_rule = "heaviest_chain"
+optimistic_confirmation_depth = 8
+
+[storage]
+# Data paths (relative to SLONANA_HOME)
+ledger_path = "data/ledger"
+accounts_path = "data/accounts"
+snapshots_path = "data/snapshots"
+
+# Storage configuration
+snapshot_interval_slots = 10000
+cleanup_old_snapshots = true
+max_snapshots_to_retain = 5
+compression_enabled = true
+compression_level = 6
+
+[rpc]
+# RPC server configuration
+enable_rpc = true
+enable_websocket = true
+max_request_size = 1048576  # 1MB
+request_timeout_ms = 30000
+
+# CORS and security
+allowed_origins = ["*"]
+enable_authentication = false
+auth_token = ""
+
+# Rate limiting
+rate_limit_enabled = true
+rate_limit_requests_per_second = 100
+rate_limit_burst_size = 200
+
+# RPC method configuration
+enable_unsafe_methods = false
+enable_experimental_methods = false
+
+[logging]
+# Logging configuration
+level = "info"  # debug, info, warn, error
+target = "stdout"  # stdout, file, syslog
+format = "json"  # json, text
+
+# File logging (when target = "file")
+file_path = "logs/validator.log"
+max_file_size = "100MB"
+max_files = 10
+compress_rotated = true
+
+[performance]
+# Threading configuration
+worker_threads = 0  # 0 = auto-detect based on CPU cores
+max_blocking_threads = 512
+
+# Compute limits
+compute_units_limit = 1400000
+max_instruction_trace_length = 64
+
+# Cache configuration
+account_cache_size = 10000
+transaction_cache_size = 10000
+block_cache_size = 1000
+
+# Memory pool settings
+transaction_pool_size = 10000
+transaction_pool_max_age_ms = 120000
+
+[security]
+# Identity and cryptographic settings
+identity_keypair_path = "config/validator-keypair.json"
+
+# Network security
+enable_tls = false
+tls_cert_path = ""
+tls_key_path = ""
+
+# Validator security
+enable_validator_exit = true
+enable_stake_slashing = true
+
+[cluster]
+# Cluster-specific settings
+cluster_type = "development"  # mainnet, testnet, development
+genesis_hash = ""
+shred_version = 0
+
+# Cluster timing
+epoch_length_slots = 432000
+slot_duration_ms = 400
+slots_per_epoch = 432000
+
+[monitoring]
+# Metrics and monitoring
+enable_metrics = true
+metrics_bind_address = "0.0.0.0:9090"
+metrics_path = "/metrics"
+
+# Health checks
+enable_health_checks = true
+health_check_interval_ms = 30000
+
+# Alerting
+enable_alerting = false
+alert_webhook_url = ""
+
+[development]
+# Development and testing options
+enable_dev_mode = false
+skip_seed_phrase_validation = false
+skip_startup_ledger_verification = false
+
+# Testing configuration
+enable_test_rpc_methods = false
+enable_mock_consensus = false
+
+[experimental]
+# Experimental features (use with caution)
+enable_experimental_features = false
+experimental_feature_flags = []

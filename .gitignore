@@ -39,3 +39,103 @@
 
 # debug information files
 *.dwo
+
+# Build directories
+build/
+**/CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+
+# Generated executables
+slonana_validator
+slonana_tests
+slonana_comprehensive_tests
+slonana_common_tests
+slonana_rpc_tests
+libslonana_core.a
+
+# Test directories
+**/tmp/
+**/temp/
+
+# Test artifacts
+/tmp/test_*
+*.gcov
+*.gcno
+*.gcda
+coverage.info
+cppcheck-report.xml
+performance-report.txt
+validator.pid
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Package managers
+node_modules/
+.npm/
+
+# Documentation build
+docs/html/
+docs/latex/
+
+# Coverage reports
+coverage/
+*.lcov
+
+# Clang
+compile_commands.json
+
+# Backup files
+*.bak
+*.backup
+
+# Test configurations
+test-config.json
+
+# Docker and deployment artifacts
+.docker/
+*.tar.gz
+*.zip
+*.deb
+*.rpm
+*.dmg
+*.msi
+
+# Configuration overrides
+config/local.*
+config/*.local.*
+*-keypair.json
+*.pem
+*.key
+secrets.*
+
+# Environment files
+.env
+.env.local
+local.toml
+
+# Benchmark results
+benchmark_results.*
+*.benchmark
+
+# Python files (for dev tools)
+__pycache__/
+*.pyc
+*.pyo
+
+# Package builds
+packages/
