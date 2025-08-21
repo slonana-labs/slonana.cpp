@@ -133,7 +133,7 @@ void test_validator_staking_integration() {
     ASSERT_TRUE(create_result.is_ok());
     
     // Test delegation
-    auto delegate_result = staking_manager->delegate_stake(stake_account.stake_pubkey, validator_id);
+    auto delegate_result = staking_manager->delegate_stake(stake_account.stake_pubkey, validator_id, 1000000);
     ASSERT_TRUE(delegate_result.is_ok());
     
     validator->stop();

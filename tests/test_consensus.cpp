@@ -13,7 +13,7 @@ void test_staking_manager_initialization() {
 void test_validator_registration() {
     auto staking = std::make_unique<slonana::staking::StakingManager>();
     
-    slonana::PublicKey validator_id(32, 0x01);
+    slonana::common::PublicKey validator_id(32, 0x01);
     auto register_result = staking->register_validator(validator_id, 500); // 5% commission
     
     ASSERT_TRUE(register_result.is_ok());
@@ -24,7 +24,7 @@ void test_multiple_validator_registration() {
     auto staking = std::make_unique<slonana::staking::StakingManager>();
     
     for (int i = 1; i <= 5; ++i) {
-        slonana::PublicKey validator_id(32, static_cast<uint8_t>(i));
+        slonana::common::PublicKey validator_id(32, static_cast<uint8_t>(i));
         auto register_result = staking->register_validator(validator_id, 500 + i * 10);
         
         ASSERT_TRUE(register_result.is_ok());
@@ -52,7 +52,7 @@ void test_stake_account_delegation() {
     auto staking = std::make_unique<slonana::staking::StakingManager>();
     
     // First register a validator
-    slonana::PublicKey validator_id(32, 0x01);
+    slonana::common::PublicKey validator_id(32, 0x01);
     auto register_result = staking->register_validator(validator_id, 500);
     ASSERT_TRUE(register_result.is_ok());
     
@@ -66,7 +66,7 @@ void test_stake_account_delegation() {
     ASSERT_TRUE(create_result.is_ok());
     
     // Delegate stake
-    auto delegate_result = staking->delegate_stake(stake_account.stake_pubkey, validator_id);
+    auto delegate_result = staking->delegate_stake(stake_account.stake_pubkey, validator_id, 1000000); // 1 SOL in lamports
     ASSERT_TRUE(delegate_result.is_ok());
     
     auto retrieved_account = staking->get_stake_account(stake_account.stake_pubkey);
@@ -78,7 +78,7 @@ void test_stake_account_undelegation() {
     auto staking = std::make_unique<slonana::staking::StakingManager>();
     
     // Register validator and create delegated stake
-    slonana::PublicKey validator_id(32, 0x01);
+    slonana::common::PublicKey validator_id(32, 0x01);
     staking->register_validator(validator_id, 500);
     
     slonana::staking::StakeAccount stake_account;
@@ -87,23 +87,23 @@ void test_stake_account_undelegation() {
     stake_account.stake_amount = 1500000;
     
     staking->create_stake_account(stake_account);
-    staking->delegate_stake(stake_account.stake_pubkey, validator_id);
+    staking->delegate_stake(stake_account.stake_pubkey, validator_id, 1500000);
     
-    // Undelegate
-    auto undelegate_result = staking->undelegate_stake(stake_account.stake_pubkey);
+    // Deactivate stake
+    auto undelegate_result = staking->deactivate_stake(stake_account.stake_pubkey);
     ASSERT_TRUE(undelegate_result.is_ok());
     
     auto retrieved_account = staking->get_stake_account(stake_account.stake_pubkey);
     ASSERT_TRUE(retrieved_account.has_value());
     // Validator pubkey should be cleared (all zeros)
-    slonana::PublicKey empty_key(32, 0x00);
+    slonana::common::PublicKey empty_key(32, 0x00);
     ASSERT_EQ(empty_key, retrieved_account->validator_pubkey);
 }
 
 void test_staking_rewards_calculation() {
     auto staking = std::make_unique<slonana::staking::StakingManager>();
     
-    slonana::PublicKey validator_id(32, 0x01);
+    slonana::common::PublicKey validator_id(32, 0x01);
     staking->register_validator(validator_id, 500); // 5% commission
     
     slonana::staking::StakeAccount stake_account;
@@ -112,14 +112,12 @@ void test_staking_rewards_calculation() {
     stake_account.stake_amount = 10000000; // 10M lamports
     
     staking->create_stake_account(stake_account);
-    staking->delegate_stake(stake_account.stake_pubkey, validator_id);
+    staking->delegate_stake(stake_account.stake_pubkey, validator_id, 10000000);
     
-    // Calculate rewards (mock calculation)
-    uint64_t epoch_rewards = 100000; // 100K lamports
-    auto reward_result = staking->calculate_staking_rewards(stake_account.stake_pubkey, epoch_rewards);
+    // Calculate pending rewards instead of staking rewards
+    auto pending_rewards = staking->calculate_pending_rewards(0); // epoch 0
     
-    ASSERT_TRUE(reward_result.is_ok());
-    ASSERT_GT(reward_result.value(), 0);
+    ASSERT_FALSE(pending_rewards.empty());
 }
 
 void test_svm_execution_engine_initialization() {
@@ -179,16 +177,15 @@ void test_account_balance_operations() {
     
     // Test balance retrieval
     auto balance = account_manager->get_account_balance(account.program_id);
-    ASSERT_TRUE(balance.has_value());
-    ASSERT_EQ(2000000, balance.value());
+    ASSERT_EQ(2000000, balance);
     
-    // Test balance update
-    auto update_result = account_manager->update_account_balance(account.program_id, 3000000);
+    // Test balance update - update the account's lamports and save it back
+    account.lamports = 3000000;
+    auto update_result = account_manager->update_account(account);
     ASSERT_TRUE(update_result.is_ok());
     
     auto new_balance = account_manager->get_account_balance(account.program_id);
-    ASSERT_TRUE(new_balance.has_value());
-    ASSERT_EQ(3000000, new_balance.value());
+    ASSERT_EQ(3000000, new_balance);
 }
 
 void test_account_data_operations() {
@@ -204,16 +201,17 @@ void test_account_data_operations() {
     account_manager->create_account(account);
     
     // Test data retrieval
-    auto retrieved_account = account_manager->get_account_info(account.program_id);
+    auto retrieved_account = account_manager->get_account(account.program_id);
     ASSERT_TRUE(retrieved_account.has_value());
     ASSERT_EQ(account.data, retrieved_account->data);
     
-    // Test data update
+    // Test data update - modify account data and save back
     std::vector<uint8_t> new_data = {0x05, 0x06, 0x07, 0x08, 0x09};
-    auto update_result = account_manager->update_account_data(account.program_id, new_data);
+    account.data = new_data;
+    auto update_result = account_manager->update_account(account);
     ASSERT_TRUE(update_result.is_ok());
     
-    auto updated_account = account_manager->get_account_info(account.program_id);
+    auto updated_account = account_manager->get_account(account.program_id);
     ASSERT_TRUE(updated_account.has_value());
     ASSERT_EQ(new_data, updated_account->data);
 }
@@ -244,7 +242,7 @@ void test_instruction_execution() {
     instruction.data = {0}; // Transfer instruction
     instruction.accounts = {source_account.program_id, dest_account.program_id};
     
-    std::unordered_map<slonana::PublicKey, slonana::svm::ProgramAccount> accounts;
+    std::unordered_map<slonana::common::PublicKey, slonana::svm::ProgramAccount> accounts;
     accounts[source_account.program_id] = source_account;
     accounts[dest_account.program_id] = dest_account;
     

@@ -9,6 +9,24 @@
 #include <string>
 #include <stdexcept>
 #include <sstream>
+#include <iomanip>
+
+// Helper function to print vector<uint8_t> as hex string
+inline std::string vector_to_hex_string(const std::vector<uint8_t>& data) {
+    std::stringstream ss;
+    ss << "0x";
+    for (size_t i = 0; i < data.size(); ++i) {
+        ss << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(data[i]);
+        if (i < data.size() - 1) ss << " ";
+    }
+    return ss.str();
+}
+
+// Overload operator<< for std::vector<uint8_t>
+inline std::ostream& operator<<(std::ostream& os, const std::vector<uint8_t>& data) {
+    os << vector_to_hex_string(data);
+    return os;
+}
 
 // Enhanced test framework for comprehensive testing
 class TestRunner {
@@ -101,52 +119,55 @@ public:
 
 #define ASSERT_EQ(expected, actual) \
     if ((expected) != (actual)) { \
-        std::stringstream ss; \
-        ss << "Assertion failed: expected '" << (expected) << "' but got '" << (actual) << "'"; \
-        throw std::runtime_error(ss.str()); \
+        std::stringstream assert_ss; \
+        assert_ss << "Assertion failed: expected '" << (expected) << "' but got '" << (actual) << "'"; \
+        throw std::runtime_error(assert_ss.str()); \
     }
 
 #define ASSERT_NE(expected, actual) \
     if ((expected) == (actual)) { \
-        std::stringstream ss; \
-        ss << "Assertion failed: expected '" << (expected) << "' to not equal '" << (actual) << "'"; \
-        throw std::runtime_error(ss.str()); \
+        std::stringstream assert_ss; \
+        assert_ss << "Assertion failed: expected '" << (expected) << "' to not equal '" << (actual) << "'"; \
+        throw std::runtime_error(assert_ss.str()); \
     }
 
 #define ASSERT_LT(a, b) \
     if (!((a) < (b))) { \
-        std::stringstream ss; \
-        ss << "Assertion failed: " << (a) << " should be less than " << (b); \
-        throw std::runtime_error(ss.str()); \
+        std::stringstream assert_ss; \
+        assert_ss << "Assertion failed: " << (a) << " should be less than " << (b); \
+        throw std::runtime_error(assert_ss.str()); \
     }
 
 #define ASSERT_LE(a, b) \
     if (!((a) <= (b))) { \
-        std::stringstream ss; \
-        ss << "Assertion failed: " << (a) << " should be less than or equal to " << (b); \
-        throw std::runtime_error(ss.str()); \
+        std::stringstream assert_ss; \
+        assert_ss << "Assertion failed: " << (a) << " should be less than or equal to " << (b); \
+        throw std::runtime_error(assert_ss.str()); \
     }
 
 #define ASSERT_GT(a, b) \
     if (!((a) > (b))) { \
-        std::stringstream ss; \
-        ss << "Assertion failed: " << (a) << " should be greater than " << (b); \
-        throw std::runtime_error(ss.str()); \
+        std::stringstream assert_ss; \
+        assert_ss << "Assertion failed: " << (a) << " should be greater than " << (b); \
+        throw std::runtime_error(assert_ss.str()); \
     }
 
 #define ASSERT_GE(a, b) \
     if (!((a) >= (b))) { \
-        std::stringstream ss; \
-        ss << "Assertion failed: " << (a) << " should be greater than or equal to " << (b); \
-        throw std::runtime_error(ss.str()); \
+        std::stringstream assert_ss; \
+        assert_ss << "Assertion failed: " << (a) << " should be greater than or equal to " << (b); \
+        throw std::runtime_error(assert_ss.str()); \
     }
 
 #define ASSERT_CONTAINS(str, substr) \
-    if ((str).find(substr) == std::string::npos) { \
-        std::stringstream ss; \
-        ss << "Assertion failed: string '" << (str) << "' does not contain '" << (substr) << "'"; \
-        throw std::runtime_error(ss.str()); \
-    }
+    do { \
+        std::string __test_str = (str); \
+        std::string __test_substr = (substr); \
+        if (__test_str.find(__test_substr) == std::string::npos) { \
+            std::string __error_msg = "Assertion failed: string '" + __test_str + "' does not contain '" + __test_substr + "'"; \
+            throw std::runtime_error(__error_msg); \
+        } \
+    } while(0)
 
 #define ASSERT_NOT_EMPTY(container) \
     if ((container).empty()) { \
@@ -165,9 +186,8 @@ public:
     try { \
         statement; \
     } catch (const std::exception& e) { \
-        std::stringstream ss; \
-        ss << "Expected no exception, but got: " << e.what(); \
-        throw std::runtime_error(ss.str()); \
+        std::string __error_msg = "Expected no exception, but got: " + std::string(e.what()); \
+        throw std::runtime_error(__error_msg); \
     } catch (...) { \
         throw std::runtime_error("Assertion failed: unexpected exception thrown"); \
     }
