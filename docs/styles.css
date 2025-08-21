@@ -32,9 +32,30 @@ body {
 .publication-info {
     display: flex;
     justify-content: space-between;
+    align-items: center;
     font-size: 12px;
     margin-bottom: 10px;
     font-weight: bold;
+}
+
+.buy-slonana-btn {
+    background-color: #000;
+    color: #fff;
+    border: 2px solid #000;
+    padding: 8px 16px;
+    font-family: "Times New Roman", Times, serif;
+    font-size: 12px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.buy-slonana-btn:hover {
+    background-color: #fff;
+    color: #000;
+    border: 2px solid #000;
 }
 
 .newspaper-title {
@@ -374,6 +395,17 @@ body {
     .newspaper-title {
         font-size: 32px;
         letter-spacing: 2px;
+    }
+    
+    .publication-info {
+        flex-direction: column;
+        gap: 10px;
+        align-items: center;
+    }
+    
+    .buy-slonana-btn {
+        font-size: 11px;
+        padding: 6px 12px;
     }
     
     .headline-section {
