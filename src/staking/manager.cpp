@@ -161,6 +161,8 @@ common::Result<bool> StakingManager::deactivate_stake(const PublicKey& stake_pub
     }
     
     account_it->is_active = false;
+    // Clear the validator pubkey when deactivating stake
+    account_it->validator_pubkey.assign(32, 0x00);
     std::cout << "Deactivated stake account" << std::endl;
     return common::Result<bool>(true);
 }
