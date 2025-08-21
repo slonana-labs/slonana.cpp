@@ -1,4 +1,3 @@
-#define COMPREHENSIVE_TESTS
 #include "test_framework.h"
 
 // Include all test modules

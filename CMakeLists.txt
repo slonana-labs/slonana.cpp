@@ -61,6 +61,7 @@ endif()
 add_executable(slonana_comprehensive_tests ${COMPREHENSIVE_TEST_SOURCES})
 target_link_libraries(slonana_comprehensive_tests slonana_core)
 target_include_directories(slonana_comprehensive_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_comprehensive_tests PRIVATE COMPREHENSIVE_TESTS)
 add_test(NAME validator_comprehensive_tests COMMAND slonana_comprehensive_tests)
 
 # Individual test modules (for granular testing)
