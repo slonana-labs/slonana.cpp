@@ -1,4 +1,5 @@
 #include "validator/core.h"
+#include "consensus/proof_of_history.h"
 #include "monitoring/consensus_metrics.h"
 #include <iostream>
 #include <algorithm>
@@ -226,6 +227,31 @@ common::Result<bool> ValidatorCore::start() {
     }
     
     std::cout << "Starting validator core" << std::endl;
+    
+    // Initialize and start Proof of History
+    if (!consensus::GlobalProofOfHistory::initialize()) {
+        return common::Result<bool>("Failed to initialize Proof of History");
+    }
+    
+    // Start PoH with a genesis hash
+    Hash genesis_hash(32, 0x42); // Simple genesis hash
+    auto& poh = consensus::GlobalProofOfHistory::instance();
+    auto start_result = poh.start(genesis_hash);
+    if (!start_result.is_ok()) {
+        return common::Result<bool>("Failed to start Proof of History: " + start_result.error());
+    }
+    
+    // Set up PoH callbacks for metrics
+    poh.set_tick_callback([this](const consensus::PohEntry& entry) {
+        monitoring::GlobalConsensusMetrics::instance().increment_poh_ticks_generated();
+        monitoring::GlobalConsensusMetrics::instance().set_poh_sequence_number(static_cast<int64_t>(entry.sequence_number));
+    });
+    
+    poh.set_slot_callback([this](Slot slot, const std::vector<consensus::PohEntry>& entries) {
+        monitoring::GlobalConsensusMetrics::instance().set_poh_current_slot(static_cast<int64_t>(slot));
+        std::cout << "PoH completed slot " << slot << " with " << entries.size() << " entries" << std::endl;
+    });
+    
     impl_->running_ = true;
     return common::Result<bool>(true);
 }
@@ -233,6 +259,10 @@ common::Result<bool> ValidatorCore::start() {
 void ValidatorCore::stop() {
     if (impl_->running_) {
         std::cout << "Stopping validator core" << std::endl;
+        
+        // Stop Proof of History
+        consensus::GlobalProofOfHistory::shutdown();
+        
         impl_->running_ = false;
     }
 }
@@ -247,6 +277,12 @@ void ValidatorCore::process_block(const ledger::Block& block) {
     
     auto validation_result = block_validator_->validate_block(block);
     if (validation_result.is_ok()) {
+        // Mix block hash into PoH for timestamping
+        auto& poh = consensus::GlobalProofOfHistory::instance();
+        uint64_t poh_sequence = poh.mix_data(block.block_hash);
+        
+        std::cout << "Mixed block hash into PoH at sequence " << poh_sequence << std::endl;
+        
         fork_choice_->add_block(block);
         
         // Time block storage
@@ -263,7 +299,7 @@ void ValidatorCore::process_block(const ledger::Block& block) {
             monitoring::GlobalConsensusMetrics::instance().increment_blocks_processed();
             
             std::cout << "Processed and stored block at slot " << block.slot 
-                      << " (total processing time: " << processing_time * 1000 << "ms)" << std::endl;
+                      << " (total processing time: " << processing_time * 1000 << "ms, PoH sequence: " << poh_sequence << ")" << std::endl;
             
             if (impl_->block_callback_) {
                 impl_->block_callback_(block);
@@ -316,6 +352,16 @@ bool ValidatorCore::is_running() const {
 }
 
 common::Slot ValidatorCore::get_current_slot() const {
+    // Return the current PoH slot if available, otherwise fall back to fork choice
+    try {
+        auto& poh = consensus::GlobalProofOfHistory::instance();
+        if (poh.is_running()) {
+            return poh.get_current_slot();
+        }
+    } catch (const std::exception&) {
+        // PoH not initialized, fall back to fork choice
+    }
+    
     return fork_choice_->get_head_slot();
 }
 

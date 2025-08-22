@@ -44,6 +44,14 @@ public:
     void record_signature_verification_time(double seconds);
     void record_transaction_verification_time(double seconds);
 
+    // Proof of History metrics
+    void record_poh_tick_time(double seconds);
+    void record_poh_verification_time(double seconds);
+    void record_poh_hash_time(double seconds);
+    void increment_poh_ticks_generated();
+    void set_poh_sequence_number(int64_t sequence);
+    void set_poh_current_slot(int64_t slot);
+
     // Network consensus metrics
     void increment_consensus_messages_sent();
     void increment_consensus_messages_received();
@@ -67,6 +75,8 @@ public:
     Timer create_vote_processing_timer();
     Timer create_fork_choice_timer();
     Timer create_consensus_round_timer();
+    Timer create_poh_tick_timer();
+    Timer create_poh_verification_timer();
 
     // Get specific metrics for external use
     std::shared_ptr<monitoring::IHistogram> get_block_validation_histogram();
@@ -105,6 +115,14 @@ private:
     std::shared_ptr<monitoring::ICounter> consensus_messages_sent_;
     std::shared_ptr<monitoring::ICounter> consensus_messages_received_;
     std::shared_ptr<monitoring::IHistogram> consensus_network_latency_;
+
+    // Proof of History metrics
+    std::shared_ptr<monitoring::IHistogram> poh_tick_time_;
+    std::shared_ptr<monitoring::IHistogram> poh_verification_time_;
+    std::shared_ptr<monitoring::IHistogram> poh_hash_time_;
+    std::shared_ptr<monitoring::ICounter> poh_ticks_generated_;
+    std::shared_ptr<monitoring::IGauge> poh_sequence_number_;
+    std::shared_ptr<monitoring::IGauge> poh_current_slot_;
 };
 
 /**
@@ -136,6 +154,12 @@ private:
 #define CONSENSUS_TIMER_ROUND() \
     auto _timer = slonana::monitoring::GlobalConsensusMetrics::instance().create_consensus_round_timer()
 
+#define CONSENSUS_TIMER_POH_TICK() \
+    auto _timer = slonana::monitoring::GlobalConsensusMetrics::instance().create_poh_tick_timer()
+
+#define CONSENSUS_TIMER_POH_VERIFICATION() \
+    auto _timer = slonana::monitoring::GlobalConsensusMetrics::instance().create_poh_verification_timer()
+
 /**
  * @brief Consensus performance analyzer for detailed timing analysis
  */
@@ -146,11 +170,15 @@ public:
         double avg_vote_processing_time_ms;
         double avg_fork_choice_time_ms;
         double avg_consensus_round_time_ms;
+        double avg_poh_tick_time_ms;
+        double avg_poh_verification_time_ms;
         
         int64_t total_blocks_processed;
         int64_t total_votes_processed;
+        int64_t total_poh_ticks_generated;
         double blocks_per_second;
         double votes_per_second;
+        double poh_ticks_per_second;
         
         std::chrono::system_clock::time_point report_timestamp;
         std::chrono::milliseconds analysis_period;

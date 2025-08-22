@@ -22,6 +22,7 @@ file(GLOB_RECURSE CORE_SOURCES
     "${SRC_DIR}/network/*.cpp"
     "${SRC_DIR}/ledger/*.cpp"
     "${SRC_DIR}/validator/*.cpp"
+    "${SRC_DIR}/consensus/*.cpp"
     "${SRC_DIR}/staking/*.cpp"
     "${SRC_DIR}/svm/*.cpp"
     "${SRC_DIR}/common/*.cpp"
@@ -110,12 +111,24 @@ target_link_libraries(slonana_consensus_timing_tests slonana_core)
 target_include_directories(slonana_consensus_timing_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 target_compile_definitions(slonana_consensus_timing_tests PRIVATE STANDALONE_CONSENSUS_TIMING_TESTS)
 
+add_executable(slonana_proof_of_history_tests 
+    "${CMAKE_SOURCE_DIR}/tests/test_proof_of_history.cpp"
+)
+target_link_libraries(slonana_proof_of_history_tests slonana_core)
+target_include_directories(slonana_proof_of_history_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+
+# Find OpenSSL for PoH cryptographic operations
+find_package(OpenSSL REQUIRED)
+target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto)
+target_link_libraries(slonana_proof_of_history_tests OpenSSL::SSL OpenSSL::Crypto)
+
 # Add individual test targets
 add_test(NAME common_tests COMMAND slonana_common_tests)
 add_test(NAME rpc_comprehensive_tests COMMAND slonana_rpc_tests)
 add_test(NAME wallet_tests COMMAND slonana_wallet_tests)
 add_test(NAME monitoring_tests COMMAND slonana_monitoring_tests)
 add_test(NAME consensus_timing_tests COMMAND slonana_consensus_timing_tests)
+add_test(NAME proof_of_history_tests COMMAND slonana_proof_of_history_tests)
 
 # Comprehensive benchmarking suite
 add_executable(slonana_benchmarks 

@@ -125,6 +125,40 @@ ConsensusMetrics::ConsensusMetrics() {
         "Network latency for consensus message propagation",
         {0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0}
     );
+
+    // Proof of History metrics
+    poh_tick_time_ = registry.histogram(
+        "consensus_poh_tick_duration_seconds",
+        "Time spent generating PoH ticks",
+        {0.0001, 0.0002, 0.0004, 0.0008, 0.001, 0.002, 0.004, 0.008, 0.01, 0.02}
+    );
+
+    poh_verification_time_ = registry.histogram(
+        "consensus_poh_verification_duration_seconds",
+        "Time spent verifying PoH sequences",
+        {0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0}
+    );
+
+    poh_hash_time_ = registry.histogram(
+        "consensus_poh_hash_duration_seconds",
+        "Time spent computing individual PoH hashes",
+        {0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1}
+    );
+
+    poh_ticks_generated_ = registry.counter(
+        "consensus_poh_ticks_generated_total",
+        "Total number of PoH ticks generated"
+    );
+
+    poh_sequence_number_ = registry.gauge(
+        "consensus_poh_sequence_number",
+        "Current PoH sequence number"
+    );
+
+    poh_current_slot_ = registry.gauge(
+        "consensus_poh_current_slot",
+        "Current slot number from PoH"
+    );
 }
 
 // Block processing metrics
@@ -199,6 +233,31 @@ void ConsensusMetrics::record_transaction_verification_time(double seconds) {
     transaction_verification_time_->observe(seconds);
 }
 
+// Proof of History metrics
+void ConsensusMetrics::record_poh_tick_time(double seconds) {
+    poh_tick_time_->observe(seconds);
+}
+
+void ConsensusMetrics::record_poh_verification_time(double seconds) {
+    poh_verification_time_->observe(seconds);
+}
+
+void ConsensusMetrics::record_poh_hash_time(double seconds) {
+    poh_hash_time_->observe(seconds);
+}
+
+void ConsensusMetrics::increment_poh_ticks_generated() {
+    poh_ticks_generated_->increment();
+}
+
+void ConsensusMetrics::set_poh_sequence_number(int64_t sequence) {
+    poh_sequence_number_->set(static_cast<double>(sequence));
+}
+
+void ConsensusMetrics::set_poh_current_slot(int64_t slot) {
+    poh_current_slot_->set(static_cast<double>(slot));
+}
+
 // Network consensus metrics
 void ConsensusMetrics::increment_consensus_messages_sent() {
     consensus_messages_sent_->increment();
@@ -255,6 +314,14 @@ ConsensusMetrics::Timer ConsensusMetrics::create_fork_choice_timer() {
 
 ConsensusMetrics::Timer ConsensusMetrics::create_consensus_round_timer() {
     return Timer(consensus_round_time_);
+}
+
+ConsensusMetrics::Timer ConsensusMetrics::create_poh_tick_timer() {
+    return Timer(poh_tick_time_);
+}
+
+ConsensusMetrics::Timer ConsensusMetrics::create_poh_verification_timer() {
+    return Timer(poh_verification_time_);
 }
 
 // Getter methods
