@@ -361,15 +361,7 @@ std::unique_ptr<IMetricsRegistry> MonitoringFactory::create_registry() {
     return std::make_unique<MetricsRegistryImpl>();
 }
 
-std::unique_ptr<IMetricsExporter> MonitoringFactory::create_prometheus_exporter() {
-    // TODO: Implement Prometheus exporter
-    return nullptr;
-}
-
-std::unique_ptr<IMetricsExporter> MonitoringFactory::create_json_exporter() {
-    // TODO: Implement JSON exporter
-    return nullptr;
-}
+// Note: Prometheus and JSON exporters are implemented in prometheus_exporter.cpp
 
 // Global metrics registry
 std::unique_ptr<IMetricsRegistry> GlobalMetrics::instance_ = nullptr;

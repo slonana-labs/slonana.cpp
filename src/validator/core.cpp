@@ -1,4 +1,5 @@
 #include "validator/core.h"
+#include "monitoring/consensus_metrics.h"
 #include <iostream>
 #include <algorithm>
 
@@ -37,6 +38,9 @@ ForkChoice::ForkChoice() : impl_(std::make_unique<Impl>()) {}
 ForkChoice::~ForkChoice() = default;
 
 void ForkChoice::add_block(const ledger::Block& block) {
+    // Time the fork choice operation
+    auto timer = monitoring::GlobalConsensusMetrics::instance().create_fork_choice_timer();
+    
     impl_->blocks_.push_back(block);
     
     // Simple fork choice - always choose the highest slot
@@ -45,12 +49,25 @@ void ForkChoice::add_block(const ledger::Block& block) {
         impl_->head_slot_ = block.slot;
     }
     
-    std::cout << "Added block to fork choice, slot: " << block.slot << std::endl;
+    // Update metrics
+    monitoring::GlobalConsensusMetrics::instance().set_current_slot(block.slot);
+    monitoring::GlobalConsensusMetrics::instance().set_active_forks_count(impl_->blocks_.size());
+    
+    std::cout << "Added block to fork choice, slot: " << block.slot 
+              << " (fork choice time: " << timer.stop() * 1000 << "ms)" << std::endl;
 }
 
 void ForkChoice::add_vote(const Vote& vote) {
+    // Time the vote processing
+    auto timer = monitoring::GlobalConsensusMetrics::instance().create_vote_processing_timer();
+    
     impl_->votes_.push_back(vote);
-    std::cout << "Added vote to fork choice, slot: " << vote.slot << std::endl;
+    
+    // Update metrics
+    monitoring::GlobalConsensusMetrics::instance().increment_votes_processed();
+    
+    std::cout << "Added vote to fork choice, slot: " << vote.slot 
+              << " (processing time: " << timer.stop() * 1000 << "ms)" << std::endl;
 }
 
 Hash ForkChoice::get_head() const {
@@ -70,6 +87,9 @@ std::vector<Hash> ForkChoice::get_forks() const {
 }
 
 uint64_t ForkChoice::get_fork_weight(const Hash& fork_head) const {
+    // Time the fork weight calculation
+    auto start_time = std::chrono::steady_clock::now();
+    
     // Stub implementation - would calculate actual stake weight
     uint64_t weight = 0;
     for (const auto& vote : impl_->votes_) {
@@ -77,6 +97,13 @@ uint64_t ForkChoice::get_fork_weight(const Hash& fork_head) const {
             weight += 1; // Each vote counts as 1 unit for stub
         }
     }
+    
+    // Record timing
+    auto end_time = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    double seconds = duration.count() / 1e6;
+    monitoring::GlobalConsensusMetrics::instance().record_fork_weight_calculation_time(seconds);
+    
     return weight;
 }
 
@@ -97,35 +124,66 @@ bool BlockValidator::validate_block_structure(const ledger::Block& block) const 
 }
 
 bool BlockValidator::validate_block_signature(const ledger::Block& block) const {
+    // Time signature verification
+    auto start_time = std::chrono::steady_clock::now();
+    
     // Stub implementation - would verify cryptographic signature
-    return !block.block_signature.empty() && !block.validator.empty();
+    bool valid = !block.block_signature.empty() && !block.validator.empty();
+    
+    // Record timing
+    auto end_time = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    double seconds = duration.count() / 1e6;
+    monitoring::GlobalConsensusMetrics::instance().record_signature_verification_time(seconds);
+    
+    return valid;
 }
 
 bool BlockValidator::validate_transactions(const ledger::Block& block) const {
+    // Time transaction verification
+    auto start_time = std::chrono::steady_clock::now();
+    
     for (const auto& tx : block.transactions) {
         if (!tx.verify()) {
             return false;
         }
     }
+    
+    // Record timing
+    auto end_time = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    double seconds = duration.count() / 1e6;
+    monitoring::GlobalConsensusMetrics::instance().record_transaction_verification_time(seconds);
+    
     return true;
 }
 
 common::Result<bool> BlockValidator::validate_block(const ledger::Block& block) const {
+    // Time the entire block validation process
+    auto timer = monitoring::GlobalConsensusMetrics::instance().create_block_validation_timer();
+    
     if (!validate_block_structure(block)) {
+        monitoring::GlobalConsensusMetrics::instance().increment_blocks_rejected();
         return common::Result<bool>("Invalid block structure");
     }
     
     if (!validate_block_signature(block)) {
+        monitoring::GlobalConsensusMetrics::instance().increment_blocks_rejected();
         return common::Result<bool>("Invalid block signature");
     }
     
     if (!validate_transactions(block)) {
+        monitoring::GlobalConsensusMetrics::instance().increment_blocks_rejected();
         return common::Result<bool>("Invalid transactions in block");
     }
     
     if (!validate_chain_continuity(block)) {
+        monitoring::GlobalConsensusMetrics::instance().increment_blocks_rejected();
         return common::Result<bool>("Block breaks chain continuity");
     }
+    
+    double validation_time = timer.stop();
+    std::cout << "Block validation completed in " << validation_time * 1000 << "ms" << std::endl;
     
     return common::Result<bool>(true);
 }
@@ -184,20 +242,35 @@ void ValidatorCore::process_block(const ledger::Block& block) {
         return;
     }
     
+    // Time the entire block processing operation
+    auto processing_timer = monitoring::GlobalConsensusMetrics::instance().create_block_validation_timer();
+    
     auto validation_result = block_validator_->validate_block(block);
     if (validation_result.is_ok()) {
         fork_choice_->add_block(block);
         
-        // Store valid block in ledger
+        // Time block storage
+        auto storage_start = std::chrono::steady_clock::now();
         auto store_result = ledger_->store_block(block);
+        auto storage_end = std::chrono::steady_clock::now();
+        
+        auto storage_duration = std::chrono::duration_cast<std::chrono::microseconds>(storage_end - storage_start);
+        double storage_seconds = storage_duration.count() / 1e6;
+        monitoring::GlobalConsensusMetrics::instance().record_block_storage_time(storage_seconds);
+        
         if (store_result.is_ok()) {
-            std::cout << "Processed and stored block at slot " << block.slot << std::endl;
+            double processing_time = processing_timer.stop();
+            monitoring::GlobalConsensusMetrics::instance().increment_blocks_processed();
+            
+            std::cout << "Processed and stored block at slot " << block.slot 
+                      << " (total processing time: " << processing_time * 1000 << "ms)" << std::endl;
             
             if (impl_->block_callback_) {
                 impl_->block_callback_(block);
             }
         }
     } else {
+        monitoring::GlobalConsensusMetrics::instance().increment_blocks_rejected();
         std::cout << "Rejected invalid block: " << validation_result.error() << std::endl;
     }
 }
@@ -207,14 +280,25 @@ void ValidatorCore::process_vote(const Vote& vote) {
         return;
     }
     
-    if (vote.verify()) {
+    // Time vote verification
+    auto verification_start = std::chrono::steady_clock::now();
+    bool vote_valid = vote.verify();
+    auto verification_end = std::chrono::steady_clock::now();
+    
+    auto verification_duration = std::chrono::duration_cast<std::chrono::microseconds>(verification_end - verification_start);
+    double verification_seconds = verification_duration.count() / 1e6;
+    monitoring::GlobalConsensusMetrics::instance().record_vote_verification_time(verification_seconds);
+    
+    if (vote_valid) {
         fork_choice_->add_vote(vote);
-        std::cout << "Processed vote for slot " << vote.slot << std::endl;
+        std::cout << "Processed vote for slot " << vote.slot 
+                  << " (verification time: " << verification_seconds * 1000 << "ms)" << std::endl;
         
         if (impl_->vote_callback_) {
             impl_->vote_callback_(vote);
         }
     } else {
+        monitoring::GlobalConsensusMetrics::instance().increment_votes_rejected();
         std::cout << "Rejected invalid vote" << std::endl;
     }
 }

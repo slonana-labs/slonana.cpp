@@ -7,6 +7,9 @@
 #include <functional>
 #include <atomic>
 #include <mutex>
+#include <thread>
+#include <map>
+#include <optional>
 
 namespace slonana {
 namespace monitoring {
