@@ -459,6 +459,570 @@ body {
     line-height: 1.6;
 }
 
+/* Technical Deep Dive Section */
+.tech-section {
+    background-color: #f9f9f9;
+    border: 3px solid #000;
+    padding: 30px;
+    margin: 30px 0;
+}
+
+.tech-subtitle {
+    font-size: 16px;
+    font-style: italic;
+    text-align: center;
+    margin-bottom: 25px;
+    color: #333;
+}
+
+.tech-content {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 30px;
+}
+
+.tech-article-large h3 {
+    font-size: 24px;
+    font-weight: bold;
+    margin-bottom: 15px;
+    border-bottom: 2px solid #000;
+    padding-bottom: 5px;
+}
+
+.tech-lead {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 20px;
+    text-indent: 20px;
+    line-height: 1.6;
+}
+
+.code-example-box {
+    border: 2px solid #666;
+    padding: 15px;
+    margin: 15px 0;
+    background-color: #fff;
+}
+
+.code-example-box h4 {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.code-snippet {
+    background-color: #f5f5f5;
+    padding: 10px;
+    margin: 8px 0;
+    font-family: "Courier New", monospace;
+    font-size: 11px;
+    border-left: 3px solid #000;
+    line-height: 1.4;
+}
+
+.code-snippet code {
+    display: block;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.benchmark-table {
+    border: 2px solid #000;
+    background-color: #fff;
+    padding: 15px;
+    margin: 15px 0;
+}
+
+.benchmark-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #ddd;
+    font-size: 14px;
+}
+
+.benchmark-row:last-child {
+    border-bottom: none;
+}
+
+.benchmark-row .metric {
+    font-weight: bold;
+}
+
+.benchmark-row .value {
+    font-family: "Courier New", monospace;
+    color: #333;
+}
+
+.tech-article-side {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.tech-box {
+    border: 2px solid #000;
+    padding: 15px;
+    background-color: #fff;
+}
+
+.tech-box h4 {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.tech-box ul {
+    list-style: none;
+    padding-left: 0;
+}
+
+.tech-box li {
+    font-size: 12px;
+    margin-bottom: 5px;
+    padding-left: 15px;
+    position: relative;
+    line-height: 1.5;
+}
+
+.tech-box li:before {
+    content: "▪";
+    position: absolute;
+    left: 0;
+    font-weight: bold;
+}
+
+/* Architecture Section */
+.architecture-section {
+    background-color: #f6f6f6;
+    border: 3px solid #000;
+    padding: 30px;
+    margin: 30px 0;
+}
+
+.arch-subtitle {
+    font-size: 16px;
+    font-style: italic;
+    text-align: center;
+    margin-bottom: 25px;
+    color: #333;
+}
+
+.architecture-content {
+    display: grid;
+    grid-template-columns: 2.2fr 1fr;
+    gap: 30px;
+}
+
+.arch-main h3 {
+    font-size: 24px;
+    font-weight: bold;
+    margin-bottom: 15px;
+    border-bottom: 2px solid #000;
+    padding-bottom: 5px;
+}
+
+.arch-lead {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 20px;
+    text-indent: 20px;
+    line-height: 1.6;
+}
+
+.optimization-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    margin-bottom: 25px;
+}
+
+.optimization-item {
+    border: 1px solid #666;
+    padding: 15px;
+    background-color: #fff;
+}
+
+.optimization-item h4 {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 8px;
+    color: #000;
+}
+
+.optimization-item p {
+    font-size: 13px;
+    line-height: 1.6;
+    text-align: justify;
+}
+
+.component-details {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.component {
+    border: 2px solid #333;
+    padding: 15px;
+    background-color: #fff;
+}
+
+.component h4 {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.component ul {
+    list-style: none;
+    padding-left: 0;
+}
+
+.component li {
+    font-size: 12px;
+    margin-bottom: 6px;
+    padding-left: 15px;
+    position: relative;
+    line-height: 1.5;
+}
+
+.component li:before {
+    content: "▸";
+    position: absolute;
+    left: 0;
+    font-weight: bold;
+}
+
+.arch-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.performance-chart {
+    border: 2px solid #000;
+    padding: 15px;
+    background-color: #fff;
+}
+
+.performance-chart h4 {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.chart-item {
+    display: grid;
+    grid-template-columns: 80px 1fr 60px;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.chart-label {
+    font-size: 11px;
+    font-weight: bold;
+}
+
+.chart-bar {
+    height: 12px;
+    background-color: #000;
+}
+
+.chart-bar.full {
+    width: 100%;
+}
+
+.chart-bar.partial {
+    width: 75%;
+}
+
+.chart-bar.tiny {
+    width: 20%;
+}
+
+.chart-value {
+    font-size: 10px;
+    font-family: "Courier New", monospace;
+    text-align: right;
+}
+
+.memory-usage, .compatibility-matrix {
+    border: 2px solid #000;
+    padding: 15px;
+    background-color: #fff;
+}
+
+.memory-usage h4, .compatibility-matrix h4 {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.memory-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    margin-bottom: 5px;
+    padding: 3px 0;
+    border-bottom: 1px dotted #ccc;
+}
+
+.memory-item:last-child {
+    border-bottom: none;
+    font-weight: bold;
+}
+
+.platform-item {
+    font-size: 12px;
+    margin-bottom: 5px;
+    color: #333;
+}
+
+/* Case Studies Section */
+.case-studies-section {
+    background-color: #f9f9f9;
+    border: 2px solid #333;
+    padding: 25px;
+    margin: 25px 0;
+}
+
+.case-studies-content {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 25px;
+}
+
+.large-case h3 {
+    font-size: 22px;
+    font-weight: bold;
+    margin-bottom: 8px;
+    border-bottom: 1px solid #333;
+    padding-bottom: 5px;
+}
+
+.large-case h4 {
+    font-size: 16px;
+    font-style: italic;
+    margin-bottom: 15px;
+    color: #333;
+}
+
+.case-lead {
+    font-size: 15px;
+    font-weight: bold;
+    margin-bottom: 15px;
+    text-indent: 20px;
+    line-height: 1.6;
+}
+
+.case-details {
+    margin-bottom: 20px;
+}
+
+.case-metric {
+    border-left: 3px solid #000;
+    padding-left: 10px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.deployment-config {
+    border: 1px solid #666;
+    padding: 15px;
+    background-color: #fff;
+}
+
+.deployment-config h5 {
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.config-highlight {
+    font-size: 12px;
+    font-family: "Courier New", monospace;
+    line-height: 1.6;
+    background-color: #f5f5f5;
+    padding: 10px;
+    border-left: 3px solid #333;
+}
+
+.case-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.small-case {
+    border: 2px solid #000;
+    padding: 12px;
+    background-color: #fff;
+}
+
+.small-case h4 {
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.small-case p {
+    font-size: 11px;
+    line-height: 1.5;
+    margin-bottom: 8px;
+    text-align: justify;
+}
+
+.case-stats {
+    font-size: 10px;
+    font-family: "Courier New", monospace;
+    background-color: #f5f5f5;
+    padding: 6px;
+    border-left: 2px solid #333;
+    line-height: 1.4;
+}
+
+/* Developer Section */
+.developer-section {
+    background-color: #f8f8f8;
+    border: 2px solid #333;
+    padding: 25px;
+    margin: 25px 0;
+}
+
+.developer-content {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 25px;
+}
+
+.developer-story h3 {
+    font-size: 22px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #333;
+    padding-bottom: 5px;
+}
+
+.developer-story h4 {
+    font-size: 16px;
+    font-style: italic;
+    margin-bottom: 20px;
+    color: #333;
+}
+
+.install-methods {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    margin-bottom: 25px;
+}
+
+.install-method {
+    border: 1px solid #666;
+    padding: 15px;
+    background-color: #fff;
+}
+
+.install-method h5 {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.install-code, .config-code {
+    background-color: #f5f5f5;
+    padding: 12px;
+    font-family: "Courier New", monospace;
+    font-size: 11px;
+    border-left: 3px solid #333;
+    line-height: 1.5;
+}
+
+.install-code code, .config-code code {
+    display: block;
+    white-space: pre-wrap;
+}
+
+.configuration-example {
+    border: 1px solid #666;
+    padding: 15px;
+    background-color: #fff;
+}
+
+.configuration-example h5 {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.developer-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.dev-tip-box {
+    border: 2px solid #000;
+    padding: 12px;
+    background-color: #fff;
+}
+
+.dev-tip-box h4 {
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.dev-tip-box ul {
+    list-style: none;
+    padding-left: 0;
+}
+
+.dev-tip-box li {
+    font-size: 11px;
+    margin-bottom: 4px;
+    padding-left: 12px;
+    position: relative;
+    line-height: 1.4;
+}
+
+.dev-tip-box li:before {
+    content: "→";
+    position: absolute;
+    left: 0;
+    font-weight: bold;
+}
+
+.dev-tip-box code {
+    font-family: "Courier New", monospace;
+    background-color: #f0f0f0;
+    padding: 1px 3px;
+    font-size: 10px;
+}
+
 /* Bottom Stories */
 .bottom-stories {
     border-top: 2px solid #000;
@@ -566,6 +1130,38 @@ body {
         grid-template-columns: 1fr;
     }
     
+    .tech-content {
+        grid-template-columns: 1fr;
+    }
+    
+    .developer-content {
+        grid-template-columns: 1fr;
+    }
+    
+    .tech-content {
+        grid-template-columns: 1fr;
+    }
+    
+    .developer-content {
+        grid-template-columns: 1fr;
+    }
+    
+    .architecture-content {
+        grid-template-columns: 1fr;
+    }
+    
+    .case-studies-content {
+        grid-template-columns: 1fr;
+    }
+    
+    .optimization-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .component-details {
+        grid-template-columns: 1fr;
+    }
+    
     .story-grid {
         grid-template-columns: 1fr;
     }
@@ -576,6 +1172,19 @@ body {
     
     .main-story .headline {
         font-size: 24px;
+    }
+    
+    .tech-article-large h3 {
+        font-size: 20px;
+    }
+    
+    .install-methods {
+        gap: 15px;
+    }
+    
+    .code-snippet, .install-code, .config-code {
+        font-size: 10px;
+        padding: 8px;
     }
 }
 
@@ -591,6 +1200,25 @@ body {
     .newspaper-title {
         font-size: 24px;
         letter-spacing: 1px;
+    }
+    
+    .tech-section, .developer-section, .architecture-section, .case-studies-section {
+        padding: 15px;
+        margin: 15px 0;
+    }
+    
+    .section-title {
+        font-size: 24px;
+        letter-spacing: 2px;
+    }
+    
+    .code-snippet, .install-code, .config-code {
+        font-size: 9px;
+        padding: 6px;
+    }
+    
+    .optimization-item, .install-method, .configuration-example {
+        padding: 10px;
     }
 }
 
