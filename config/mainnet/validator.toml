@@ -48,6 +48,6 @@ metrics_output_path = "/var/log/slonana/mainnet-metrics.json"
 require_validator_identity = true
 enable_tls = true
 
-# Staking Requirements
+# Staking Requirements (in aldrins - the base unit for SLON tokens)
 minimum_validator_stake = 1000000
 minimum_delegation_stake = 1000

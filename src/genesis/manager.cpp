@@ -73,7 +73,7 @@ MainnetConfig GenesisManager::create_mainnet_config() {
     mainnet_config.enable_metrics_reporting = true;
     mainnet_config.metrics_endpoint = "https://metrics.slonana.org/v1/submit";
     mainnet_config.require_validator_identity = true;
-    mainnet_config.minimum_stake_for_voting = 1000000; // 1M lamports
+    mainnet_config.minimum_stake_for_voting = 1000000; // 1M base units
     
     return mainnet_config;
 }
@@ -273,6 +273,8 @@ std::string GenesisManager::serialize_to_json(const GenesisConfig& config) {
     
     // Economic configuration
     json << "\"economics\":{";
+    json << "\"token_symbol\":\"" << config.economics.token_symbol << "\",";
+    json << "\"base_unit_name\":\"" << config.economics.base_unit_name << "\",";
     json << "\"total_supply\":" << config.economics.total_supply << ",";
     json << "\"initial_inflation_rate\":" << config.economics.initial_inflation_rate << ",";
     json << "\"foundation_rate\":" << config.economics.foundation_rate << ",";
@@ -332,6 +334,26 @@ common::Result<GenesisConfig> GenesisManager::deserialize_from_json(const std::s
         }
     }
     
+    // Parse token symbol
+    pos = json.find("\"token_symbol\":");
+    if (pos != std::string::npos) {
+        size_t start = json.find("\"", pos + 15) + 1;
+        size_t end = json.find("\"", start);
+        if (end != std::string::npos) {
+            config.economics.token_symbol = json.substr(start, end - start);
+        }
+    }
+    
+    // Parse base unit name
+    pos = json.find("\"base_unit_name\":");
+    if (pos != std::string::npos) {
+        size_t start = json.find("\"", pos + 17) + 1;
+        size_t end = json.find("\"", start);
+        if (end != std::string::npos) {
+            config.economics.base_unit_name = json.substr(start, end - start);
+        }
+    }
+    
     return common::Result<GenesisConfig>(std::move(config));
 }
 
@@ -340,22 +362,28 @@ EconomicConfig GenesisManager::create_default_economics(NetworkType network_type
     
     switch (network_type) {
         case NetworkType::MAINNET:
+            economics.token_symbol = "SLON"; // Custom mainnet token
+            economics.base_unit_name = "aldrins"; // Custom base unit
             economics.total_supply = 1000000000; // 1 billion tokens
             economics.initial_inflation_rate = 0.05; // 5% for mainnet
-            economics.min_validator_stake = 1000000; // 1M lamports
+            economics.min_validator_stake = 1000000; // 1M base units
             break;
             
         case NetworkType::TESTNET:
+            economics.token_symbol = "tSLON"; // Testnet token
+            economics.base_unit_name = "taldrins"; // Testnet base unit
             economics.total_supply = 100000000; // 100 million tokens
             economics.initial_inflation_rate = 0.08; // 8% for testnet
-            economics.min_validator_stake = 100000; // 100K lamports
+            economics.min_validator_stake = 100000; // 100K base units
             break;
             
         case NetworkType::DEVNET:
         default:
+            economics.token_symbol = "SOL"; // Default SOL for devnet
+            economics.base_unit_name = "lamports"; // Default lamports for devnet
             economics.total_supply = 10000000; // 10 million tokens
             economics.initial_inflation_rate = 0.10; // 10% for devnet
-            economics.min_validator_stake = 10000; // 10K lamports
+            economics.min_validator_stake = 10000; // 10K base units
             break;
     }
     

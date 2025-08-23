@@ -7,6 +7,8 @@
   "creation_time": 1703980800,
   "magic_bytes": [84, 69, 83, 84],
   "economics": {
+    "token_symbol": "tSLON",
+    "base_unit_name": "taldrins",
     "total_supply": 100000000,
     "initial_inflation_rate": 0.08,
     "foundation_rate": 0.05,

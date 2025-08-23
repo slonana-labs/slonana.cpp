@@ -7,6 +7,8 @@
   "creation_time": 1703980800,
   "magic_bytes": [77, 65, 73, 78],
   "economics": {
+    "token_symbol": "SLON",
+    "base_unit_name": "aldrins",
     "total_supply": 1000000000,
     "initial_inflation_rate": 0.05,
     "foundation_rate": 0.05,

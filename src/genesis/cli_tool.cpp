@@ -13,6 +13,8 @@ int GenesisCliTool::create_genesis_command(int argc, char* argv[]) {
         std::cout << "  --network-type TYPE        Network type (mainnet, testnet, devnet)" << std::endl;
         std::cout << "  --initial-validators FILE  Path to initial validators JSON file" << std::endl;
         std::cout << "  --initial-supply AMOUNT    Initial token supply" << std::endl;
+        std::cout << "  --token-symbol SYMBOL       Network token symbol (e.g., SOL, SLON)" << std::endl;
+        std::cout << "  --base-unit-name NAME       Base unit name (e.g., lamports, aldrins)" << std::endl;
         std::cout << "  --inflation-rate RATE      Annual inflation rate (0.0-1.0)" << std::endl;
         std::cout << "  --epoch-length LENGTH      Epoch length in slots" << std::endl;
         std::cout << "  --output FILE              Output genesis configuration file" << std::endl;
@@ -151,15 +153,17 @@ int GenesisCliTool::info_genesis_command(int argc, char* argv[]) {
     std::cout << "Creation Time: " << config.creation_time << std::endl;
     
     std::cout << "\n=== Economic Parameters ===" << std::endl;
-    std::cout << "Total Supply: " << config.economics.total_supply << " tokens" << std::endl;
+    std::cout << "Token Symbol: " << config.economics.token_symbol << std::endl;
+    std::cout << "Base Unit: " << config.economics.base_unit_name << std::endl;
+    std::cout << "Total Supply: " << config.economics.total_supply << " " << config.economics.token_symbol << std::endl;
     std::cout << "Initial Inflation Rate: " << (config.economics.initial_inflation_rate * 100) << "%" << std::endl;
     std::cout << "Foundation Rate: " << (config.economics.foundation_rate * 100) << "%" << std::endl;
     std::cout << "Foundation Allocation: " << (config.economics.foundation_allocation * 100) << "%" << std::endl;
     std::cout << "Team Allocation: " << (config.economics.team_allocation * 100) << "%" << std::endl;
     std::cout << "Community Allocation: " << (config.economics.community_allocation * 100) << "%" << std::endl;
     std::cout << "Validator Allocation: " << (config.economics.validator_allocation * 100) << "%" << std::endl;
-    std::cout << "Min Validator Stake: " << config.economics.min_validator_stake << " lamports" << std::endl;
-    std::cout << "Min Delegation: " << config.economics.min_delegation << " lamports" << std::endl;
+    std::cout << "Min Validator Stake: " << config.economics.min_validator_stake << " " << config.economics.base_unit_name << std::endl;
+    std::cout << "Min Delegation: " << config.economics.min_delegation << " " << config.economics.base_unit_name << std::endl;
     
     std::cout << "\n=== Consensus Parameters ===" << std::endl;
     std::cout << "Epoch Length: " << config.epoch_length << " slots" << std::endl;
@@ -177,7 +181,7 @@ int GenesisCliTool::info_genesis_command(int argc, char* argv[]) {
     for (size_t i = 0; i < config.genesis_validators.size(); ++i) {
         const auto& validator = config.genesis_validators[i];
         std::cout << "  Validator " << (i + 1) << ":" << std::endl;
-        std::cout << "    Stake: " << validator.stake_amount << " lamports" << std::endl;
+        std::cout << "    Stake: " << validator.stake_amount << " " << config.economics.base_unit_name << std::endl;
         std::cout << "    Commission: " << (validator.commission_rate / 100.0) << "%" << std::endl;
         if (!validator.info.empty()) {
             std::cout << "    Info: " << validator.info << std::endl;
@@ -211,6 +215,8 @@ void GenesisCliTool::print_usage() {
     std::cout << "    --initial-supply 1000000000 \\" << std::endl;
     std::cout << "    --inflation-rate 0.05 \\" << std::endl;
     std::cout << "    --epoch-length 432000 \\" << std::endl;
+    std::cout << "    --token-symbol SLON \\" << std::endl;
+    std::cout << "    --base-unit-name aldrins \\" << std::endl;
     std::cout << "    --output mainnet-genesis.json" << std::endl;
     std::cout << std::endl;
     std::cout << "  # Verify genesis configuration" << std::endl;
@@ -247,6 +253,12 @@ common::Result<GenesisConfig> GenesisCliTool::parse_creation_args(int argc, char
             config.epoch_length = std::stoull(argv[i + 1]);
             config.slots_per_epoch = config.epoch_length;
         }
+        else if (strcmp(argv[i], "--token-symbol") == 0) {
+            config.economics.token_symbol = argv[i + 1];
+        }
+        else if (strcmp(argv[i], "--base-unit-name") == 0) {
+            config.economics.base_unit_name = argv[i + 1];
+        }
     }
     
     // Load validators if file provided
@@ -275,7 +287,7 @@ common::Result<std::vector<GenesisValidator>> GenesisCliTool::parse_validator_li
     validator.identity.resize(32, 0x01);
     validator.vote_account.resize(32, 0x02);
     validator.stake_account.resize(32, 0x03);
-    validator.stake_amount = 1000000; // 1M lamports
+    validator.stake_amount = 1000000; // 1M base units
     validator.commission_rate = 500; // 5%
     validator.info = "Genesis Validator";
     

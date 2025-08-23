@@ -27,6 +27,10 @@ struct EconomicConfig {
     double foundation_rate = 0.05; // 5% to foundation
     double taper_rate = -0.15; // -15% annual reduction
     
+    // Token naming configuration
+    std::string token_symbol = "SOL"; // Main token symbol (e.g., "SLON", "SOL")
+    std::string base_unit_name = "lamports"; // Base unit name (e.g., "aldrins", "lamports")
+    
     // Initial distribution percentages (should sum to 1.0)
     double foundation_allocation = 0.20;
     double team_allocation = 0.15;
@@ -34,8 +38,8 @@ struct EconomicConfig {
     double validator_allocation = 0.50;
     
     // Staking parameters
-    uint64_t min_validator_stake = 1000000; // 1M lamports minimum
-    uint64_t min_delegation = 1000; // 1K lamports minimum
+    uint64_t min_validator_stake = 1000000; // 1M base units minimum
+    uint64_t min_delegation = 1000; // 1K base units minimum
     
     // Slashing conditions
     double vote_timeout_slashing = 0.05; // 5% slash for downtime
