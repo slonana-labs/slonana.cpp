@@ -152,6 +152,66 @@ target_include_directories(slonana_benchmarks PRIVATE "${CMAKE_SOURCE_DIR}/tests
 # Add benchmark test (optional - can be run separately)
 add_test(NAME benchmark_suite COMMAND slonana_benchmarks)
 
+# Enhanced SVM Engine test suite
+add_executable(slonana_enhanced_svm_tests 
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_svm_enhanced.cpp"
+)
+target_link_libraries(slonana_enhanced_svm_tests slonana_core)
+target_include_directories(slonana_enhanced_svm_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_enhanced_svm_tests PRIVATE STANDALONE_SVM_ENHANCED_TESTS)
+add_test(NAME enhanced_svm_tests COMMAND slonana_enhanced_svm_tests)
+
+# Extended SPL program test suite
+add_executable(slonana_spl_extended_tests 
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_spl_extended.cpp"
+)
+target_link_libraries(slonana_spl_extended_tests slonana_core)
+target_include_directories(slonana_spl_extended_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_spl_extended_tests PRIVATE STANDALONE_SPL_EXTENDED_TESTS)
+add_test(NAME spl_extended_tests COMMAND slonana_spl_extended_tests)
+
+# WebSocket test suite
+add_executable(slonana_websocket_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_websocket.cpp"
+)
+target_link_libraries(slonana_websocket_tests slonana_core)
+target_include_directories(slonana_websocket_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_websocket_tests PRIVATE STANDALONE_WEBSOCKET_TESTS)
+add_test(NAME websocket_tests COMMAND slonana_websocket_tests)
+
+# Cluster connection test suite
+add_executable(slonana_cluster_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_cluster_connection.cpp"
+)
+target_link_libraries(slonana_cluster_tests slonana_core)
+target_include_directories(slonana_cluster_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_cluster_tests PRIVATE STANDALONE_CLUSTER_TESTS)
+add_test(NAME cluster_tests COMMAND slonana_cluster_tests)
+
+# Snapshot system test suite
+add_executable(slonana_snapshot_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_snapshot.cpp"
+)
+target_link_libraries(slonana_snapshot_tests slonana_core)
+target_include_directories(slonana_snapshot_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_snapshot_tests PRIVATE STANDALONE_SNAPSHOT_TESTS)
+add_test(NAME snapshot_tests COMMAND slonana_snapshot_tests)
+
+# Hardware wallet test suite
+add_executable(slonana_hardware_wallet_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_hardware_wallet.cpp"
+)
+target_link_libraries(slonana_hardware_wallet_tests slonana_core)
+target_include_directories(slonana_hardware_wallet_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_hardware_wallet_tests PRIVATE STANDALONE_HARDWARE_WALLET_TESTS)
+add_test(NAME hardware_wallet_tests COMMAND slonana_hardware_wallet_tests)
+
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")
 target_link_libraries(slonana-genesis slonana_core OpenSSL::SSL OpenSSL::Crypto)

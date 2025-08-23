@@ -1,4 +1,5 @@
 #include "network/rpc_server.h"
+#include "network/websocket_server.h"
 #include "ledger/manager.h"
 #include "validator/core.h"
 #include "staking/manager.h"
@@ -286,6 +287,9 @@ public:
 SolanaRpcServer::SolanaRpcServer(const ValidatorConfig& config)
     : impl_(std::make_unique<Impl>(config)), config_(config) {
     
+    // Initialize WebSocket server
+    websocket_server_ = std::make_shared<WebSocketServer>("127.0.0.1", 8900);
+    
     // Register all Solana RPC methods
     register_account_methods();
     register_block_methods();
@@ -340,6 +344,19 @@ void SolanaRpcServer::stop() {
 
 bool SolanaRpcServer::is_running() const {
     return impl_->running_.load();
+}
+
+bool SolanaRpcServer::start_websocket_server() {
+    if (websocket_server_) {
+        return websocket_server_->start();
+    }
+    return false;
+}
+
+void SolanaRpcServer::stop_websocket_server() {
+    if (websocket_server_) {
+        websocket_server_->stop();
+    }
 }
 
 void SolanaRpcServer::set_ledger_manager(std::shared_ptr<ledger::LedgerManager> ledger) {

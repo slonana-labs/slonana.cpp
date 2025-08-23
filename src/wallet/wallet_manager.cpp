@@ -1,7 +1,9 @@
 #include "wallet/wallet_manager.h"
 #include "wallet/hardware_wallet.h"
+#include "wallet/wallet_config.h"
 #include <algorithm>
 #include <thread>
+#include <iostream>
 
 namespace slonana {
 namespace wallet {
@@ -76,10 +78,36 @@ void HardwareWalletManager::stop_discovery() {
 std::vector<DeviceInfo> HardwareWalletManager::discover_devices() {
     std::vector<DeviceInfo> discovered_devices;
     
-    // TODO: Implement actual device discovery
-    // This would enumerate USB HID devices and identify hardware wallets
+    // Discover Ledger devices
+    try {
+        auto ledger = create_hardware_wallet(DeviceType::LEDGER_NANO_X);
+        if (ledger && ledger->initialize()) {
+            auto ledger_devices = ledger->discover_devices();
+            discovered_devices.insert(discovered_devices.end(), ledger_devices.begin(), ledger_devices.end());
+            ledger->shutdown();
+        }
+    } catch (const std::exception& e) {
+        // Log error but continue with other device types
+        if (config_.enable_logging) {
+            std::cerr << "Ledger discovery error: " << e.what() << std::endl;
+        }
+    }
     
-    // For now, return empty vector as this is foundational implementation
+    // Discover Trezor devices
+    try {
+        auto trezor = create_hardware_wallet(DeviceType::TREZOR_MODEL_T);
+        if (trezor && trezor->initialize()) {
+            auto trezor_devices = trezor->discover_devices();
+            discovered_devices.insert(discovered_devices.end(), trezor_devices.begin(), trezor_devices.end());
+            trezor->shutdown();
+        }
+    } catch (const std::exception& e) {
+        // Log error but continue
+        if (config_.enable_logging) {
+            std::cerr << "Trezor discovery error: " << e.what() << std::endl;
+        }
+    }
+    
     return discovered_devices;
 }
 

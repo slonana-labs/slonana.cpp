@@ -46,6 +46,7 @@ struct ExecutionContext {
     std::unordered_map<PublicKey, ProgramAccount> accounts;
     Lamports compute_budget;
     uint64_t max_compute_units;
+    uint64_t current_epoch = 0;  // Added for SPL programs
     
     // Runtime state
     uint64_t consumed_compute_units = 0;
@@ -70,6 +71,7 @@ struct ExecutionOutcome {
     uint64_t compute_units_consumed;
     std::vector<ProgramAccount> modified_accounts;
     std::string error_details;
+    std::string logs;  // Added for program output logs
     
     bool is_success() const { return result == ExecutionResult::SUCCESS; }
 };
