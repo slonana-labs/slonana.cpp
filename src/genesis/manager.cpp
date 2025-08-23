@@ -3,7 +3,7 @@
 #include <sstream>
 #include <iostream>
 #include <chrono>
-#include <openssl/sha.h>
+#include <openssl/evp.h>
 
 namespace slonana {
 namespace genesis {
@@ -171,13 +171,30 @@ common::Result<bool> GenesisManager::validate_genesis_config(const GenesisConfig
 common::Hash GenesisManager::compute_genesis_hash(const GenesisConfig& config) {
     std::string serialized_config = serialize_to_json(config);
     
-    // Compute SHA256 hash
+    // Compute SHA256 hash using modern EVP API
     common::Hash hash(32);
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-    SHA256_Update(&ctx, serialized_config.data(), serialized_config.size());
-    SHA256_Final(hash.data(), &ctx);
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    if (!ctx) {
+        throw std::runtime_error("Failed to create EVP_MD_CTX");
+    }
     
+    if (EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) != 1) {
+        EVP_MD_CTX_free(ctx);
+        throw std::runtime_error("Failed to initialize SHA256 digest");
+    }
+    
+    if (EVP_DigestUpdate(ctx, serialized_config.data(), serialized_config.size()) != 1) {
+        EVP_MD_CTX_free(ctx);
+        throw std::runtime_error("Failed to update SHA256 digest");
+    }
+    
+    unsigned int hash_len;
+    if (EVP_DigestFinal_ex(ctx, hash.data(), &hash_len) != 1) {
+        EVP_MD_CTX_free(ctx);
+        throw std::runtime_error("Failed to finalize SHA256 digest");
+    }
+    
+    EVP_MD_CTX_free(ctx);
     return hash;
 }
 
