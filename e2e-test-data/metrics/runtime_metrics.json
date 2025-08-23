@@ -1,5 +1,5 @@
 {
-  "timestamp": 1755948498,
+  "timestamp": 1755949430,
   "validator_status": "RUNNING",
   "current_slot": 0,
   "blocks_processed": 0,
@@ -7,5 +7,5 @@
   "votes_cast": 0,
   "total_stake": 0,
   "connected_peers": 0,
-  "uptime_seconds": 10
+  "uptime_seconds": 50
 }
