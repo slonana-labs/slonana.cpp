@@ -1,0 +1,42 @@
+# Slonana C++ Validator Configuration for Testnet
+
+[network]
+testnet_rpc_url = "https://api.testnet.solana.com"
+testnet_ws_url = "wss://api.testnet.solana.com"
+gossip_port = 8001
+rpc_port = 8899
+validator_port = 8003
+
+[validator]
+identity_file = "/home/runner/work/slonana.cpp/slonana.cpp/keys/validator-identity.json"
+vote_account_file = "/home/runner/work/slonana.cpp/slonana.cpp/keys/vote-account.json"
+ledger_path = "/home/runner/work/slonana.cpp/slonana.cpp/ledger"
+log_level = "info"
+
+[consensus]
+enable_voting = true
+vote_threshold = 0.67
+max_skip_rate = 0.15
+
+[rpc]
+enable_rpc = true
+rpc_bind_address = "0.0.0.0:8899"
+enable_rpc_transaction_history = true
+rpc_max_connections = 1000
+
+[monitoring]
+enable_metrics = true
+metrics_port = 9090
+prometheus_bind_address = "0.0.0.0:9090"
+
+[performance]
+banking_threads = 4
+transaction_threads = 8
+ledger_verification_threads = 4
+enable_parallel_execution = true
+
+[security]
+enable_tls = false
+max_connections_per_ip = 100
+connection_timeout_seconds = 30
+

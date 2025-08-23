@@ -162,6 +162,16 @@ target_include_directories(slonana_enhanced_svm_tests PRIVATE "${CMAKE_SOURCE_DI
 target_compile_definitions(slonana_enhanced_svm_tests PRIVATE STANDALONE_SVM_ENHANCED_TESTS)
 add_test(NAME enhanced_svm_tests COMMAND slonana_enhanced_svm_tests)
 
+# Extended SPL program test suite
+add_executable(slonana_spl_extended_tests 
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_spl_extended.cpp"
+)
+target_link_libraries(slonana_spl_extended_tests slonana_core)
+target_include_directories(slonana_spl_extended_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_spl_extended_tests PRIVATE STANDALONE_SPL_EXTENDED_TESTS)
+add_test(NAME spl_extended_tests COMMAND slonana_spl_extended_tests)
+
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")
 target_link_libraries(slonana-genesis slonana_core OpenSSL::SSL OpenSSL::Crypto)
