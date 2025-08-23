@@ -277,7 +277,7 @@ void ProofOfHistory::hashing_thread_func() {
 }
 
 void ProofOfHistory::tick_thread_func() {
-    auto next_tick_time = std::chrono::high_resolution_clock::now();
+    auto next_tick_time = std::chrono::system_clock::now();
     
     while (running_.load() && !stopping_.load()) {
         if (config_.enable_batch_processing) {
@@ -343,7 +343,7 @@ Hash ProofOfHistory::compute_next_hash_simd(const Hash& current, const std::vect
 }
 
 void ProofOfHistory::process_tick_batch() {
-    auto tick_start = std::chrono::high_resolution_clock::now();
+    auto tick_start = std::chrono::system_clock::now();
     
     // Process multiple ticks in batch for better performance
     std::vector<Hash> mixed_data_batch;
@@ -408,7 +408,7 @@ void ProofOfHistory::process_tick_batch() {
     check_slot_completion();
     
     // Update enhanced statistics
-    auto tick_end = std::chrono::high_resolution_clock::now();
+    auto tick_end = std::chrono::system_clock::now();
     auto tick_duration = std::chrono::duration_cast<std::chrono::microseconds>(tick_end - tick_start);
     
     {
@@ -453,7 +453,7 @@ void ProofOfHistory::process_tick_batch() {
 }
 
 void ProofOfHistory::process_tick() {
-    auto tick_start = std::chrono::high_resolution_clock::now();
+    auto tick_start = std::chrono::system_clock::now();
     
     // Get pending mixed data
     std::vector<Hash> mixed_data;
@@ -505,7 +505,7 @@ void ProofOfHistory::process_tick() {
     check_slot_completion();
     
     // Update statistics
-    auto tick_end = std::chrono::high_resolution_clock::now();
+    auto tick_end = std::chrono::system_clock::now();
     auto tick_duration = std::chrono::duration_cast<std::chrono::microseconds>(tick_end - tick_start);
     
     {
