@@ -172,6 +172,16 @@ target_include_directories(slonana_spl_extended_tests PRIVATE "${CMAKE_SOURCE_DI
 target_compile_definitions(slonana_spl_extended_tests PRIVATE STANDALONE_SPL_EXTENDED_TESTS)
 add_test(NAME spl_extended_tests COMMAND slonana_spl_extended_tests)
 
+# WebSocket test suite
+add_executable(slonana_websocket_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_websocket.cpp"
+)
+target_link_libraries(slonana_websocket_tests slonana_core)
+target_include_directories(slonana_websocket_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_websocket_tests PRIVATE STANDALONE_WEBSOCKET_TESTS)
+add_test(NAME websocket_tests COMMAND slonana_websocket_tests)
+
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")
 target_link_libraries(slonana-genesis slonana_core OpenSSL::SSL OpenSSL::Crypto)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/types.h"
+#include "network/websocket_server.h"
 #include <memory>
 #include <functional>
 #include <string>
@@ -73,6 +74,11 @@ public:
     
     // Handle JSON-RPC request
     std::string handle_request(const std::string& request_json);
+    
+    // WebSocket support
+    std::shared_ptr<WebSocketServer> get_websocket_server() { return websocket_server_; }
+    bool start_websocket_server();
+    void stop_websocket_server();
 
 private:
     void register_account_methods();
@@ -143,6 +149,9 @@ private:
     
     ValidatorConfig config_;
     std::map<std::string, RpcHandler> methods_;
+    
+    // WebSocket server for real-time subscriptions
+    std::shared_ptr<WebSocketServer> websocket_server_;
     
     // Component references
     std::shared_ptr<ledger::LedgerManager> ledger_manager_;
