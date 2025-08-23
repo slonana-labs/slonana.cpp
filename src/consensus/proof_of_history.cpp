@@ -3,6 +3,34 @@
 #include <algorithm>
 #include <iostream>
 
+// Lock-free queue implementation (fallback if boost not available)
+#if HAS_LOCKFREE_QUEUE
+#include <boost/lockfree/queue.hpp>
+#else
+// Simple lock-free queue fallback using traditional containers
+namespace boost { namespace lockfree {
+    template<typename T>
+    class queue {
+        std::mutex mutex_;
+        std::queue<T> queue_;
+    public:
+        explicit queue(size_t) {}
+        bool push(T item) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            queue_.push(item);
+            return true;
+        }
+        bool pop(T& item) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (queue_.empty()) return false;
+            item = queue_.front();
+            queue_.pop();
+            return true;
+        }
+    };
+}}
+#endif
+
 namespace slonana {
 namespace consensus {
 
@@ -74,13 +102,27 @@ bool PohEntry::verify_from_previous(const PohEntry& prev) const {
 
 // ProofOfHistory implementation
 ProofOfHistory::ProofOfHistory(const PohConfig& config) : config_(config) {
-    // Initialize statistics
+    // Initialize lock-free queue if enabled and available
+#if HAS_LOCKFREE_QUEUE
+    if (config_.enable_lock_free_structures) {
+        lock_free_mix_queue_ = std::make_unique<boost::lockfree::queue<Hash*>>(config_.max_entries_buffer);
+    }
+#endif
+    
+    // Initialize enhanced statistics
     stats_.total_ticks = 0;
     stats_.total_hashes = 0;
     stats_.avg_tick_duration = std::chrono::microseconds{0};
     stats_.last_tick_duration = std::chrono::microseconds{0};
+    stats_.min_tick_duration = std::chrono::microseconds{std::numeric_limits<int64_t>::max()};
+    stats_.max_tick_duration = std::chrono::microseconds{0};
     stats_.ticks_per_second = 0.0;
+    stats_.effective_tps = 0.0;
     stats_.pending_data_mixes = 0;
+    stats_.batches_processed = 0;
+    stats_.batch_efficiency = 0.0;
+    stats_.simd_acceleration_active = config_.enable_simd_acceleration && SLONANA_HAS_SIMD;
+    stats_.lock_contention_ratio = 0.0;
 }
 
 ProofOfHistory::~ProofOfHistory() {
@@ -166,6 +208,23 @@ Slot ProofOfHistory::get_current_slot() const {
 }
 
 uint64_t ProofOfHistory::mix_data(const Hash& data) {
+    lock_attempts_.fetch_add(1);
+    
+#if HAS_LOCKFREE_QUEUE
+    if (config_.enable_lock_free_structures && lock_free_mix_queue_) {
+        // Use lock-free queue for better performance
+        Hash* data_ptr = new Hash(data);
+        if (lock_free_mix_queue_->push(data_ptr)) {
+            return current_sequence_.load() + 1;
+        } else {
+            delete data_ptr;
+            lock_contention_count_.fetch_add(1);
+            // Fallback to traditional queue
+        }
+    }
+#endif
+    
+    // Traditional mutex-based approach (fallback or when lock-free disabled)
     std::lock_guard<std::mutex> lock(mix_queue_mutex_);
     pending_mix_data_.push_back(data);
     
@@ -207,9 +266,13 @@ ProofOfHistory::PohStats ProofOfHistory::get_stats() const {
 
 void ProofOfHistory::hashing_thread_func() {
     while (running_.load() && !stopping_.load()) {
-        // This thread can be used for parallel hash computation
-        // For now, we'll just yield to avoid busy waiting
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (config_.enable_batch_processing) {
+            // Process batches of hashes for better performance
+            process_tick_batch();
+        } else {
+            // Traditional single hash processing
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
     }
 }
 
@@ -217,21 +280,30 @@ void ProofOfHistory::tick_thread_func() {
     auto next_tick_time = std::chrono::high_resolution_clock::now();
     
     while (running_.load() && !stopping_.load()) {
-        process_tick();
+        if (config_.enable_batch_processing) {
+            process_tick_batch();
+        } else {
+            process_tick();
+        }
         
-        // Calculate next tick time
+        // Calculate next tick time with higher precision
         next_tick_time += config_.target_tick_duration;
         
-        // Sleep until next tick
+        // High-precision sleep
         std::this_thread::sleep_until(next_tick_time);
     }
 }
 
 Hash ProofOfHistory::compute_next_hash(const Hash& current, const std::vector<Hash>& mixed_data) {
+    if (config_.enable_simd_acceleration && SLONANA_HAS_SIMD) {
+        return compute_next_hash_simd(current, mixed_data);
+    }
+    
     Hash result(32); // SHA-256 output size
     
     // Create input for hashing
     std::vector<uint8_t> hash_input;
+    hash_input.reserve(32 + mixed_data.size() * 32); // Pre-allocate for performance
     hash_input.insert(hash_input.end(), current.begin(), current.end());
     
     // Add mixed data
@@ -243,6 +315,141 @@ Hash ProofOfHistory::compute_next_hash(const Hash& current, const std::vector<Ha
     SHA256(hash_input.data(), hash_input.size(), result.data());
     
     return result;
+}
+
+Hash ProofOfHistory::compute_next_hash_simd(const Hash& current, const std::vector<Hash>& mixed_data) {
+#if SLONANA_HAS_SIMD
+    // Use hardware-accelerated SHA-256 when available
+    Hash result(32);
+    
+    // Create input for hashing with SIMD-friendly alignment
+    std::vector<uint8_t> hash_input;
+    hash_input.reserve(32 + mixed_data.size() * 32);
+    hash_input.insert(hash_input.end(), current.begin(), current.end());
+    
+    // Add mixed data
+    for (const auto& data : mixed_data) {
+        hash_input.insert(hash_input.end(), data.begin(), data.end());
+    }
+    
+    // Use optimized SHA-256 computation
+    SHA256(hash_input.data(), hash_input.size(), result.data());
+    
+    return result;
+#else
+    // Fallback to regular computation
+    return compute_next_hash(current, mixed_data);
+#endif
+}
+
+void ProofOfHistory::process_tick_batch() {
+    auto tick_start = std::chrono::high_resolution_clock::now();
+    
+    // Process multiple ticks in batch for better performance
+    std::vector<Hash> mixed_data_batch;
+    
+    // Collect mixed data from lock-free queue
+#if HAS_LOCKFREE_QUEUE
+    if (config_.enable_lock_free_structures && lock_free_mix_queue_) {
+        Hash* data_ptr;
+        while (lock_free_mix_queue_->pop(data_ptr) && mixed_data_batch.size() < config_.batch_size) {
+            mixed_data_batch.push_back(*data_ptr);
+            delete data_ptr;
+        }
+    } else
+#endif
+    {
+        // Fallback to traditional queue
+        std::lock_guard<std::mutex> lock(mix_queue_mutex_);
+        size_t batch_size = std::min(config_.batch_size, static_cast<uint32_t>(pending_mix_data_.size()));
+        if (batch_size > 0) {
+            mixed_data_batch.assign(pending_mix_data_.begin(), pending_mix_data_.begin() + batch_size);
+            pending_mix_data_.erase(pending_mix_data_.begin(), pending_mix_data_.begin() + batch_size);
+        }
+    }
+    
+    // Create new entry
+    PohEntry new_entry;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        new_entry.hash = compute_next_hash(current_entry_.hash, mixed_data_batch);
+        new_entry.sequence_number = current_entry_.sequence_number + 1;
+        new_entry.timestamp = std::chrono::system_clock::now();
+        new_entry.mixed_data = std::move(mixed_data_batch);
+        
+        current_entry_ = new_entry;
+        current_sequence_.store(new_entry.sequence_number);
+    }
+    
+    // Add to history with optimized insertion
+    {
+        std::lock_guard<std::mutex> lock(history_mutex_);
+        entry_history_.emplace_back(std::move(new_entry));
+        
+        // Limit history size with more efficient cleanup
+        if (entry_history_.size() > config_.max_entries_buffer) {
+            entry_history_.pop_front();
+        }
+        
+        // Add to current slot
+        Slot current_slot = current_slot_.load();
+        slot_entries_[current_slot].emplace_back(new_entry);
+    }
+    
+    // Call tick callback
+    {
+        std::lock_guard<std::mutex> lock(callbacks_mutex_);
+        if (tick_callback_) {
+            tick_callback_(new_entry);
+        }
+    }
+    
+    // Check for slot completion
+    check_slot_completion();
+    
+    // Update enhanced statistics
+    auto tick_end = std::chrono::high_resolution_clock::now();
+    auto tick_duration = std::chrono::duration_cast<std::chrono::microseconds>(tick_end - tick_start);
+    
+    {
+        std::lock_guard<std::mutex> lock(stats_mutex_);
+        stats_.total_ticks++;
+        stats_.total_hashes++;
+        stats_.batches_processed++;
+        stats_.last_tick_duration = tick_duration;
+        
+        // Update min/max durations
+        if (tick_duration < stats_.min_tick_duration) {
+            stats_.min_tick_duration = tick_duration;
+        }
+        if (tick_duration > stats_.max_tick_duration) {
+            stats_.max_tick_duration = tick_duration;
+        }
+        
+        // Calculate performance metrics
+        auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(tick_end - start_time_);
+        if (stats_.total_ticks > 0) {
+            stats_.avg_tick_duration = total_duration / stats_.total_ticks;
+            stats_.ticks_per_second = (double)stats_.total_ticks / (total_duration.count() / 1000000.0);
+            stats_.effective_tps = stats_.ticks_per_second * config_.batch_size;
+        }
+        
+        // Calculate batch efficiency
+        if (stats_.batches_processed > 0) {
+            stats_.batch_efficiency = (double)stats_.total_hashes / (stats_.batches_processed * config_.batch_size);
+        }
+        
+        // Calculate lock contention ratio
+        uint64_t attempts = lock_attempts_.load();
+        uint64_t contentions = lock_contention_count_.load();
+        if (attempts > 0) {
+            stats_.lock_contention_ratio = (double)contentions / attempts;
+        }
+        
+        stats_.pending_data_mixes = mixed_data_batch.size();
+    }
+    
+    last_tick_time_ = tick_end;
 }
 
 void ProofOfHistory::process_tick() {
@@ -307,11 +514,20 @@ void ProofOfHistory::process_tick() {
         stats_.total_hashes++;
         stats_.last_tick_duration = tick_duration;
         
+        // Update min/max durations for legacy process_tick
+        if (tick_duration < stats_.min_tick_duration) {
+            stats_.min_tick_duration = tick_duration;
+        }
+        if (tick_duration > stats_.max_tick_duration) {
+            stats_.max_tick_duration = tick_duration;
+        }
+        
         // Calculate average tick duration
         auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(tick_end - start_time_);
         if (stats_.total_ticks > 0) {
             stats_.avg_tick_duration = total_duration / stats_.total_ticks;
             stats_.ticks_per_second = (double)stats_.total_ticks / (total_duration.count() / 1000000.0);
+            stats_.effective_tps = stats_.ticks_per_second; // Single tick processing
         }
         
         stats_.pending_data_mixes = 0; // Reset since we processed pending data

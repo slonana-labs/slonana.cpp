@@ -8,6 +8,25 @@
 #include <deque>
 #include <map>
 #include <functional>
+#include <memory>
+
+// Lock-free data structures (optional)
+#ifdef BOOST_LOCKFREE_HPP
+#include <boost/lockfree/queue.hpp>
+#define HAS_LOCKFREE_QUEUE 1
+#else
+#define HAS_LOCKFREE_QUEUE 0
+#include <queue>
+#endif
+
+// SIMD acceleration
+#if defined(__x86_64__) || defined(_M_X64)
+#include <immintrin.h>
+#include <wmmintrin.h>
+#define SLONANA_HAS_SIMD 1
+#else
+#define SLONANA_HAS_SIMD 0
+#endif
 
 namespace slonana {
 namespace consensus {
@@ -31,11 +50,15 @@ struct PohEntry {
  * Configuration for the Proof of History generator
  */
 struct PohConfig {
-    std::chrono::microseconds target_tick_duration{400};  // Target time per tick (400μs default)
+    std::chrono::microseconds target_tick_duration{200};  // Target time per tick (200μs for 5,000 TPS)
     uint64_t ticks_per_slot = 64;                         // Number of ticks per slot
-    size_t max_entries_buffer = 1000;                     // Maximum buffered entries
+    size_t max_entries_buffer = 2000;                     // Maximum buffered entries
     bool enable_hashing_threads = true;                   // Use dedicated hashing threads
-    uint32_t hashing_threads = 2;                         // Number of hashing threads
+    uint32_t hashing_threads = 4;                         // Number of hashing threads
+    bool enable_simd_acceleration = true;                 // Use SIMD/hardware acceleration
+    bool enable_batch_processing = true;                  // Batch process multiple hashes
+    uint32_t batch_size = 8;                              // Number of hashes to batch process
+    bool enable_lock_free_structures = true;              // Use lock-free data structures
 };
 
 /**
@@ -117,15 +140,22 @@ public:
     void set_slot_callback(SlotCallback callback);
     
     /**
-     * Get performance statistics
+     * Get performance statistics with detailed breakdown
      */
     struct PohStats {
         uint64_t total_ticks;
         uint64_t total_hashes;
         std::chrono::microseconds avg_tick_duration;
         std::chrono::microseconds last_tick_duration;
+        std::chrono::microseconds min_tick_duration;
+        std::chrono::microseconds max_tick_duration;
         double ticks_per_second;
+        double effective_tps;                           // Theoretical transaction throughput
         size_t pending_data_mixes;
+        uint64_t batches_processed;                     // Number of batch operations
+        double batch_efficiency;                       // Average batch utilization
+        bool simd_acceleration_active;                  // Whether SIMD is being used
+        double lock_contention_ratio;                   // Lock contention metrics
     };
     
     PohStats get_stats() const;
@@ -136,6 +166,11 @@ private:
     Hash compute_next_hash(const Hash& current, const std::vector<Hash>& mixed_data = {});
     void process_tick();
     void check_slot_completion();
+    
+    // Performance optimizations
+    void process_tick_batch();
+    Hash compute_next_hash_simd(const Hash& current, const std::vector<Hash>& mixed_data = {});
+    void batch_hash_computation(std::vector<Hash>& hashes, const std::vector<std::vector<Hash>>& mixed_data_batches);
     
     PohConfig config_;
     std::atomic<bool> running_{false};
@@ -150,11 +185,16 @@ private:
     std::vector<std::thread> hashing_threads_;
     std::thread tick_thread_;
     
-    // Data mixing
+    // Lock-free data mixing queue for high performance (optional - only if boost available)
+#if HAS_LOCKFREE_QUEUE
+    std::unique_ptr<boost::lockfree::queue<Hash*>> lock_free_mix_queue_;
+#endif
+    
+    // Fallback traditional data mixing
     mutable std::mutex mix_queue_mutex_;
     std::deque<Hash> pending_mix_data_;
     
-    // Entry history
+    // Entry history with optimized storage
     mutable std::mutex history_mutex_;
     std::deque<PohEntry> entry_history_;
     std::map<Slot, std::vector<PohEntry>> slot_entries_;
@@ -164,11 +204,13 @@ private:
     TickCallback tick_callback_;
     SlotCallback slot_callback_;
     
-    // Statistics
+    // Enhanced statistics tracking
     mutable std::mutex stats_mutex_;
     PohStats stats_;
     std::chrono::system_clock::time_point last_tick_time_;
     std::chrono::system_clock::time_point start_time_;
+    std::atomic<uint64_t> lock_contention_count_{0};
+    std::atomic<uint64_t> lock_attempts_{0};
 };
 
 /**

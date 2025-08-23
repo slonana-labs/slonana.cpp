@@ -1,4 +1,150 @@
 /* New York Times Newspaper Style - Grayscale Only */
+/* ALSO INCLUDES: Modern Documentation Styles */
+
+/* Modern Documentation Styles */
+:root {
+    --primary-color: #6366f1;
+    --secondary-color: #8b5cf6;
+    --success-color: #10b981;
+    --warning-color: #f59e0b;
+    --error-color: #ef4444;
+    --bg-color: #ffffff;
+    --surface-color: #f8fafc;
+    --text-primary: #1f2937;
+    --text-secondary: #6b7280;
+    --border-color: #e5e7eb;
+    --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.dark-theme {
+    --bg-color: #111827;
+    --surface-color: #1f2937;
+    --text-primary: #f9fafb;
+    --text-secondary: #d1d5db;
+    --border-color: #374151;
+}
+
+/* Documentation Layout */
+.docs-container {
+    display: flex;
+    min-height: 100vh;
+}
+
+.sidebar {
+    width: 280px;
+    background: var(--surface-color);
+    border-right: 1px solid var(--border-color);
+    padding: 2rem 1.5rem;
+    position: fixed;
+    height: 100vh;
+    overflow-y: auto;
+    z-index: 1000;
+}
+
+.main-content {
+    margin-left: 280px;
+    flex: 1;
+    padding: 2rem;
+    max-width: calc(100vw - 280px);
+}
+
+/* Navigation Styles */
+.logo h2 {
+    color: var(--primary-color);
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.nav-menu h3 {
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 2rem 0 1rem 0;
+}
+
+.nav-list {
+    list-style: none;
+    margin-bottom: 1.5rem;
+}
+
+.nav-list a {
+    display: block;
+    color: var(--text-secondary);
+    text-decoration: none;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.375rem;
+    transition: all 0.2s ease;
+    font-size: 0.875rem;
+}
+
+.nav-list a:hover {
+    background: var(--primary-color);
+    color: white;
+}
+
+/* Content Styles */
+.content-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.hero {
+    text-align: center;
+    margin-bottom: 3rem;
+    padding: 3rem 2rem;
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    border-radius: 1rem;
+    color: white;
+}
+
+.performance-highlights {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-top: 2rem;
+}
+
+.metric-card {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    text-align: center;
+    backdrop-filter: blur(10px);
+}
+
+/* Code Blocks */
+.code-block {
+    background: #1a1a1a;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    margin: 1rem 0;
+}
+
+.code-block pre {
+    padding: 1.5rem;
+    margin: 0;
+    font-family: 'Fira Code', 'Monaco', 'Cascadia Code', monospace;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    overflow-x: auto;
+}
+
+/* Mermaid diagrams */
+.mermaid {
+    text-align: center;
+    margin: 2rem 0;
+    background: var(--surface-color);
+    padding: 2rem;
+    border-radius: 0.5rem;
+}
+
+/* Original Newspaper Styles (preserved) */
 * {
     margin: 0;
     padding: 0;
