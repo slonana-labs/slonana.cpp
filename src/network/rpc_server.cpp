@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <cstring>
+#include <poll.h>
 
 namespace slonana {
 namespace network {
@@ -190,24 +191,22 @@ public:
         
         std::cout << "HTTP RPC server listening on port " << port << std::endl;
         
-        // Accept connections
+        // Accept connections - Use poll instead of select to avoid FD_SETSIZE limitation
         while (running_.load()) {
-            fd_set read_fds;
-            FD_ZERO(&read_fds);
-            FD_SET(server_socket_, &read_fds);
+            // Use poll() instead of select() to avoid FD_SETSIZE limitations
+            struct pollfd poll_fd;
+            poll_fd.fd = server_socket_;
+            poll_fd.events = POLLIN;
+            poll_fd.revents = 0;
             
-            struct timeval timeout;
-            timeout.tv_sec = 1;  // 1 second timeout
-            timeout.tv_usec = 0;
+            int poll_result = poll(&poll_fd, 1, 1000); // 1 second timeout
             
-            int activity = select(server_socket_ + 1, &read_fds, NULL, NULL, &timeout);
-            
-            if (activity < 0 && errno != EINTR) {
-                std::cerr << "Select error: " << strerror(errno) << std::endl;
+            if (poll_result < 0 && errno != EINTR) {
+                std::cerr << "Poll error: " << strerror(errno) << std::endl;
                 break;
             }
             
-            if (activity > 0 && FD_ISSET(server_socket_, &read_fds)) {
+            if (poll_result > 0 && (poll_fd.revents & POLLIN)) {
                 struct sockaddr_in client_addr;
                 socklen_t client_len = sizeof(client_addr);
                 int client_socket = accept(server_socket_, (struct sockaddr*)&client_addr, &client_len);
