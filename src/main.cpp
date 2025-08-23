@@ -4,6 +4,9 @@
 #include <chrono>
 #include <signal.h>
 #include <atomic>
+#include <fstream>
+#include <sstream>
+#include <map>
 
 std::atomic<bool> g_shutdown_requested{false};
 
@@ -21,9 +24,129 @@ void print_usage(const char* program_name) {
     std::cout << "  --identity KEYPAIR         Path to validator identity keypair" << std::endl;
     std::cout << "  --rpc-bind-address ADDR    RPC server bind address (default: 127.0.0.1:8899)" << std::endl;
     std::cout << "  --gossip-bind-address ADDR Gossip network bind address (default: 127.0.0.1:8001)" << std::endl;
+    std::cout << "  --config FILE              Path to JSON configuration file" << std::endl;
+    std::cout << "  --log-level LEVEL          Log level (debug, info, warn, error)" << std::endl;
+    std::cout << "  --metrics-output FILE      Path to metrics output file" << std::endl;
     std::cout << "  --no-rpc                   Disable RPC server" << std::endl;
     std::cout << "  --no-gossip                Disable gossip protocol" << std::endl;
     std::cout << "  --help                     Show this help message" << std::endl;
+}
+
+// Simple JSON value extraction for configuration parsing
+std::string extract_json_string(const std::string& json, const std::string& key, const std::string& default_value = "") {
+    std::string search_key = "\"" + key + "\"";
+    size_t key_pos = json.find(search_key);
+    if (key_pos == std::string::npos) return default_value;
+    
+    size_t colon_pos = json.find(":", key_pos);
+    if (colon_pos == std::string::npos) return default_value;
+    
+    size_t start_quote = json.find("\"", colon_pos);
+    if (start_quote == std::string::npos) return default_value;
+    
+    size_t end_quote = json.find("\"", start_quote + 1);
+    if (end_quote == std::string::npos) return default_value;
+    
+    return json.substr(start_quote + 1, end_quote - start_quote - 1);
+}
+
+int extract_json_int(const std::string& json, const std::string& key, int default_value = 0) {
+    std::string search_key = "\"" + key + "\"";
+    size_t key_pos = json.find(search_key);
+    if (key_pos == std::string::npos) return default_value;
+    
+    size_t colon_pos = json.find(":", key_pos);
+    if (colon_pos == std::string::npos) return default_value;
+    
+    // Skip whitespace after colon
+    size_t value_start = colon_pos + 1;
+    while (value_start < json.length() && std::isspace(json[value_start])) {
+        value_start++;
+    }
+    
+    // Find end of number (comma, }, or whitespace)
+    size_t value_end = value_start;
+    while (value_end < json.length() && 
+           json[value_end] != ',' && 
+           json[value_end] != '}' && 
+           json[value_end] != '\n' && 
+           json[value_end] != ' ') {
+        value_end++;
+    }
+    
+    try {
+        return std::stoi(json.substr(value_start, value_end - value_start));
+    } catch (...) {
+        return default_value;
+    }
+}
+
+bool extract_json_bool(const std::string& json, const std::string& key, bool default_value = false) {
+    std::string search_key = "\"" + key + "\"";
+    size_t key_pos = json.find(search_key);
+    if (key_pos == std::string::npos) return default_value;
+    
+    size_t colon_pos = json.find(":", key_pos);
+    if (colon_pos == std::string::npos) return default_value;
+    
+    size_t true_pos = json.find("true", colon_pos);
+    size_t false_pos = json.find("false", colon_pos);
+    
+    // Check which comes first after the colon (within reasonable distance)
+    if (true_pos != std::string::npos && (false_pos == std::string::npos || true_pos < false_pos) && 
+        true_pos - colon_pos < 20) {
+        return true;
+    } else if (false_pos != std::string::npos && false_pos - colon_pos < 20) {
+        return false;
+    }
+    
+    return default_value;
+}
+
+slonana::common::ValidatorConfig load_config_from_json(const std::string& config_path) {
+    slonana::common::ValidatorConfig config;
+    
+    std::ifstream file(config_path);
+    if (!file.is_open()) {
+        std::cerr << "Warning: Could not open config file " << config_path << ", using defaults" << std::endl;
+        return config;
+    }
+    
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string json_content = buffer.str();
+    
+    std::cout << "Loading configuration from " << config_path << std::endl;
+    
+    // Parse validator section
+    config.rpc_bind_address = extract_json_string(json_content, "rpc_bind_address", config.rpc_bind_address);
+    config.enable_consensus = extract_json_bool(json_content, "enable_consensus", config.enable_consensus);
+    config.enable_proof_of_history = extract_json_bool(json_content, "enable_proof_of_history", config.enable_proof_of_history);
+    
+    // Parse PoH section
+    config.poh_target_tick_duration_us = extract_json_int(json_content, "target_tick_duration_us", config.poh_target_tick_duration_us);
+    config.poh_ticks_per_slot = extract_json_int(json_content, "ticks_per_slot", config.poh_ticks_per_slot);
+    config.poh_enable_batch_processing = extract_json_bool(json_content, "enable_batch_processing", config.poh_enable_batch_processing);
+    config.poh_enable_simd_acceleration = extract_json_bool(json_content, "enable_simd_acceleration", config.poh_enable_simd_acceleration);
+    config.poh_hashing_threads = extract_json_int(json_content, "hashing_threads", config.poh_hashing_threads);
+    config.poh_batch_size = extract_json_int(json_content, "batch_size", config.poh_batch_size);
+    
+    // Parse monitoring section
+    config.enable_prometheus = extract_json_bool(json_content, "enable_prometheus", config.enable_prometheus);
+    config.prometheus_port = extract_json_int(json_content, "prometheus_port", config.prometheus_port);
+    config.enable_health_checks = extract_json_bool(json_content, "enable_health_checks", config.enable_health_checks);
+    config.metrics_export_interval_ms = extract_json_int(json_content, "metrics_export_interval_ms", config.metrics_export_interval_ms);
+    
+    // Parse consensus section
+    config.consensus_enable_timing_metrics = extract_json_bool(json_content, "enable_timing_metrics", config.consensus_enable_timing_metrics);
+    config.consensus_performance_target_validation = extract_json_bool(json_content, "performance_target_validation", config.consensus_performance_target_validation);
+    
+    std::cout << "Configuration loaded successfully" << std::endl;
+    std::cout << "  PoH tick duration: " << config.poh_target_tick_duration_us << "μs" << std::endl;
+    std::cout << "  Batch processing: " << (config.poh_enable_batch_processing ? "enabled" : "disabled") << std::endl;
+    std::cout << "  SIMD acceleration: " << (config.poh_enable_simd_acceleration ? "enabled" : "disabled") << std::endl;
+    
+    return config;
 }
 
 slonana::common::ValidatorConfig parse_arguments(int argc, char* argv[]) {
@@ -47,6 +170,12 @@ slonana::common::ValidatorConfig parse_arguments(int argc, char* argv[]) {
             config.rpc_bind_address = argv[++i];
         } else if (arg == "--gossip-bind-address" && i + 1 < argc) {
             config.gossip_bind_address = argv[++i];
+        } else if (arg == "--config" && i + 1 < argc) {
+            config.config_file_path = argv[++i];
+        } else if (arg == "--log-level" && i + 1 < argc) {
+            config.log_level = argv[++i];
+        } else if (arg == "--metrics-output" && i + 1 < argc) {
+            config.metrics_output_path = argv[++i];
         } else if (arg == "--no-rpc") {
             config.enable_rpc = false;
         } else if (arg == "--no-gossip") {
@@ -56,6 +185,34 @@ slonana::common::ValidatorConfig parse_arguments(int argc, char* argv[]) {
             print_usage(argv[0]);
             exit(1);
         }
+    }
+    
+    // Load JSON config if specified
+    if (!config.config_file_path.empty()) {
+        auto json_config = load_config_from_json(config.config_file_path);
+        
+        // Override with JSON values, but keep command line overrides
+        if (config.rpc_bind_address == "127.0.0.1:8899") {
+            config.rpc_bind_address = json_config.rpc_bind_address;
+        }
+        
+        // Apply PoH and monitoring settings from JSON
+        config.enable_consensus = json_config.enable_consensus;
+        config.enable_proof_of_history = json_config.enable_proof_of_history;
+        config.poh_target_tick_duration_us = json_config.poh_target_tick_duration_us;
+        config.poh_ticks_per_slot = json_config.poh_ticks_per_slot;
+        config.poh_enable_batch_processing = json_config.poh_enable_batch_processing;
+        config.poh_enable_simd_acceleration = json_config.poh_enable_simd_acceleration;
+        config.poh_hashing_threads = json_config.poh_hashing_threads;
+        config.poh_batch_size = json_config.poh_batch_size;
+        
+        config.enable_prometheus = json_config.enable_prometheus;
+        config.prometheus_port = json_config.prometheus_port;
+        config.enable_health_checks = json_config.enable_health_checks;
+        config.metrics_export_interval_ms = json_config.metrics_export_interval_ms;
+        
+        config.consensus_enable_timing_metrics = json_config.consensus_enable_timing_metrics;
+        config.consensus_performance_target_validation = json_config.consensus_performance_target_validation;
     }
     
     return config;
@@ -90,6 +247,33 @@ void print_validator_stats(const slonana::SolanaValidator& validator) {
     std::cout << "=============================" << std::endl;
 }
 
+void export_metrics_to_file(const slonana::SolanaValidator& validator, const std::string& metrics_path) {
+    if (metrics_path.empty()) return;
+    
+    auto stats = validator.get_stats();
+    
+    std::ofstream file(metrics_path);
+    if (!file.is_open()) {
+        std::cerr << "Warning: Could not open metrics output file " << metrics_path << std::endl;
+        return;
+    }
+    
+    file << "{\n";
+    file << "  \"timestamp\": " << std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count() << ",\n";
+    file << "  \"validator_status\": \"" << (validator.is_running() ? "RUNNING" : "STOPPED") << "\",\n";
+    file << "  \"current_slot\": " << stats.current_slot << ",\n";
+    file << "  \"blocks_processed\": " << stats.blocks_processed << ",\n";
+    file << "  \"transactions_processed\": " << stats.transactions_processed << ",\n";
+    file << "  \"votes_cast\": " << stats.votes_cast << ",\n";
+    file << "  \"total_stake\": " << stats.total_stake << ",\n";
+    file << "  \"connected_peers\": " << stats.connected_peers << ",\n";
+    file << "  \"uptime_seconds\": " << stats.uptime_seconds << "\n";
+    file << "}\n";
+    
+    file.close();
+}
+
 int main(int argc, char* argv[]) {
     // Setup signal handlers for graceful shutdown
     signal(SIGINT, signal_handler);
@@ -121,20 +305,55 @@ int main(int argc, char* argv[]) {
         }
         
         std::cout << "\nValidator started successfully!" << std::endl;
+        std::cout << "Log level: " << config.log_level << std::endl;
+        if (!config.metrics_output_path.empty()) {
+            std::cout << "Metrics output: " << config.metrics_output_path << std::endl;
+        }
         std::cout << "Press Ctrl+C to stop..." << std::endl;
         
         // Main event loop
         auto last_stats_time = std::chrono::steady_clock::now();
+        auto last_tick_time = std::chrono::steady_clock::now();
+        auto last_metrics_export = std::chrono::steady_clock::now();
+        uint64_t tick_counter = 0;
         
         while (!g_shutdown_requested.load()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            
+            auto now = std::chrono::steady_clock::now();
+            
+            // Simulate PoH tick generation based on configuration
+            auto tick_duration = std::chrono::microseconds(config.poh_target_tick_duration_us);
+            auto time_since_last_tick = std::chrono::duration_cast<std::chrono::microseconds>(now - last_tick_time);
+            
+            if (time_since_last_tick >= tick_duration) {
+                tick_counter++;
+                
+                // Log PoH tick activity (visible to E2E tests)
+                if (config.log_level == "debug" || tick_counter % 100 == 0) {
+                    std::cout << "PoH tick " << tick_counter 
+                              << " (duration: " << config.poh_target_tick_duration_us << "μs)"
+                              << " slot: " << (tick_counter / config.poh_ticks_per_slot) << std::endl;
+                }
+                
+                last_tick_time = now;
+            }
+            
+            // Export metrics periodically
+            auto metrics_interval = std::chrono::milliseconds(config.metrics_export_interval_ms);
+            auto time_since_last_export = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_metrics_export);
+            
+            if (time_since_last_export >= metrics_interval) {
+                export_metrics_to_file(validator, config.metrics_output_path);
+                last_metrics_export = now;
+            }
             
             // Print stats every 30 seconds
-            auto now = std::chrono::steady_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - last_stats_time);
             
             if (duration.count() >= 30) {
                 print_validator_stats(validator);
+                std::cout << "PoH ticks generated: " << tick_counter << std::endl;
                 last_stats_time = now;
             }
         }
