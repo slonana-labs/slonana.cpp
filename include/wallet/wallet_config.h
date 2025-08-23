@@ -4,7 +4,6 @@
 #include <vector>
 #include <optional>
 #include <chrono>
-#include <nlohmann/json.hpp>
 
 namespace slonana {
 namespace wallet {
@@ -67,35 +66,6 @@ struct HardwareWalletConfig {
  */
 class WalletConfigManager {
 public:
-    /**
-     * @brief Load configuration from JSON file
-     * @param config_path path to configuration file
-     * @return loaded configuration, or nullopt if failed
-     */
-    static std::optional<HardwareWalletConfig> load_from_file(const std::string& config_path);
-
-    /**
-     * @brief Save configuration to JSON file
-     * @param config configuration to save
-     * @param config_path path to configuration file
-     * @return true if save successful
-     */
-    static bool save_to_file(const HardwareWalletConfig& config, const std::string& config_path);
-
-    /**
-     * @brief Load configuration from JSON object
-     * @param json JSON object containing configuration
-     * @return loaded configuration, or nullopt if failed
-     */
-    static std::optional<HardwareWalletConfig> load_from_json(const nlohmann::json& json);
-
-    /**
-     * @brief Convert configuration to JSON object
-     * @param config configuration to convert
-     * @return JSON representation
-     */
-    static nlohmann::json to_json(const HardwareWalletConfig& config);
-
     /**
      * @brief Create default configuration
      * @return default hardware wallet configuration
@@ -221,26 +191,3 @@ public:
 
 } // namespace wallet
 } // namespace slonana
-
-// JSON serialization support
-namespace nlohmann {
-
-template<>
-struct adl_serializer<slonana::wallet::SecurityConfig> {
-    static void to_json(json& j, const slonana::wallet::SecurityConfig& config);
-    static void from_json(const json& j, slonana::wallet::SecurityConfig& config);
-};
-
-template<>
-struct adl_serializer<slonana::wallet::DeviceConfig> {
-    static void to_json(json& j, const slonana::wallet::DeviceConfig& config);
-    static void from_json(const json& j, slonana::wallet::DeviceConfig& config);
-};
-
-template<>
-struct adl_serializer<slonana::wallet::HardwareWalletConfig> {
-    static void to_json(json& j, const slonana::wallet::HardwareWalletConfig& config);
-    static void from_json(const json& j, slonana::wallet::HardwareWalletConfig& config);
-};
-
-} // namespace nlohmann

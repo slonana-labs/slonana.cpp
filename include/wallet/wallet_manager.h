@@ -27,6 +27,7 @@ public:
         std::chrono::milliseconds connection_timeout{10000};
         uint32_t max_retry_attempts = 3;
         bool auto_reconnect = true;
+        bool enable_logging = true;
     };
 
     /**

@@ -202,6 +202,16 @@ target_include_directories(slonana_snapshot_tests PRIVATE "${CMAKE_SOURCE_DIR}/t
 target_compile_definitions(slonana_snapshot_tests PRIVATE STANDALONE_SNAPSHOT_TESTS)
 add_test(NAME snapshot_tests COMMAND slonana_snapshot_tests)
 
+# Hardware wallet test suite
+add_executable(slonana_hardware_wallet_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_hardware_wallet.cpp"
+)
+target_link_libraries(slonana_hardware_wallet_tests slonana_core)
+target_include_directories(slonana_hardware_wallet_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_hardware_wallet_tests PRIVATE STANDALONE_HARDWARE_WALLET_TESTS)
+add_test(NAME hardware_wallet_tests COMMAND slonana_hardware_wallet_tests)
+
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")
 target_link_libraries(slonana-genesis slonana_core OpenSSL::SSL OpenSSL::Crypto)
