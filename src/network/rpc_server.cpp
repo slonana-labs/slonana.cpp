@@ -9,6 +9,13 @@
 #include <regex>
 #include <thread>
 #include <atomic>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <cstring>
 
 namespace slonana {
 namespace network {
@@ -130,11 +137,146 @@ std::string RpcResponse::to_json() const {
 
 class SolanaRpcServer::Impl {
 public:
-    explicit Impl(const ValidatorConfig& config) : config_(config), running_(false) {}
+    explicit Impl(const ValidatorConfig& config) : config_(config), running_(false), server_socket_(-1) {}
     
     ValidatorConfig config_;
     std::atomic<bool> running_;
     std::thread server_thread_;
+    int server_socket_;
+    
+    void run_http_server(SolanaRpcServer* rpc_server) {
+        server_socket_ = socket(AF_INET, SOCK_STREAM, 0);
+        if (server_socket_ < 0) {
+            std::cerr << "Failed to create socket: " << strerror(errno) << std::endl;
+            return;
+        }
+        
+        // Allow socket reuse
+        int opt = 1;
+        if (setsockopt(server_socket_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+            std::cerr << "Failed to set socket options: " << strerror(errno) << std::endl;
+            close(server_socket_);
+            return;
+        }
+        
+        struct sockaddr_in address;
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = INADDR_ANY;
+        
+        // Parse port from rpc_bind_address (format: "127.0.0.1:8899")
+        std::string bind_addr = config_.rpc_bind_address;
+        size_t colon_pos = bind_addr.find(':');
+        int port = 8899; // default
+        if (colon_pos != std::string::npos) {
+            try {
+                port = std::stoi(bind_addr.substr(colon_pos + 1));
+            } catch (...) {
+                port = 8899;
+            }
+        }
+        address.sin_port = htons(port);
+        
+        if (bind(server_socket_, (struct sockaddr*)&address, sizeof(address)) < 0) {
+            std::cerr << "Failed to bind to port " << port << ": " << strerror(errno) << std::endl;
+            close(server_socket_);
+            return;
+        }
+        
+        if (listen(server_socket_, 10) < 0) {
+            std::cerr << "Failed to listen on socket: " << strerror(errno) << std::endl;
+            close(server_socket_);
+            return;
+        }
+        
+        std::cout << "HTTP RPC server listening on port " << port << std::endl;
+        
+        // Accept connections
+        while (running_.load()) {
+            fd_set read_fds;
+            FD_ZERO(&read_fds);
+            FD_SET(server_socket_, &read_fds);
+            
+            struct timeval timeout;
+            timeout.tv_sec = 1;  // 1 second timeout
+            timeout.tv_usec = 0;
+            
+            int activity = select(server_socket_ + 1, &read_fds, NULL, NULL, &timeout);
+            
+            if (activity < 0 && errno != EINTR) {
+                std::cerr << "Select error: " << strerror(errno) << std::endl;
+                break;
+            }
+            
+            if (activity > 0 && FD_ISSET(server_socket_, &read_fds)) {
+                struct sockaddr_in client_addr;
+                socklen_t client_len = sizeof(client_addr);
+                int client_socket = accept(server_socket_, (struct sockaddr*)&client_addr, &client_len);
+                
+                if (client_socket >= 0) {
+                    // Handle request in separate thread for concurrent connections
+                    std::thread([this, rpc_server, client_socket]() {
+                        handle_client_request(rpc_server, client_socket);
+                    }).detach();
+                }
+            }
+        }
+        
+        close(server_socket_);
+        server_socket_ = -1;
+    }
+    
+    void handle_client_request(SolanaRpcServer* rpc_server, int client_socket) {
+        const size_t buffer_size = 4096;
+        char buffer[buffer_size];
+        
+        // Read HTTP request
+        ssize_t bytes_received = recv(client_socket, buffer, buffer_size - 1, 0);
+        if (bytes_received <= 0) {
+            close(client_socket);
+            return;
+        }
+        
+        buffer[bytes_received] = '\0';
+        std::string request(buffer);
+        
+        // Parse HTTP request to extract JSON body
+        std::string json_body = extract_json_body_from_http(request);
+        
+        // Handle JSON-RPC request
+        std::string json_response = rpc_server->handle_request(json_body);
+        
+        // Create HTTP response
+        std::ostringstream response_stream;
+        response_stream << "HTTP/1.1 200 OK\r\n";
+        response_stream << "Content-Type: application/json\r\n";
+        response_stream << "Content-Length: " << json_response.length() << "\r\n";
+        response_stream << "Access-Control-Allow-Origin: *\r\n";
+        response_stream << "Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n";
+        response_stream << "Access-Control-Allow-Headers: Content-Type\r\n";
+        response_stream << "\r\n";
+        response_stream << json_response;
+        
+        std::string http_response = response_stream.str();
+        
+        // Send response
+        send(client_socket, http_response.c_str(), http_response.length(), 0);
+        
+        close(client_socket);
+    }
+    
+    std::string extract_json_body_from_http(const std::string& http_request) {
+        // Find the end of headers (double CRLF)
+        size_t header_end = http_request.find("\r\n\r\n");
+        if (header_end == std::string::npos) {
+            return "";
+        }
+        
+        // Extract body after headers
+        std::string body = http_request.substr(header_end + 4);
+        
+        // For JSON-RPC, the body should be JSON
+        return body;
+    }
 };
 
 SolanaRpcServer::SolanaRpcServer(const ValidatorConfig& config)
@@ -164,13 +306,13 @@ Result<bool> SolanaRpcServer::start() {
     
     impl_->running_.store(true);
     
-    // In a real implementation, this would start an HTTP server
-    // For now, we'll simulate the server running
+    // Start real HTTP server
     impl_->server_thread_ = std::thread([this]() {
-        while (impl_->running_.load()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
+        impl_->run_http_server(this);
     });
+    
+    // Give the server a moment to start
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     
     return Result<bool>(true);
 }
@@ -179,6 +321,12 @@ void SolanaRpcServer::stop() {
     if (impl_->running_.load()) {
         std::cout << "Stopping Solana RPC server" << std::endl;
         impl_->running_.store(false);
+        
+        // Close server socket to break accept() loop
+        if (impl_->server_socket_ >= 0) {
+            close(impl_->server_socket_);
+            impl_->server_socket_ = -1;
+        }
         
         if (impl_->server_thread_.joinable()) {
             impl_->server_thread_.join();
