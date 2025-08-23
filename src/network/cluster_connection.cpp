@@ -58,13 +58,25 @@ bool ClusterConnection::start() {
 void ClusterConnection::stop() {
     if (!running_.exchange(false)) return;
     
-    // Disconnect from all nodes
+    // Disconnect from all nodes (avoid deadlock by not calling disconnect_from_node while holding lock)
+    std::vector<std::string> node_ids_to_disconnect;
     {
         std::lock_guard<std::mutex> lock(nodes_mutex_);
         for (const auto& pair : connected_nodes_) {
-            disconnect_from_node(pair.first);
+            node_ids_to_disconnect.push_back(pair.first);
         }
         connected_nodes_.clear();
+        
+        // Update stats
+        std::lock_guard<std::mutex> stats_lock(stats_mutex_);
+        stats_.connected_nodes = 0;
+    }
+    
+    // Notify callbacks for disconnected nodes
+    if (node_disconnected_callback_) {
+        for (const auto& node_id : node_ids_to_disconnect) {
+            node_disconnected_callback_(node_id);
+        }
     }
     
     // Wait for threads to finish
@@ -201,8 +213,10 @@ void ClusterConnection::discover_peers() {
             broadcast_message(discovery_msg);
         }
         
-        // Sleep for discovery interval
-        std::this_thread::sleep_for(std::chrono::seconds(30));
+        // Sleep in shorter intervals to allow quick exit when stopping
+        for (int i = 0; i < 300 && running_.load(); ++i) {  // 300 * 100ms = 30 seconds
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
     }
 }
 
@@ -231,7 +245,10 @@ void ClusterConnection::heartbeat_loop() {
             stats_.uptime_seconds++;
         }
         
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        // Sleep in shorter intervals to allow quick exit when stopping
+        for (int i = 0; i < 10 && running_.load(); ++i) {  // 10 * 100ms = 1 second
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
     }
 }
 

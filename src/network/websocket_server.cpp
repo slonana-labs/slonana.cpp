@@ -169,8 +169,9 @@ bool WebSocketServer::start() {
 void WebSocketServer::stop() {
     if (!running.exchange(false)) return;
     
-    // Close server socket
+    // Shutdown and close server socket to interrupt accept() calls
     if (server_socket >= 0) {
+        ::shutdown(server_socket, SHUT_RDWR);
         ::close(server_socket);
         server_socket = -1;
     }
@@ -178,7 +179,7 @@ void WebSocketServer::stop() {
     // Wake up notification thread
     queue_cv.notify_all();
     
-    // Wait for threads to finish
+    // Wait for threads to finish with timeout
     if (server_thread.joinable()) {
         server_thread.join();
     }
@@ -205,6 +206,10 @@ void WebSocketServer::server_loop() {
         if (client_socket < 0) {
             if (running.load()) {
                 std::cerr << "WebSocket accept failed: " << strerror(errno) << std::endl;
+            }
+            // If not running anymore or socket is closed, exit loop
+            if (!running.load() || errno == EBADF || errno == ENOTSOCK) {
+                break;
             }
             continue;
         }
