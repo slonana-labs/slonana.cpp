@@ -159,6 +159,13 @@ SPLAssociatedTokenProgram::parse_create_instruction(
     }
     
     CreateATAParams params;
+    
+    // Initialize all PublicKey members to proper size
+    params.funding_account.resize(32);
+    params.wallet_address.resize(32);
+    params.token_mint.resize(32);
+    params.token_program.resize(32);
+    
     size_t offset = 1; // Skip instruction byte
     
     // Parse funding account
@@ -382,6 +389,11 @@ ExtendedSystemProgram::deserialize_nonce_account(
     }
     
     NonceAccount account;
+    
+    // Initialize PublicKey members to proper size
+    account.authority.resize(32);
+    account.nonce.resize(32);
+    
     size_t offset = 0;
     
     // Parse authority

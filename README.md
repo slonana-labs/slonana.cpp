@@ -15,7 +15,6 @@ Slonana.cpp is a native C++ validator that delivers exceptional performance whil
 - **🌐 Complete Solana RPC API** - 35+ JSON-RPC 2.0 methods
 - **🔒 Production Ready** - Comprehensive security and monitoring
 - **🐳 Docker Native** - Multi-architecture container support
-- **📦 Package Manager Ready** - Available via Homebrew, APT, RPM, Chocolatey
 - **🔧 Cross-Platform** - Linux, macOS, and Windows support
 
 ## 📚 Documentation
@@ -37,19 +36,15 @@ Slonana.cpp is a native C++ validator that delivers exceptional performance whil
 
 Choose your preferred method:
 
-**Package Managers:**
+**From Source:**
 ```bash
-# macOS
-brew install slonana-validator
-
-# Ubuntu/Debian
-sudo apt install slonana-validator
-
-# CentOS/RHEL/Fedora  
-sudo dnf install slonana-validator
-
-# Windows
-choco install slonana-validator
+# Clone and build
+git clone https://github.com/slonana-labs/slonana.cpp.git
+cd slonana.cpp
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)
+sudo make install
 ```
 
 **Docker:**
@@ -243,7 +238,7 @@ See **[Deployment Guide](docs/DEPLOYMENT.md)** for comprehensive deployment scen
 - [ ] Advanced monitoring and alerting
 - [ ] High-availability clustering
 - [ ] Security audits and penetration testing
-- [ ] Package manager distribution (Homebrew, APT, RPM)
+- [ ] Package manager distribution (Homebrew, APT, RPM) - *Coming Soon*
 
 📋 **[View Comprehensive Phase 2 Plan](PHASE2_PLAN.md)** - Detailed implementation roadmap with timelines, resources, and success criteria.
 
