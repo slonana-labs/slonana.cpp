@@ -29,6 +29,7 @@ Slonana.cpp is a native C++ validator that delivers exceptional performance whil
 | **[Deployment Guide](docs/DEPLOYMENT.md)** | Production deployment and configuration |
 | **[Testing Guide](TESTING.md)** | Testing framework and procedures |
 | **[Benchmarking Guide](BENCHMARKING.md)** | Performance analysis and comparisons |
+| **[Phase 2 Plan](PHASE2_PLAN.md)** | Comprehensive roadmap for production readiness |
 
 ## 🚀 Quick Start
 
@@ -243,6 +244,8 @@ See **[Deployment Guide](docs/DEPLOYMENT.md)** for comprehensive deployment scen
 - [ ] High-availability clustering
 - [ ] Security audits and penetration testing
 - [ ] Package manager distribution (Homebrew, APT, RPM)
+
+📋 **[View Comprehensive Phase 2 Plan](PHASE2_PLAN.md)** - Detailed implementation roadmap with timelines, resources, and success criteria.
 
 ### Phase 3: Proof-of-Work Integration (🔄 Planned)
 - [ ] **Hybrid Consensus Algorithm** - Combine PoS with PoW

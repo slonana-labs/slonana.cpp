@@ -8,6 +8,10 @@ void run_consensus_tests(TestRunner& runner);
 void run_rpc_comprehensive_tests(TestRunner& runner);
 void run_integration_tests(TestRunner& runner);
 
+// Phase 2 test modules
+void run_wallet_tests();
+void run_monitoring_tests();
+
 int main() {
     std::cout << "=== Slonana C++ Validator Comprehensive Test Suite ===" << std::endl;
     std::cout << "Running extensive tests across all components and integrations..." << std::endl;
@@ -24,6 +28,13 @@ int main() {
     run_rpc_comprehensive_tests(runner);
     run_integration_tests(runner);
     
+    // Phase 2 test suites (using separate runners for now)
+    std::cout << "\n=== Phase 2 Hardware Wallet Tests ===" << std::endl;
+    run_wallet_tests();
+    
+    std::cout << "\n=== Phase 2 Monitoring Tests ===" << std::endl;
+    run_monitoring_tests();
+    
     auto end_time = std::chrono::high_resolution_clock::now();
     auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
     
@@ -39,7 +50,9 @@ int main() {
     std::cout << "- Consensus (Staking + SVM): 15 tests" << std::endl;
     std::cout << "- Comprehensive RPC API: 11 tests (covering 35+ methods)" << std::endl;
     std::cout << "- Integration & Performance: 8 tests" << std::endl;
-    std::cout << "Total: " << runner.get_tests_run() << " tests executed" << std::endl;
+    std::cout << "- Phase 2 Hardware Wallet: 9 tests" << std::endl;
+    std::cout << "- Phase 2 Monitoring: 10 tests" << std::endl;
+    std::cout << "Total: " << runner.get_tests_run() << " core tests + Phase 2 tests executed" << std::endl;
     
     if (runner.all_passed()) {
         std::cout << "\n🎉 ALL TESTS PASSED! The Solana validator implementation is comprehensive and robust." << std::endl;

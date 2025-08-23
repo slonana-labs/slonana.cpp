@@ -9,6 +9,14 @@
 #include <regex>
 #include <thread>
 #include <atomic>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <cstring>
+#include <poll.h>
 
 namespace slonana {
 namespace network {
@@ -124,17 +132,155 @@ std::string RpcResponse::to_json() const {
     } else {
         oss << "\"result\":" << result << ",";
     }
-    oss << "\"id\":\"" << id << "\"}";
+    // Preserve ID type - don't quote if it's a number
+    if (id_is_number) {
+        oss << "\"id\":" << id << "}";
+    } else {
+        oss << "\"id\":\"" << id << "\"}";
+    }
     return oss.str();
 }
 
 class SolanaRpcServer::Impl {
 public:
-    explicit Impl(const ValidatorConfig& config) : config_(config), running_(false) {}
+    explicit Impl(const ValidatorConfig& config) : config_(config), running_(false), server_socket_(-1) {}
     
     ValidatorConfig config_;
     std::atomic<bool> running_;
     std::thread server_thread_;
+    int server_socket_;
+    
+    void run_http_server(SolanaRpcServer* rpc_server) {
+        server_socket_ = socket(AF_INET, SOCK_STREAM, 0);
+        if (server_socket_ < 0) {
+            std::cerr << "Failed to create socket: " << strerror(errno) << std::endl;
+            return;
+        }
+        
+        // Allow socket reuse
+        int opt = 1;
+        if (setsockopt(server_socket_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+            std::cerr << "Failed to set socket options: " << strerror(errno) << std::endl;
+            close(server_socket_);
+            return;
+        }
+        
+        struct sockaddr_in address;
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = INADDR_ANY;
+        
+        // Parse port from rpc_bind_address (format: "127.0.0.1:8899")
+        std::string bind_addr = config_.rpc_bind_address;
+        size_t colon_pos = bind_addr.find(':');
+        int port = 8899; // default
+        if (colon_pos != std::string::npos) {
+            try {
+                port = std::stoi(bind_addr.substr(colon_pos + 1));
+            } catch (...) {
+                port = 8899;
+            }
+        }
+        address.sin_port = htons(port);
+        
+        if (bind(server_socket_, (struct sockaddr*)&address, sizeof(address)) < 0) {
+            std::cerr << "Failed to bind to port " << port << ": " << strerror(errno) << std::endl;
+            close(server_socket_);
+            return;
+        }
+        
+        if (listen(server_socket_, 10) < 0) {
+            std::cerr << "Failed to listen on socket: " << strerror(errno) << std::endl;
+            close(server_socket_);
+            return;
+        }
+        
+        std::cout << "HTTP RPC server listening on port " << port << std::endl;
+        
+        // Accept connections - Use poll instead of select to avoid FD_SETSIZE limitation
+        while (running_.load()) {
+            // Use poll() instead of select() to avoid FD_SETSIZE limitations
+            struct pollfd poll_fd;
+            poll_fd.fd = server_socket_;
+            poll_fd.events = POLLIN;
+            poll_fd.revents = 0;
+            
+            int poll_result = poll(&poll_fd, 1, 1000); // 1 second timeout
+            
+            if (poll_result < 0 && errno != EINTR) {
+                std::cerr << "Poll error: " << strerror(errno) << std::endl;
+                break;
+            }
+            
+            if (poll_result > 0 && (poll_fd.revents & POLLIN)) {
+                struct sockaddr_in client_addr;
+                socklen_t client_len = sizeof(client_addr);
+                int client_socket = accept(server_socket_, (struct sockaddr*)&client_addr, &client_len);
+                
+                if (client_socket >= 0) {
+                    // Handle request in separate thread for concurrent connections
+                    std::thread([this, rpc_server, client_socket]() {
+                        handle_client_request(rpc_server, client_socket);
+                    }).detach();
+                }
+            }
+        }
+        
+        close(server_socket_);
+        server_socket_ = -1;
+    }
+    
+    void handle_client_request(SolanaRpcServer* rpc_server, int client_socket) {
+        const size_t buffer_size = 4096;
+        char buffer[buffer_size];
+        
+        // Read HTTP request
+        ssize_t bytes_received = recv(client_socket, buffer, buffer_size - 1, 0);
+        if (bytes_received <= 0) {
+            close(client_socket);
+            return;
+        }
+        
+        buffer[bytes_received] = '\0';
+        std::string request(buffer);
+        
+        // Parse HTTP request to extract JSON body
+        std::string json_body = extract_json_body_from_http(request);
+        
+        // Handle JSON-RPC request
+        std::string json_response = rpc_server->handle_request(json_body);
+        
+        // Create HTTP response
+        std::ostringstream response_stream;
+        response_stream << "HTTP/1.1 200 OK\r\n";
+        response_stream << "Content-Type: application/json\r\n";
+        response_stream << "Content-Length: " << json_response.length() << "\r\n";
+        response_stream << "Access-Control-Allow-Origin: *\r\n";
+        response_stream << "Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n";
+        response_stream << "Access-Control-Allow-Headers: Content-Type\r\n";
+        response_stream << "\r\n";
+        response_stream << json_response;
+        
+        std::string http_response = response_stream.str();
+        
+        // Send response
+        send(client_socket, http_response.c_str(), http_response.length(), 0);
+        
+        close(client_socket);
+    }
+    
+    std::string extract_json_body_from_http(const std::string& http_request) {
+        // Find the end of headers (double CRLF)
+        size_t header_end = http_request.find("\r\n\r\n");
+        if (header_end == std::string::npos) {
+            return "";
+        }
+        
+        // Extract body after headers
+        std::string body = http_request.substr(header_end + 4);
+        
+        // For JSON-RPC, the body should be JSON
+        return body;
+    }
 };
 
 SolanaRpcServer::SolanaRpcServer(const ValidatorConfig& config)
@@ -164,13 +310,13 @@ Result<bool> SolanaRpcServer::start() {
     
     impl_->running_.store(true);
     
-    // In a real implementation, this would start an HTTP server
-    // For now, we'll simulate the server running
+    // Start real HTTP server
     impl_->server_thread_ = std::thread([this]() {
-        while (impl_->running_.load()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
+        impl_->run_http_server(this);
     });
+    
+    // Give the server a moment to start
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     
     return Result<bool>(true);
 }
@@ -179,6 +325,12 @@ void SolanaRpcServer::stop() {
     if (impl_->running_.load()) {
         std::cout << "Stopping Solana RPC server" << std::endl;
         impl_->running_.store(false);
+        
+        // Close server socket to break accept() loop
+        if (impl_->server_socket_ >= 0) {
+            close(impl_->server_socket_);
+            impl_->server_socket_ = -1;
+        }
         
         if (impl_->server_thread_.joinable()) {
             impl_->server_thread_.join();
@@ -220,7 +372,7 @@ std::string SolanaRpcServer::handle_request(const std::string& request_json) {
         if (request_json.empty() || 
             (request_json.find('{') == std::string::npos && request_json.find('}') == std::string::npos) ||
             request_json.find("invalid") != std::string::npos) {
-            return create_error_response("", -32700, "Parse error").to_json();
+            return create_error_response("", -32700, "Parse error", false).to_json();
         }
         
         RpcRequest request;
@@ -229,25 +381,39 @@ std::string SolanaRpcServer::handle_request(const std::string& request_json) {
         request.params = extract_json_array(request_json, "params");
         request.id = extract_json_value(request_json, "id");
         
+        // Check if ID is a number by looking at the original JSON
+        std::regex id_pattern("\"id\"\\s*:\\s*([^,}]+)");
+        std::smatch id_match;
+        if (std::regex_search(request_json, id_match, id_pattern)) {
+            std::string id_value = id_match[1].str();
+            // Remove whitespace
+            id_value.erase(0, id_value.find_first_not_of(" \t"));
+            id_value.erase(id_value.find_last_not_of(" \t") + 1);
+            // Check if it starts with a digit or negative sign (not a quote)
+            request.id_is_number = !id_value.empty() && (std::isdigit(id_value[0]) || id_value[0] == '-');
+        }
+        
         // Validate required fields
         if (request.method.empty()) {
-            return create_error_response(request.id, -32600, "Invalid Request").to_json();
+            return create_error_response(request.id, -32600, "Invalid Request", request.id_is_number).to_json();
         }
         
         // For some methods, ID is required - all methods should have ID in JSON-RPC 2.0
         if (request.id.empty()) {
-            return create_error_response("", -32600, "Invalid Request").to_json();
+            return create_error_response("", -32600, "Invalid Request", false).to_json();
         }
         
         auto it = methods_.find(request.method);
         if (it == methods_.end()) {
-            return create_error_response(request.id, -32601, "Method not found").to_json();
+            return create_error_response(request.id, -32601, "Method not found", request.id_is_number).to_json();
         }
         
-        return it->second(request).to_json();
+        auto response = it->second(request);
+        response.id_is_number = request.id_is_number;  // Propagate ID type
+        return response.to_json();
         
     } catch (const std::exception& e) {
-        return create_error_response("", -32700, "Parse error").to_json();
+        return create_error_response("", -32700, "Parse error", false).to_json();
     }
 }
 
@@ -318,12 +484,14 @@ void SolanaRpcServer::register_utility_methods() {
 RpcResponse SolanaRpcServer::get_account_info(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    response.id_is_number = request.id_is_number;
     
     try {
         // Extract account address from params array
         std::string address = extract_first_param(request.params);
         if (address.empty()) {
-            return create_error_response(request.id, -32602, "Invalid params");
+            return create_error_response(request.id, -32602, "Invalid params", request.id_is_number);
         }
         
         // Get account info from account manager
@@ -337,21 +505,12 @@ RpcResponse SolanaRpcServer::get_account_info(const RpcRequest& request) {
                 response.result = "null";
             }
         } else {
-            // Return mock data for testing if no account manager
-            std::ostringstream oss;
-            oss << "{\"context\":" << get_current_context() << ","
-                << "\"value\":{"
-                << "\"data\":[\"\",\"base58\"],"
-                << "\"executable\":false,"
-                << "\"lamports\":1000000,"
-                << "\"owner\":\"11111111111111111111111111111112\","
-                << "\"rentEpoch\":200"
-                << "}}";
-            response.result = oss.str();
+            // Return null for non-existent accounts (production behavior)
+            response.result = "null";
         }
         
     } catch (const std::exception& e) {
-        return create_error_response(request.id, -32603, "Internal error");
+        return create_error_response(request.id, -32603, "Internal error", request.id_is_number);
     }
     
     return response;
@@ -360,11 +519,13 @@ RpcResponse SolanaRpcServer::get_account_info(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_balance(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    response.id_is_number = request.id_is_number;
     
     try {
         std::string address = extract_first_param(request.params);
         if (address.empty()) {
-            return create_error_response(request.id, -32602, "Invalid params");
+            return create_error_response(request.id, -32602, "Invalid params", request.id_is_number);
         }
         
         if (account_manager_) {
@@ -377,12 +538,12 @@ RpcResponse SolanaRpcServer::get_balance(const RpcRequest& request) {
             oss << "{\"context\":" << get_current_context() << ",\"value\":" << balance << "}";
             response.result = oss.str();
         } else {
-            // Return mock balance for testing
-            response.result = "{\"context\":" + get_current_context() + ",\"value\":1000000}";
+            // Return 0 balance for non-existent accounts (production behavior)
+            response.result = "{\"context\":" + get_current_context() + ",\"value\":0}";
         }
         
     } catch (const std::exception& e) {
-        return create_error_response(request.id, -32603, "Internal error");
+        return create_error_response(request.id, -32603, "Internal error", request.id_is_number);
     }
     
     return response;
@@ -391,6 +552,7 @@ RpcResponse SolanaRpcServer::get_balance(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_program_accounts(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     
     // Stub implementation - would query accounts owned by program
     response.result = "[]";
@@ -400,6 +562,7 @@ RpcResponse SolanaRpcServer::get_program_accounts(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_multiple_accounts(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     
     // Stub implementation - would get multiple accounts
     response.result = "{\"context\":" + get_current_context() + ",\"value\":[]}";
@@ -409,6 +572,7 @@ RpcResponse SolanaRpcServer::get_multiple_accounts(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_largest_accounts(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     
     // Stub implementation
     response.result = "{\"context\":" + get_current_context() + ",\"value\":[]}";
@@ -418,6 +582,7 @@ RpcResponse SolanaRpcServer::get_largest_accounts(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_minimum_balance_for_rent_exemption(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     
     // Default rent exemption threshold (simplified)
     response.result = "890880";  // Default minimum balance in lamports
@@ -428,6 +593,8 @@ RpcResponse SolanaRpcServer::get_minimum_balance_for_rent_exemption(const RpcReq
 RpcResponse SolanaRpcServer::get_slot(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    response.id_is_number = request.id_is_number;
     
     uint64_t slot = validator_core_ ? validator_core_->get_current_slot() : 0;
     response.result = std::to_string(slot);
@@ -438,6 +605,7 @@ RpcResponse SolanaRpcServer::get_slot(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_block(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     
     try {
         std::string slot_str = extract_first_param(request.params);
@@ -490,6 +658,8 @@ RpcResponse SolanaRpcServer::get_block(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_block_height(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    response.id_is_number = request.id_is_number;
     
     uint64_t height = validator_core_ ? validator_core_->get_current_slot() : 0;
     response.result = std::to_string(height);
@@ -500,6 +670,7 @@ RpcResponse SolanaRpcServer::get_block_height(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_blocks(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     
     // Stub implementation - would return block slots in range
     response.result = "[]";
@@ -509,6 +680,7 @@ RpcResponse SolanaRpcServer::get_blocks(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_first_available_block(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     
     response.result = "0";  // Genesis block
     return response;
@@ -517,6 +689,7 @@ RpcResponse SolanaRpcServer::get_first_available_block(const RpcRequest& request
 RpcResponse SolanaRpcServer::get_genesis_hash(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     
     // Genesis hash (placeholder)
     response.result = "\"5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d\"";
@@ -526,6 +699,7 @@ RpcResponse SolanaRpcServer::get_genesis_hash(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_slot_leaders(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     
     // Stub implementation
     response.result = "[]";
@@ -535,6 +709,7 @@ RpcResponse SolanaRpcServer::get_slot_leaders(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_block_production(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     
     // Stub implementation
     response.result = "{\"context\":" + get_current_context() + ",\"value\":{\"byIdentity\":{},\"range\":{\"firstSlot\":0,\"lastSlot\":0}}}";
@@ -545,6 +720,8 @@ RpcResponse SolanaRpcServer::get_block_production(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_health(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    response.id_is_number = request.id_is_number;
     
     response.result = impl_->running_.load() ? "\"ok\"" : "\"unhealthy\"";
     return response;
@@ -553,6 +730,7 @@ RpcResponse SolanaRpcServer::get_health(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_version(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     
     response.result = "{\"solana-core\":\"1.17.0\",\"feature-set\":\"3746818610\"}";
     return response;
@@ -561,6 +739,7 @@ RpcResponse SolanaRpcServer::get_version(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_identity(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     
     // Placeholder identity
     response.result = "{\"identity\":\"5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d\"}";
@@ -570,6 +749,7 @@ RpcResponse SolanaRpcServer::get_identity(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_cluster_nodes(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     
     // Stub implementation
     response.result = "[]";
@@ -580,6 +760,7 @@ RpcResponse SolanaRpcServer::get_cluster_nodes(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_transaction(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     response.result = "null";
     return response;
 }
@@ -587,6 +768,7 @@ RpcResponse SolanaRpcServer::get_transaction(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::send_transaction(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     response.result = "\"transaction_signature_placeholder\"";
     return response;
 }
@@ -594,6 +776,7 @@ RpcResponse SolanaRpcServer::send_transaction(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::simulate_transaction(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     response.result = "{\"context\":" + get_current_context() + ",\"value\":{\"err\":null,\"logs\":[]}}";
     return response;
 }
@@ -601,6 +784,7 @@ RpcResponse SolanaRpcServer::simulate_transaction(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_signature_statuses(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     response.result = "{\"context\":" + get_current_context() + ",\"value\":[]}";
     return response;
 }
@@ -608,6 +792,7 @@ RpcResponse SolanaRpcServer::get_signature_statuses(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_confirmed_signatures_for_address2(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     response.result = "[]";
     return response;
 }
@@ -616,6 +801,7 @@ RpcResponse SolanaRpcServer::get_confirmed_signatures_for_address2(const RpcRequ
 RpcResponse SolanaRpcServer::get_vote_accounts(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     response.result = "{\"current\":[],\"delinquent\":[]}";
     return response;
 }
@@ -623,6 +809,7 @@ RpcResponse SolanaRpcServer::get_vote_accounts(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_leader_schedule(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     response.result = "{}";
     return response;
 }
@@ -630,6 +817,7 @@ RpcResponse SolanaRpcServer::get_leader_schedule(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_epoch_info(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     
     uint64_t current_slot = validator_core_ ? validator_core_->get_current_slot() : 0;
     
@@ -648,6 +836,7 @@ RpcResponse SolanaRpcServer::get_epoch_info(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_epoch_schedule(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     
     response.result = "{\"firstNormalEpoch\":0,\"firstNormalSlot\":0,\"leaderScheduleSlotOffset\":432000,\"slotsPerEpoch\":432000,\"warmup\":false}";
     return response;
@@ -657,6 +846,7 @@ RpcResponse SolanaRpcServer::get_epoch_schedule(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_stake_activation(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     response.result = "{\"active\":0,\"inactive\":0,\"state\":\"inactive\"}";
     return response;
 }
@@ -664,6 +854,7 @@ RpcResponse SolanaRpcServer::get_stake_activation(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_inflation_governor(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     response.result = "{\"foundation\":0.05,\"foundationTerm\":7.0,\"initial\":0.08,\"taper\":0.15,\"terminal\":0.015}";
     return response;
 }
@@ -671,6 +862,7 @@ RpcResponse SolanaRpcServer::get_inflation_governor(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_inflation_rate(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     response.result = "{\"epoch\":0,\"foundation\":0.05,\"total\":0.08,\"validator\":0.03}";
     return response;
 }
@@ -678,6 +870,7 @@ RpcResponse SolanaRpcServer::get_inflation_rate(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_inflation_reward(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     response.result = "[]";
     return response;
 }
@@ -686,6 +879,7 @@ RpcResponse SolanaRpcServer::get_inflation_reward(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_recent_blockhash(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     
     std::string recent_hash = "11111111111111111111111111111111";
     if (validator_core_) {
@@ -710,6 +904,7 @@ RpcResponse SolanaRpcServer::get_recent_blockhash(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_latest_blockhash(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     
     std::string latest_hash = "11111111111111111111111111111111";
     if (validator_core_) {
@@ -735,6 +930,7 @@ RpcResponse SolanaRpcServer::get_latest_blockhash(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::get_fee_for_message(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     
     response.result = "{\"context\":" + get_current_context() + ",\"value\":5000}";
     return response;
@@ -743,15 +939,17 @@ RpcResponse SolanaRpcServer::get_fee_for_message(const RpcRequest& request) {
 RpcResponse SolanaRpcServer::is_blockhash_valid(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
+    response.id_is_number = request.id_is_number;
     
     response.result = "{\"context\":" + get_current_context() + ",\"value\":true}";
     return response;
 }
 
 // Helper Methods Implementation
-RpcResponse SolanaRpcServer::create_error_response(const std::string& id, int code, const std::string& message) {
+RpcResponse SolanaRpcServer::create_error_response(const std::string& id, int code, const std::string& message, bool id_is_number) {
     RpcResponse response;
     response.id = id;
+    response.id_is_number = id_is_number;
     
     std::ostringstream oss;
     oss << "{\"code\":" << code << ",\"message\":\"" << message << "\"}";

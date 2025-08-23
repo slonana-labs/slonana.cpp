@@ -31,6 +31,29 @@ struct ValidatorConfig {
     bool enable_rpc = true;
     bool enable_gossip = true;
     uint32_t max_connections = 1000;
+    
+    // E2E testing and production configuration
+    std::string config_file_path;
+    std::string log_level = "info";
+    std::string metrics_output_path;
+    
+    // PoH and consensus configuration
+    bool enable_consensus = true;
+    bool enable_proof_of_history = true;
+    uint32_t poh_target_tick_duration_us = 400;
+    uint32_t poh_ticks_per_slot = 64;
+    bool poh_enable_batch_processing = false;
+    bool poh_enable_simd_acceleration = false;
+    uint32_t poh_hashing_threads = 4;
+    uint32_t poh_batch_size = 8;
+    
+    // Monitoring configuration
+    bool enable_prometheus = false;
+    uint32_t prometheus_port = 9090;
+    bool enable_health_checks = true;
+    uint32_t metrics_export_interval_ms = 1000;
+    bool consensus_enable_timing_metrics = true;
+    bool consensus_performance_target_validation = true;
 };
 
 /**

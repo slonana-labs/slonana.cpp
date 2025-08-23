@@ -30,6 +30,7 @@ struct RpcRequest {
     std::string method;
     std::string params;  // JSON string
     std::string id;
+    bool id_is_number = false;  // Track if ID was originally a number
 };
 
 /**
@@ -40,6 +41,7 @@ struct RpcResponse {
     std::string result;  // JSON string
     std::string error;   // JSON string (only if error occurred)
     std::string id;
+    bool id_is_number = false;  // Track if ID should be rendered as number
     
     std::string to_json() const;
 };
@@ -131,7 +133,7 @@ private:
     RpcResponse is_blockhash_valid(const RpcRequest& request);
     
     // Helper methods
-    RpcResponse create_error_response(const std::string& id, int code, const std::string& message);
+    RpcResponse create_error_response(const std::string& id, int code, const std::string& message, bool id_is_number = false);
     std::string get_current_context() const;
     std::string format_account_info(const PublicKey& address, const svm::ProgramAccount& account) const;
     

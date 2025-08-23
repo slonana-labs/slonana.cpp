@@ -1,0 +1,407 @@
+name: End-to-End Node Testing
+
+on:
+  push:
+    branches: [ main, develop, copilot/fix-* ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+    inputs:
+      test_duration:
+        description: 'Test duration in seconds'
+        required: false
+        default: '120'
+        type: string
+      enable_performance_analysis:
+        description: 'Enable detailed performance analysis'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  e2e-node-testing:
+    runs-on: ubuntu-latest
+    name: E2E Node Testing (2 Minutes)
+    timeout-minutes: 10
+
+    strategy:
+      matrix:
+        node_config:
+          - name: "High Performance"
+            poh_tick_duration: "200"
+            batch_processing: "true"
+            simd_acceleration: "true"
+          - name: "Standard"
+            poh_tick_duration: "400"
+            batch_processing: "false"
+            simd_acceleration: "false"
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          cmake \
+          build-essential \
+          gcc \
+          g++ \
+          libssl-dev \
+          libboost-all-dev \
+          valgrind \
+          htop \
+          iotop \
+          sysstat \
+          jq
+
+    - name: Create build directory
+      run: mkdir -p build
+
+    - name: Configure CMake for E2E Testing
+      run: |
+        cd build
+        cmake .. \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DENABLE_E2E_TESTING=ON \
+          -DENABLE_PERFORMANCE_MONITORING=ON
+
+    - name: Build project
+      run: |
+        cd build
+        make -j$(nproc)
+
+    - name: Verify binaries exist
+      run: |
+        ls -la build/
+        test -f build/slonana_validator || (echo "slonana_validator not found" && exit 1)
+        test -f build/slonana_tests || (echo "slonana_tests not found" && exit 1)
+
+    - name: Create E2E test configuration
+      run: |
+        mkdir -p e2e-test-data
+        cat > e2e-test-data/validator_config.json << EOF
+        {
+          "validator": {
+            "identity": "test-validator-e2e",
+            "rpc_port": 8899,
+            "enable_consensus": true,
+            "enable_proof_of_history": true
+          },
+          "proof_of_history": {
+            "target_tick_duration_us": ${{ matrix.node_config.poh_tick_duration }},
+            "ticks_per_slot": 64,
+            "enable_batch_processing": ${{ matrix.node_config.batch_processing }},
+            "enable_simd_acceleration": ${{ matrix.node_config.simd_acceleration }},
+            "hashing_threads": 4,
+            "batch_size": 8
+          },
+          "monitoring": {
+            "enable_prometheus": true,
+            "prometheus_port": 9090,
+            "enable_health_checks": true,
+            "metrics_export_interval_ms": 1000
+          },
+          "consensus": {
+            "enable_timing_metrics": true,
+            "performance_target_validation": true
+          }
+        }
+        EOF
+
+    - name: Setup monitoring and logging
+      run: |
+        mkdir -p e2e-test-data/logs
+        mkdir -p e2e-test-data/metrics
+
+    - name: Start system monitoring
+      run: |
+        # Start system resource monitoring
+        sar -u -r -d 1 > e2e-test-data/logs/system_resources.log &
+        echo $! > e2e-test-data/sar.pid
+        
+        # Start network monitoring
+        ss -tuln > e2e-test-data/logs/network_before.log
+
+    - name: Run E2E Node Test - ${{ matrix.node_config.name }}
+      timeout-minutes: 5
+      run: |
+        cd build
+        echo "Starting Slonana validator node for E2E testing..."
+        echo "Configuration: ${{ matrix.node_config.name }}"
+        echo "PoH Tick Duration: ${{ matrix.node_config.poh_tick_duration }}μs"
+        echo "Batch Processing: ${{ matrix.node_config.batch_processing }}"
+        echo "SIMD Acceleration: ${{ matrix.node_config.simd_acceleration }}"
+        
+        # Start the validator in background with proper timeout handling
+        ./slonana_validator \
+          --config ../e2e-test-data/validator_config.json \
+          --log-level info \
+          --metrics-output ../e2e-test-data/metrics/runtime_metrics.json \
+          > ../e2e-test-data/logs/validator.log 2>&1 &
+        
+        VALIDATOR_PID=$!
+        echo "Validator started with PID: $VALIDATOR_PID"
+        echo $VALIDATOR_PID > ../e2e-test-data/validator.pid
+        
+        # Wait for validator to initialize
+        echo "Waiting for validator initialization..."
+        sleep 10
+        
+        # Check if validator is running
+        if kill -0 $VALIDATOR_PID 2>/dev/null; then
+          echo "✅ Validator is running successfully"
+        else
+          echo "❌ Validator failed to start"
+          cat ../e2e-test-data/logs/validator.log
+          exit 1
+        fi
+        
+        # Test RPC endpoint availability
+        echo "Testing RPC endpoint availability..."
+        RPC_SUCCESS=false
+        for i in {1..30}; do
+          if curl -s -X POST -H "Content-Type: application/json" \
+             -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' \
+             http://localhost:8899/ > /dev/null 2>&1; then
+            echo "✅ RPC endpoint is responsive"
+            RPC_SUCCESS=true
+            break
+          fi
+          sleep 1
+        done
+        
+        if [ "$RPC_SUCCESS" = false ]; then
+          echo "❌ RPC endpoint not responsive after 30 attempts"
+          cat ../e2e-test-data/logs/validator.log
+          kill -KILL $VALIDATOR_PID 2>/dev/null || true
+          exit 1
+        fi
+        
+        # Monitor node for the specified duration using timeout to handle duration
+        echo "Monitoring node for ${{ inputs.test_duration || '120' }} seconds..."
+        
+        # Set up duration handling
+        TEST_DURATION=${{ inputs.test_duration || '120' }}
+        START_TIME=$(date +%s)
+        SAMPLE_COUNT=0
+        
+        while true; do
+          CURRENT_TIME=$(date +%s)
+          ELAPSED=$((CURRENT_TIME - START_TIME))
+          
+          # Check if we've reached the test duration
+          if [ $ELAPSED -ge $TEST_DURATION ]; then
+            echo "✅ Test duration of ${TEST_DURATION}s completed"
+            break
+          fi
+          
+          echo "⏱️  Time: ${ELAPSED}s / ${TEST_DURATION}s"
+          
+          # Test basic RPC calls
+          curl -s -X POST -H "Content-Type: application/json" \
+               -d '{"jsonrpc":"2.0","id":1,"method":"getSlot"}' \
+               http://localhost:8899/ | jq '.result // "error"' > ../e2e-test-data/metrics/slot_${SAMPLE_COUNT}.json || true
+          
+          curl -s -X POST -H "Content-Type: application/json" \
+               -d '{"jsonrpc":"2.0","id":1,"method":"getBlockHeight"}' \
+               http://localhost:8899/ | jq '.result // "error"' > ../e2e-test-data/metrics/height_${SAMPLE_COUNT}.json || true
+          
+          # Get Prometheus metrics if available
+          curl -s http://localhost:9090/metrics > ../e2e-test-data/metrics/prometheus_${SAMPLE_COUNT}.txt 2>/dev/null || true
+          
+          # Check validator is still running
+          if ! kill -0 $VALIDATOR_PID 2>/dev/null; then
+            echo "❌ Validator process died unexpectedly at ${ELAPSED}s"
+            cat ../e2e-test-data/logs/validator.log
+            exit 1
+          fi
+          
+          SAMPLE_COUNT=$((SAMPLE_COUNT + 1))
+          sleep 10
+        done
+        
+        echo "✅ Node ran successfully for ${{ inputs.test_duration || '120' }} seconds"
+        
+        # Gracefully stop the validator
+        echo "Gracefully stopping validator..."
+        kill -TERM $VALIDATOR_PID 2>/dev/null || true
+        sleep 5
+        
+        # Force kill if still running
+        if kill -0 $VALIDATOR_PID 2>/dev/null; then
+          echo "Force stopping validator..."
+          kill -KILL $VALIDATOR_PID 2>/dev/null || true
+        fi
+        
+        echo "✅ E2E test completed successfully"
+        exit 0
+
+    - name: Stop monitoring
+      if: always()
+      run: |
+        # Stop system monitoring
+        if [ -f e2e-test-data/sar.pid ]; then
+          kill $(cat e2e-test-data/sar.pid) 2>/dev/null || true
+        fi
+        
+        # Capture final network state
+        ss -tuln > e2e-test-data/logs/network_after.log || true
+        exit 0
+
+    - name: Analyze test results
+      if: always()
+      run: |
+        echo "📊 Analyzing E2E test results..."
+        
+        # Check validator logs for errors
+        if [ -f e2e-test-data/logs/validator.log ]; then
+          echo "### Validator Log Summary:"
+          echo "Log size: $(wc -l < e2e-test-data/logs/validator.log) lines"
+          
+          # Check for errors
+          ERROR_COUNT=$(grep -i error e2e-test-data/logs/validator.log | wc -l)
+          echo "Error count: $ERROR_COUNT"
+          
+          if [ $ERROR_COUNT -gt 0 ]; then
+            echo "⚠️  Errors found in validator log:"
+            grep -i error e2e-test-data/logs/validator.log | tail -10
+          fi
+          
+          # Check for PoH activity
+          POH_TICKS=$(grep -i "poh.*tick" e2e-test-data/logs/validator.log | wc -l)
+          echo "PoH tick count: $POH_TICKS"
+          
+          if [ $POH_TICKS -gt 0 ]; then
+            echo "✅ Proof of History is generating ticks"
+          else
+            echo "⚠️  No PoH tick activity detected"
+          fi
+        fi
+        
+        # Analyze metrics
+        echo "### Metrics Analysis:"
+        if [ -d e2e-test-data/metrics ]; then
+          METRIC_FILES=$(find e2e-test-data/metrics -name "*.json" | wc -l)
+          echo "Metric files collected: $METRIC_FILES"
+          
+          # Analyze slot progression
+          if ls e2e-test-data/metrics/slot_*.json >/dev/null 2>&1; then
+            echo "### Slot Progression:"
+            for file in e2e-test-data/metrics/slot_*.json; do
+              TIME=$(basename "$file" .json | sed 's/slot_//')
+              SLOT=$(cat "$file" 2>/dev/null || echo "null")
+              echo "Time ${TIME}s: Slot $SLOT"
+            done
+          fi
+        fi
+        
+        # System resource summary
+        if [ -f e2e-test-data/logs/system_resources.log ]; then
+          echo "### System Resource Usage:"
+          echo "CPU and Memory usage summary:"
+          tail -10 e2e-test-data/logs/system_resources.log || true
+        fi
+        
+        echo "✅ Analysis completed successfully"
+        exit 0
+
+    - name: Performance analysis (if enabled)
+      if: ${{ inputs.enable_performance_analysis == true || inputs.enable_performance_analysis == 'true' }}
+      run: |
+        echo "🔍 Performing detailed performance analysis..."
+        
+        # Analyze PoH performance from logs
+        if [ -f e2e-test-data/logs/validator.log ]; then
+          echo "### PoH Performance Analysis:"
+          
+          # Extract timing information
+          grep -i "tick.*duration\|tps\|performance" e2e-test-data/logs/validator.log | tail -20 || true
+          
+          # Calculate average TPS if available
+          if grep -q "ticks_per_second" e2e-test-data/logs/validator.log; then
+            echo "TPS measurements found in logs"
+            grep "ticks_per_second" e2e-test-data/logs/validator.log | tail -5
+          fi
+        fi
+        
+        # Analyze Prometheus metrics
+        if ls e2e-test-data/metrics/prometheus_*.txt >/dev/null 2>&1; then
+          echo "### Prometheus Metrics Analysis:"
+          
+          # Get latest metrics file
+          LATEST_METRICS=$(ls -t e2e-test-data/metrics/prometheus_*.txt | head -1)
+          
+          if [ -f "$LATEST_METRICS" ]; then
+            echo "Consensus metrics from latest collection:"
+            grep "consensus_" "$LATEST_METRICS" | head -20 || true
+            
+            echo "PoH metrics from latest collection:"
+            grep "poh_" "$LATEST_METRICS" | head -20 || true
+          fi
+        fi
+        
+        echo "✅ Performance analysis completed successfully"
+        exit 0
+
+    - name: Upload test artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: e2e-test-results-${{ matrix.node_config.name }}-${{ github.run_number }}
+        path: |
+          e2e-test-data/logs/
+          e2e-test-data/metrics/
+          e2e-test-data/validator_config.json
+        retention-days: 7
+
+    - name: Upload validator logs
+      uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: validator-failure-logs-${{ matrix.node_config.name }}-${{ github.run_number }}
+        path: |
+          e2e-test-data/logs/validator.log
+          build/core*
+        retention-days: 30
+
+    - name: Test summary
+      if: always()
+      run: |
+        echo "## 🎯 E2E Test Summary - ${{ matrix.node_config.name }}"
+        echo "- **Duration**: ${{ inputs.test_duration || '120' }} seconds"
+        echo "- **PoH Configuration**: ${{ matrix.node_config.poh_tick_duration }}μs tick duration"
+        echo "- **Batch Processing**: ${{ matrix.node_config.batch_processing }}"
+        echo "- **SIMD Acceleration**: ${{ matrix.node_config.simd_acceleration }}"
+        
+        # Check test status based on previous step outcome
+        if [ "${{ job.status }}" = "success" ]; then
+          echo "- **Test Status**: ✅ PASSED"
+        else
+          echo "- **Test Status**: ❌ FAILED"
+        fi
+        
+        if [ -f e2e-test-data/logs/validator.log ]; then
+          echo "- **Validator Log Size**: $(wc -l < e2e-test-data/logs/validator.log) lines"
+          echo "- **Last Log Entry**: $(tail -1 e2e-test-data/logs/validator.log)"
+        fi
+        
+        exit 0
+
+  e2e-summary:
+    needs: e2e-node-testing
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: E2E Test Results Summary
+      run: |
+        echo "## 🏁 E2E Testing Complete"
+        echo "All node configurations have been tested for ${{ inputs.test_duration || '120' }} seconds"
+        echo ""
+        echo "### Test Matrix Results:"
+        echo "- High Performance Configuration: ${{ needs.e2e-node-testing.result }}"
+        echo "- Standard Configuration: ${{ needs.e2e-node-testing.result }}"
+        echo ""
+        echo "📋 Check individual job artifacts for detailed results and logs"

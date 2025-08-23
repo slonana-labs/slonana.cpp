@@ -1,0 +1,94 @@
+{
+  "hardware_wallet": {
+    "enabled": true,
+    "auto_discovery": true,
+    "discovery_interval_ms": 5000,
+    "connection_timeout_ms": 10000,
+    "max_retry_attempts": 3,
+    "auto_reconnect": true,
+    
+    "default_security": {
+      "require_device_confirmation": true,
+      "enable_display_verification": true,
+      "max_signing_attempts": 3,
+      "signing_timeout_ms": 30000,
+      "allow_cached_sessions": false,
+      "session_timeout_minutes": 10
+    },
+    
+    "devices": [
+      {
+        "device_id": "example_device_id",
+        "alias": "Primary Ledger",
+        "enabled": true,
+        "auto_connect": false,
+        "default_derivation_path": "m/44'/501'/0'",
+        "security": {
+          "require_device_confirmation": true,
+          "enable_display_verification": true,
+          "max_signing_attempts": 3,
+          "signing_timeout_ms": 30000,
+          "allow_cached_sessions": false,
+          "session_timeout_minutes": 10
+        }
+      }
+    ],
+    
+    "logging": {
+      "enable_logging": true,
+      "log_level": "INFO",
+      "enable_metrics": true
+    },
+    
+    "integration": {
+      "integrate_with_rpc": true,
+      "require_hardware_for_signing": false,
+      "trusted_device_ids": []
+    }
+  },
+  
+  "monitoring": {
+    "enabled": true,
+    "metrics": {
+      "enable_prometheus": true,
+      "prometheus_port": 9090,
+      "prometheus_path": "/metrics"
+    },
+    "health_checks": {
+      "enabled": true,
+      "check_interval_ms": 30000,
+      "http_port": 8080,
+      "http_path": "/health",
+      "checks": [
+        {
+          "name": "validator",
+          "enabled": true,
+          "interval_ms": 10000,
+          "timeout_ms": 2000
+        },
+        {
+          "name": "network",
+          "enabled": true,
+          "interval_ms": 15000,
+          "timeout_ms": 3000
+        },
+        {
+          "name": "disk_space",
+          "enabled": true,
+          "interval_ms": 60000,
+          "timeout_ms": 1000,
+          "warning_threshold": 0.8,
+          "critical_threshold": 0.95
+        },
+        {
+          "name": "memory",
+          "enabled": true,
+          "interval_ms": 30000,
+          "timeout_ms": 1000,
+          "warning_threshold": 0.8,
+          "critical_threshold": 0.95
+        }
+      ]
+    }
+  }
+}

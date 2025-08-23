@@ -1,6 +1,9 @@
 #include "slonana_validator.h"
 #include <iostream>
 #include <chrono>
+#include <fstream>
+#include <random>
+#include <iomanip>
 
 namespace slonana {
 
@@ -8,6 +11,7 @@ class SolanaValidator::Impl {
 public:
     ValidatorStats stats_;
     std::chrono::steady_clock::time_point start_time_;
+    PublicKey validator_identity_;
     
     void update_stats() {
         auto now = std::chrono::steady_clock::now();
@@ -220,14 +224,56 @@ const common::ValidatorConfig& SolanaValidator::get_config() const {
 
 // Private implementation methods
 common::Result<bool> SolanaValidator::initialize_identity() {
-    // In a real implementation, this would load the validator identity keypair
-    // from the specified file path and verify its validity
-    
+    // Load validator identity keypair from file
     if (config_.identity_keypair_path.empty()) {
         return common::Result<bool>("Identity keypair path not specified");
     }
     
-    std::cout << "Loaded validator identity (stub implementation)" << std::endl;
+    // Try to load the keypair file
+    std::ifstream keypair_file(config_.identity_keypair_path);
+    if (!keypair_file.is_open()) {
+        // If file doesn't exist, generate a new identity for development
+        std::cout << "Identity file not found at " << config_.identity_keypair_path 
+                  << ", generating new identity for development" << std::endl;
+        
+        // Generate a simple identity (32 random bytes for public key)
+        impl_->validator_identity_.resize(32);
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<uint8_t> dis(1, 255);
+        
+        for (size_t i = 0; i < 32; ++i) {
+            impl_->validator_identity_[i] = dis(gen);
+        }
+        
+        // Save the generated identity to file for persistence
+        std::ofstream out_file(config_.identity_keypair_path);
+        if (out_file.is_open()) {
+            for (size_t i = 0; i < 32; ++i) {
+                out_file << std::hex << std::setfill('0') << std::setw(2) 
+                         << static_cast<int>(impl_->validator_identity_[i]);
+            }
+            out_file.close();
+            std::cout << "Saved new identity to " << config_.identity_keypair_path << std::endl;
+        }
+    } else {
+        // Load existing identity from file
+        std::string hex_data((std::istreambuf_iterator<char>(keypair_file)),
+                             std::istreambuf_iterator<char>());
+        keypair_file.close();
+        
+        if (hex_data.length() == 64) { // 32 bytes * 2 hex chars per byte
+            impl_->validator_identity_.resize(32);
+            for (size_t i = 0; i < 32; ++i) {
+                std::string byte_str = hex_data.substr(i * 2, 2);
+                impl_->validator_identity_[i] = static_cast<uint8_t>(std::stoul(byte_str, nullptr, 16));
+            }
+            std::cout << "Loaded validator identity from " << config_.identity_keypair_path << std::endl;
+        } else {
+            return common::Result<bool>("Invalid identity file format");
+        }
+    }
+    
     return common::Result<bool>(true);
 }
 

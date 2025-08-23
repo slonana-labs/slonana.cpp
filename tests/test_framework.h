@@ -10,6 +10,20 @@
 #include <stdexcept>
 #include <sstream>
 #include <iomanip>
+#include <atomic>
+
+// Port management for tests to avoid conflicts
+class TestPortManager {
+public:
+    static int get_next_port() {
+        static std::atomic<int> next_port{19000}; // Start from 19000 to avoid conflicts
+        return next_port.fetch_add(1);
+    }
+    
+    static std::string get_next_rpc_address() {
+        return "127.0.0.1:" + std::to_string(get_next_port());
+    }
+};
 
 // Helper function to print vector<uint8_t> as hex string
 inline std::string vector_to_hex_string(const std::vector<uint8_t>& data) {
