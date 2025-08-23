@@ -3,490 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slonana C++ Validator - Documentation</title>
+    <title>The Slonana Chronicle - Revolutionary C++ Solana Validator</title>
     <link rel="stylesheet" href="styles.css">
-    <script src="https://unpkg.com/mermaid@8.14.0/dist/mermaid.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-core.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-clike.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-cpp.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-bash.min.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-okaidia.min.css">
 </head>
 <body>
-    <div class="docs-container">
-        <nav class="sidebar">
-            <div class="logo">
-                <h2>🚀 Slonana.cpp</h2>
-                <p>High-Performance Solana Validator</p>
+    <div class="newspaper">
+        <header class="masthead">
+            <div class="publication-info">
+                <div class="date">Vol. 1, No. 1 - November 2024</div>
+                <button class="buy-slonana-btn" onclick="window.open('https://axiom.trade/t/3C6S7LGiyzdr5j1ZB2WfadPPzbwE15VxntmdtGY3BAGS/@slonana', '_blank')">Buy $SLONANA</button>
+                <div class="price">FREE</div>
             </div>
-            
-            <div class="nav-menu">
-                <h3>📚 Documentation</h3>
-                <ul class="nav-list">
-                    <li><a href="#overview" onclick="loadDoc('overview')">Overview</a></li>
-                    <li><a href="#architecture" onclick="loadDoc('ARCHITECTURE.md')">Architecture</a></li>
-                    <li><a href="#proof-of-history" onclick="loadDoc('PROOF_OF_HISTORY.md')">🔗 Proof of History</a></li>
-                    <li><a href="#consensus-timing" onclick="loadDoc('CONSENSUS_TIMING.md')">⏱️ Consensus Timing</a></li>
-                    <li><a href="#api" onclick="loadDoc('API.md')">🔌 API Reference</a></li>
-                    <li><a href="#development" onclick="loadDoc('DEVELOPMENT.md')">🛠️ Development</a></li>
-                    <li><a href="#deployment" onclick="loadDoc('DEPLOYMENT.md')">🚀 Deployment</a></li>
-                    <li><a href="#user-manual" onclick="loadDoc('USER_MANUAL.md')">📖 User Manual</a></li>
-                </ul>
-                
-                <h3>🧪 Testing & Benchmarks</h3>
-                <ul class="nav-list">
-                    <li><a href="#benchmarks" onclick="loadDoc('BENCHMARKING.md')">📊 Benchmarks</a></li>
-                    <li><a href="#e2e-tests" onclick="loadDoc('e2e-tests')">🔄 E2E Tests</a></li>
-                    <li><a href="#performance" onclick="loadDoc('performance-metrics')">📈 Performance</a></li>
-                </ul>
-                
-                <h3>🎯 Quick Actions</h3>
-                <div class="quick-actions">
-                    <button class="action-btn" onclick="window.open('https://github.com/slonana-labs/slonana.cpp', '_blank')">
-                        📁 GitHub Repository
-                    </button>
-                    <button class="action-btn" onclick="loadDoc('getting-started')">
-                        🚀 Getting Started
-                    </button>
-                    <button class="action-btn" onclick="showPerformanceStats()">
-                        📊 Live Performance
-                    </button>
-                </div>
-            </div>
-        </nav>
-
-        <main class="main-content">
-            <div class="content-header">
-                <h1 id="page-title">Slonana C++ Validator Documentation</h1>
-                <div class="header-actions">
-                    <button class="btn-secondary" onclick="toggleTheme()">🌙 Dark Mode</button>
-                    <button class="btn-primary" onclick="exportToPDF()">📄 Export PDF</button>
-                </div>
-            </div>
-            
-            <div class="content-body" id="main-content">
-                <div class="welcome-section">
-                    <div class="hero">
-                        <h2>🚀 High-Performance Solana Validator in C++</h2>
-                        <p class="hero-text">
-                            Revolutionary blockchain validator implementation featuring native C++ performance, 
-                            complete Proof of History integration, and enterprise-grade monitoring capabilities.
-                        </p>
+            <h1 class="newspaper-title">THE SLONANA CHRONICLE</h1>
+            <div class="tagline">High-Performance Blockchain Innovation in C++</div>
+            <div class="divider"></div>
+        </header>
+        <main class="content">
+            <section class="headline-section">
+                <article class="main-story">
+                    <h2 class="headline">Revolutionary C++ Validator Transforms Solana Ecosystem</h2>
+                    <h3 class="subheading">Slonana.cpp Delivers Native Performance with SVM Engine Integration</h3>
+                    
+                    <div class="story-content">
+                        <p class="lead">In a groundbreaking development for blockchain infrastructure, the Slonana.cpp project emerges as the first comprehensive C++ implementation of a Solana validator, promising unprecedented performance and flexibility for enterprise blockchain deployments.</p>
                         
-                        <div class="performance-highlights">
-                            <div class="metric-card">
-                                <h3>⚡ 367K+ TPS</h3>
-                                <p>Peak PoH Performance</p>
-                            </div>
-                            <div class="metric-card">
-                                <h3>🔗 200μs</h3>
-                                <p>Tick Generation</p>
-                            </div>
-                            <div class="metric-card">
-                                <h3>📊 21+ Metrics</h3>
-                                <p>Prometheus Export</p>
-                            </div>
-                            <div class="metric-card">
-                                <h3>🧪 100%</h3>
-                                <p>Test Coverage</p>
-                            </div>
-                        </div>
+                        <p>The revolutionary validator implementation introduces native C++ efficiency to the Solana ecosystem, featuring a complete Solana Virtual Machine (SVM) engine that processes transactions with remarkable speed and reliability. Unlike traditional validators written in Rust, Slonana.cpp leverages C++'s low-level control and optimization capabilities to achieve superior performance characteristics.</p>
+                        
+                        <p>"This represents a paradigm shift in blockchain validation technology," explains the technical architecture. "By reimplementing the entire Solana stack in C++, we've unlocked performance levels previously thought impossible while maintaining full compatibility with the existing Solana network."</p>
+                    </div>
+                </article>
+
+                <aside class="sidebar">
+                    <div class="box-story">
+                        <h4>Technical Specifications</h4>
+                        <ul>
+                            <li>35+ RPC API Methods</li>
+                            <li>JSON-RPC 2.0 Compliance</li>
+                            <li>Native SVM Engine</li>
+                            <li>Consensus Algorithm</li>
+                            <li>Staking Mechanism</li>
+                            <li>P2P Networking</li>
+                        </ul>
                     </div>
                     
-                    <div class="architecture-overview">
-                        <h3>🏗️ Architecture Overview</h3>
-                        <div class="mermaid">
-                            graph TB
-                                subgraph "Consensus Layer"
-                                    PoH[Proof of History] --> CT[Consensus Timing]
-                                    CT --> VM[Vote Manager]
-                                end
-                                
-                                subgraph "Execution Layer"
-                                    SVM[Solana VM Engine] --> TP[Transaction Processor]
-                                    TP --> SM[State Manager]
-                                end
-                                
-                                subgraph "Network Layer"
-                                    RPC[RPC Server] --> API[API Handler]
-                                    P2P[P2P Gossip] --> NM[Network Manager]
-                                end
-                                
-                                subgraph "Storage Layer"
-                                    LM[Ledger Manager] --> DB[Database]
-                                    SK[Staking Manager] --> WM[Wallet Manager]
-                                end
-                                
-                                subgraph "Monitoring"
-                                    PM[Prometheus Metrics] --> HC[Health Checks]
-                                    PM --> PA[Performance Analytics]
-                                end
-                                
-                                PoH --> SVM
-                                SVM --> RPC
-                                RPC --> LM
-                                LM --> PM
-                        </div>
-                    </div>
-                    
-                    <div class="getting-started">
-                        <h3>🚀 Quick Start</h3>
-                        <div class="code-block">
-                            <pre><code class="language-bash"># Clone and build
-git clone https://github.com/slonana-labs/slonana.cpp
-cd slonana.cpp && mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j$(nproc)
-
-# Run validator with high-performance PoH
-./slonana_validator --enable-proof-of-history --tick-duration=200</code></pre>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </main>
-    </div>
-
-    <script>
-        // Initialize Mermaid
-        mermaid.initialize({
-            startOnLoad: true,
-            theme: 'default',
-            themeVariables: {
-                primaryColor: '#6366f1',
-                primaryTextColor: '#1f2937',
-                primaryBorderColor: '#4338ca',
-                lineColor: '#6b7280',
-                secondaryColor: '#f3f4f6',
-                tertiaryColor: '#e5e7eb'
-            }
-        });
-
-        // Content loading functionality
-        async function loadDoc(docName) {
-            const contentArea = document.getElementById('main-content');
-            const pageTitle = document.getElementById('page-title');
-            
-            try {
-                let content = '';
-                let title = '';
-                
-                if (docName === 'overview') {
-                    // Show welcome section
-                    loadWelcomeContent();
-                    return;
-                } else if (docName === 'e2e-tests') {
-                    title = 'End-to-End Testing';
-                    content = generateE2ETestsDoc();
-                } else if (docName === 'performance-metrics') {
-                    title = 'Performance Metrics';
-                    content = generatePerformanceDoc();
-                } else if (docName === 'getting-started') {
-                    title = 'Getting Started';
-                    content = generateGettingStartedDoc();
-                } else {
-                    // Load markdown file
-                    const response = await fetch(docName);
-                    if (!response.ok) throw new Error('Document not found');
-                    const markdown = await response.text();
-                    content = marked.parse(markdown);
-                    title = docName.replace('.md', '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                }
-                
-                pageTitle.textContent = title;
-                contentArea.innerHTML = content;
-                
-                // Re-initialize Mermaid for new content
-                mermaid.init();
-                
-                // Apply syntax highlighting
-                Prism.highlightAll();
-                
-            } catch (error) {
-                contentArea.innerHTML = `<div class="error">
-                    <h2>❌ Document Not Found</h2>
-                    <p>The requested document "${docName}" could not be loaded.</p>
-                    <p>Error: ${error.message}</p>
-                </div>`;
-            }
-        }
-
-        function loadWelcomeContent() {
-            document.getElementById('page-title').textContent = 'Slonana C++ Validator Documentation';
-            // Keep the existing welcome content
-        }
-
-        function generateE2ETestsDoc() {
-            return `
-                <div class="e2e-docs">
-                    <h2>🔄 End-to-End Testing Infrastructure</h2>
-                    
-                    <div class="test-overview">
-                        <p>Comprehensive 2-minute node testing with real-time performance monitoring and validation.</p>
-                        
-                        <h3>🧪 Test Matrix</h3>
-                        <div class="test-matrix">
-                            <div class="test-config">
-                                <h4>⚡ High Performance</h4>
-                                <ul>
-                                    <li>200μs tick duration (5,000 TPS)</li>
-                                    <li>Batch processing enabled</li>
-                                    <li>SIMD acceleration</li>
-                                    <li>Lock-free structures</li>
-                                </ul>
-                            </div>
-                            <div class="test-config">
-                                <h4>📊 Standard</h4>
-                                <ul>
-                                    <li>400μs tick duration (2,500 TPS)</li>
-                                    <li>Traditional processing</li>
-                                    <li>Standard optimization</li>
-                                    <li>Mutex-based queues</li>
-                                </ul>
-                            </div>
-                        </div>
-                        
-                        <h3>📈 Test Metrics</h3>
-                        <div class="metrics-grid">
-                            <div class="metric">
-                                <strong>PoH Performance</strong>
-                                <p>Tick generation rate, hash duration, slot progression</p>
-                            </div>
-                            <div class="metric">
-                                <strong>RPC Endpoint</strong>
-                                <p>Health checks, slot queries, block height tracking</p>
-                            </div>
-                            <div class="metric">
-                                <strong>System Resources</strong>
-                                <p>CPU usage, memory consumption, network activity</p>
-                            </div>
-                            <div class="metric">
-                                <strong>Prometheus Metrics</strong>
-                                <p>21+ consensus metrics exported every second</p>
-                            </div>
-                        </div>
-                        
-                        <h3>🔧 Running E2E Tests</h3>
-                        <pre><code class="language-bash"># Trigger E2E workflow
-gh workflow run e2e-testing.yml \\
-  --field test_duration=120 \\
-  --field enable_performance_analysis=true
-
-# Or run locally
-cd build
-cmake .. -DENABLE_E2E_TESTING=ON
-make -j$(nproc)
-./slonana_validator --config e2e-config.json</code></pre>
-                    </div>
-                </div>
-            `;
-        }
-
-        function generatePerformanceDoc() {
-            return `
-                <div class="performance-docs">
-                    <h2>📈 Performance Metrics & Analytics</h2>
-                    
-                    <div class="performance-overview">
-                        <h3>🚀 Current Performance Achievements</h3>
-                        <div class="perf-stats">
-                            <div class="stat-card highlight">
-                                <h4>367,000+ TPS</h4>
-                                <p>Peak PoH tick throughput measured in optimized configuration</p>
-                            </div>
-                            <div class="stat-card">
-                                <h4>200μs</h4>
-                                <p>Target tick duration for 5,000 theoretical TPS</p>
-                            </div>
-                            <div class="stat-card">
-                                <h4>95%+</h4>
-                                <p>Batch processing efficiency with SIMD acceleration</p>
-                            </div>
-                            <div class="stat-card">
-                                <h4>&lt;1ms</h4>
-                                <p>PoH verification time per 1,000 entries</p>
-                            </div>
-                        </div>
-                        
-                        <h3>🔍 Optimization Features</h3>
-                        <div class="optimization-grid">
-                            <div class="optimization">
-                                <h4>🔒 Lock-Free Data Structures</h4>
-                                <p>Boost lock-free queues minimize contention and maximize throughput</p>
-                            </div>
-                            <div class="optimization">
-                                <h4>⚡ SIMD Acceleration</h4>
-                                <p>Hardware SHA extensions provide vectorized hash computation</p>
-                            </div>
-                            <div class="optimization">
-                                <h4>📦 Batch Processing</h4>
-                                <p>Process multiple hashes simultaneously for better cache utilization</p>
-                            </div>
-                            <div class="optimization">
-                                <h4>🧵 Multi-Threading</h4>
-                                <p>Dedicated threads for hashing, ticks, and callbacks</p>
-                            </div>
-                        </div>
-                        
-                        <h3>📊 Live Performance Dashboard</h3>
-                        <div class="dashboard-preview">
-                            <p>Real-time metrics available via Prometheus endpoint:</p>
-                            <pre><code class="language-bash"># Get current PoH metrics
-curl http://localhost:9090/metrics | grep consensus_poh
-
-# Example output:
-consensus_poh_ticks_generated_total 245670
-consensus_poh_tick_duration_seconds_sum 0.049134
-consensus_poh_effective_tps 367421.5</code></pre>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-
-        function generateGettingStartedDoc() {
-            return `
-                <div class="getting-started-docs">
-                    <h2>🚀 Getting Started with Slonana.cpp</h2>
-                    
-                    <div class="quick-start">
-                        <h3>⚡ Quick Setup</h3>
-                        <div class="setup-steps">
-                            <div class="step">
-                                <h4>1️⃣ Clone Repository</h4>
-                                <pre><code class="language-bash">git clone https://github.com/slonana-labs/slonana.cpp
-cd slonana.cpp</code></pre>
-                            </div>
-                            
-                            <div class="step">
-                                <h4>2️⃣ Install Dependencies</h4>
-                                <pre><code class="language-bash"># Ubuntu/Debian
-sudo apt-get install cmake build-essential libssl-dev
-
-# macOS
-brew install cmake openssl</code></pre>
-                            </div>
-                            
-                            <div class="step">
-                                <h4>3️⃣ Build Project</h4>
-                                <pre><code class="language-bash">mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j$(nproc)</code></pre>
-                            </div>
-                            
-                            <div class="step">
-                                <h4>4️⃣ Run Validator</h4>
-                                <pre><code class="language-bash"># High-performance configuration
-./slonana_validator \\
-  --enable-proof-of-history \\
-  --tick-duration=200 \\
-  --enable-batch-processing \\
-  --enable-prometheus</code></pre>
-                            </div>
-                        </div>
-                        
-                        <h3>🔧 Configuration Options</h3>
-                        <div class="config-options">
-                            <h4>Proof of History Settings</h4>
-                            <ul>
-                                <li><code>--tick-duration</code>: Target microseconds per tick (200-800)</li>
-                                <li><code>--enable-batch-processing</code>: Enable batch hash computation</li>
-                                <li><code>--enable-simd</code>: Use hardware acceleration</li>
-                                <li><code>--hashing-threads</code>: Number of parallel hash threads</li>
-                            </ul>
-                            
-                            <h4>Monitoring & RPC</h4>
-                            <ul>
-                                <li><code>--rpc-port</code>: JSON-RPC server port (default: 8899)</li>
-                                <li><code>--enable-prometheus</code>: Enable metrics export</li>
-                                <li><code>--prometheus-port</code>: Metrics server port (default: 9090)</li>
-                                <li><code>--log-level</code>: Logging verbosity (debug, info, warn, error)</li>
-                            </ul>
-                        </div>
-                        
-                        <h3>✅ Verification</h3>
-                        <div class="verification">
-                            <h4>Test RPC Endpoint</h4>
-                            <pre><code class="language-bash"># Check validator health
-curl -X POST -H "Content-Type: application/json" \\
-  -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' \\
-  http://localhost:8899/
-
-# Get current slot
-curl -X POST -H "Content-Type: application/json" \\
-  -d '{"jsonrpc":"2.0","id":1,"method":"getSlot"}' \\
-  http://localhost:8899/</code></pre>
-                            
-                            <h4>Check Performance Metrics</h4>
-                            <pre><code class="language-bash"># View PoH metrics
-curl http://localhost:9090/metrics | grep consensus_poh
-
-# Expected output includes:
-# consensus_poh_ticks_generated_total
-# consensus_poh_tick_duration_seconds
-# consensus_poh_effective_tps</code></pre>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-
-        function showPerformanceStats() {
-            const modal = document.createElement('div');
-            modal.className = 'performance-modal';
-            modal.innerHTML = `
-                <div class="modal-content">
-                    <h3>📊 Live Performance Statistics</h3>
-                    <div class="live-stats">
-                        <div class="stat">
-                            <span class="label">PoH TPS:</span>
-                            <span class="value" id="live-tps">Loading...</span>
-                        </div>
-                        <div class="stat">
-                            <span class="label">Tick Duration:</span>
-                            <span class="value" id="live-duration">Loading...</span>
-                        </div>
-                        <div class="stat">
-                            <span class="label">Current Slot:</span>
-                            <span class="value" id="live-slot">Loading...</span>
-                        </div>
-                        <div class="stat">
-                            <span class="label">Batch Efficiency:</span>
-                            <span class="value" id="live-efficiency">Loading...</span>
-                        </div>
-                    </div>
-                    <button onclick="this.parentElement.parentElement.remove()">Close</button>
-                </div>
-            `;
-            document.body.appendChild(modal);
-            
-            // Simulate live data (in real implementation, this would fetch from validator)
-            setTimeout(() => {
-                document.getElementById('live-tps').textContent = '367,421 TPS';
-                document.getElementById('live-duration').textContent = '198μs avg';
-                document.getElementById('live-slot').textContent = '1,247,893';
-                document.getElementById('live-efficiency').textContent = '96.2%';
-            }, 1000);
-        }
-
-        function toggleTheme() {
-            document.body.classList.toggle('dark-theme');
-            const btn = event.target;
-            btn.textContent = document.body.classList.contains('dark-theme') ? '☀️ Light Mode' : '🌙 Dark Mode';
-        }
-
-        function exportToPDF() {
-            alert('PDF export functionality would be implemented here using libraries like Puppeteer or jsPDF');
-        }
-
-        // Initialize with welcome content
-        document.addEventListener('DOMContentLoaded', function() {
-            loadWelcomeContent();
-        });
-    </script>
-</body>
-</html>
+                    <div class="box-story">
                         <h4>Performance Metrics</h4>
                         <ul>
                             <li>50,000+ TPS Capability</li>
@@ -667,7 +227,7 @@ curl http://localhost:9090/metrics | grep consensus_poh
                     <p>Standards: C++17/20 compliant</p>
                 </div>
             </div>
-            <div class="copyright">© 2024 Slonana Labs. All rights reserved. Published under MIT License.</div>
+            <div class="copyright">© 2025 Slonana Labs. All rights reserved. Published under MIT License.</div>
         </footer>
     </div>
 </body>
