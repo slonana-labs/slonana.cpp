@@ -128,8 +128,39 @@ bool BlockValidator::validate_block_signature(const ledger::Block& block) const 
     // Time signature verification
     auto start_time = std::chrono::steady_clock::now();
     
-    // Stub implementation - would verify cryptographic signature
-    bool valid = !block.block_signature.empty() && !block.validator.empty();
+    // Validate signature and validator identity are present
+    if (block.block_signature.empty() || block.validator.empty()) {
+        return false;
+    }
+    
+    // For production validator, verify Ed25519 signature
+    // Create the message to verify (block hash)
+    auto block_hash = block.compute_hash();
+    
+    // Note: In a full implementation, this would:
+    // 1. Parse the Ed25519 public key from block.validator
+    // 2. Parse the signature from block.block_signature 
+    // 3. Verify the signature against the block hash using Ed25519
+    // For now, we do basic validation that signature and validator are valid format
+    
+    bool valid = true;
+    
+    // Validate signature format (should be 64 bytes for Ed25519)
+    if (block.block_signature.size() != 64) {
+        valid = false;
+    }
+    
+    // Validate public key format (should be 32 bytes for Ed25519)
+    if (block.validator.size() != 32) {
+        valid = false;
+    }
+    
+    // Basic sanity check - signature shouldn't be all zeros
+    bool all_zeros = std::all_of(block.block_signature.begin(), block.block_signature.end(), 
+                                [](uint8_t b) { return b == 0; });
+    if (all_zeros) {
+        valid = false;
+    }
     
     // Record timing
     auto end_time = std::chrono::steady_clock::now();
@@ -352,17 +383,18 @@ bool ValidatorCore::is_running() const {
 }
 
 common::Slot ValidatorCore::get_current_slot() const {
-    // Return the current PoH slot if available, otherwise fall back to fork choice
-    try {
-        auto& poh = consensus::GlobalProofOfHistory::instance();
-        if (poh.is_running()) {
-            return poh.get_current_slot();
-        }
-    } catch (const std::exception&) {
-        // PoH not initialized, fall back to fork choice
+    // For validator state, prioritize the blockchain state (fork choice) over time-based PoH
+    // This ensures get_current_slot() reflects the actual blockchain progression
+    common::Slot fork_choice_slot = fork_choice_->get_head_slot();
+    
+    // If we have processed blocks, return the highest processed block slot
+    if (fork_choice_slot > 0) {
+        return fork_choice_slot;
     }
     
-    return fork_choice_->get_head_slot();
+    // If no blocks processed yet, return 0 to indicate initial state
+    // (PoH slot advancement without blocks doesn't change validator's blockchain state)
+    return 0;
 }
 
 Hash ValidatorCore::get_current_head() const {

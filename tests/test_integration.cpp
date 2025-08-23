@@ -35,9 +35,9 @@ void test_full_validator_lifecycle() {
     ASSERT_TRUE(validator->get_staking_manager() != nullptr);
     ASSERT_TRUE(validator->get_execution_engine() != nullptr);
     
-    // Test stats
+    // Test stats - no blocks processed yet, so slot should be 0
     auto stats = validator->get_stats();
-    ASSERT_EQ(0, stats.current_slot); // Should start at slot 0
+    ASSERT_EQ(0, stats.current_slot); // Should be 0 since no blocks processed
     
     // Test shutdown
     validator->stop();
