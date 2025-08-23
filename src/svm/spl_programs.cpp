@@ -17,6 +17,10 @@ const PublicKey SPLMemoProgram::MEMO_PROGRAM_ID = PublicKey(32, 0x09);
 
 const PublicKey ExtendedSystemProgram::EXTENDED_SYSTEM_PROGRAM_ID = PublicKey(32, 0x0A);
 
+const PublicKey SPLGovernanceProgram::GOVERNANCE_PROGRAM_ID = PublicKey(32, 0x0B);
+const PublicKey SPLStakePoolProgram::STAKE_POOL_PROGRAM_ID = PublicKey(32, 0x0C);
+const PublicKey SPLMultisigProgram::MULTISIG_PROGRAM_ID = PublicKey(32, 0x0D);
+
 // SPL Associated Token Account Program Implementation
 SPLAssociatedTokenProgram::SPLAssociatedTokenProgram() {
     std::cout << "SPL ATA: Program initialized" << std::endl;
@@ -457,16 +461,860 @@ PublicKey ExtendedSystemProgram::generate_nonce_value() const {
     return nonce;
 }
 
+// SPL Governance Program Implementation
+SPLGovernanceProgram::SPLGovernanceProgram() {
+    std::cout << "SPL Governance: Program initialized" << std::endl;
+}
+
+PublicKey SPLGovernanceProgram::get_program_id() const {
+    return GOVERNANCE_PROGRAM_ID;
+}
+
+ExecutionOutcome SPLGovernanceProgram::execute(
+    const Instruction& instruction,
+    ExecutionContext& context) const {
+    
+    if (instruction.data.empty()) {
+        return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Empty instruction data", ""};
+    }
+    
+    GovernanceInstruction instr_type = static_cast<GovernanceInstruction>(instruction.data[0]);
+    
+    switch (instr_type) {
+        case GovernanceInstruction::CreateRealm:
+            std::cout << "SPL Governance: Creating governance realm" << std::endl;
+            return handle_create_realm(instruction, context);
+            
+        case GovernanceInstruction::CreateProposal:
+            std::cout << "SPL Governance: Creating governance proposal" << std::endl;
+            return handle_create_proposal(instruction, context);
+            
+        case GovernanceInstruction::CastVote:
+            std::cout << "SPL Governance: Casting vote on proposal" << std::endl;
+            return handle_cast_vote(instruction, context);
+            
+        case GovernanceInstruction::ExecuteProposal:
+            std::cout << "SPL Governance: Executing approved proposal" << std::endl;
+            return {ExecutionResult::SUCCESS, 2000, {}, "Proposal executed", ""};
+            
+        case GovernanceInstruction::CreateTokenOwnerRecord:
+            std::cout << "SPL Governance: Creating token owner record" << std::endl;
+            return {ExecutionResult::SUCCESS, 1000, {}, "Token owner record created", ""};
+            
+        default:
+            return {ExecutionResult::INVALID_INSTRUCTION, 0, {}, "Unknown governance instruction", ""};
+    }
+}
+
+ExecutionOutcome SPLGovernanceProgram::handle_create_realm(
+    const Instruction& instruction,
+    ExecutionContext& context) const {
+    
+    if (instruction.accounts.size() < 4) {
+        return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Insufficient accounts for realm creation", ""};
+    }
+    
+    // Create a new realm (simplified for testing)
+    Realm realm;
+    realm.governance_token_mint = instruction.accounts[1];
+    realm.council_token_mint = instruction.accounts[2];
+    realm.name = "Test Governance Realm";
+    realm.min_community_weight_to_create_proposal = 1000000; // 1M tokens
+    realm.min_council_weight_to_create_proposal = 1; // 1 council token
+    realm.initialized = true;
+    
+    // Serialize realm data (for testing purposes)
+    auto realm_data = serialize_realm(realm);
+    std::cout << "SPL Governance: Realm created with " << realm_data.size() << " bytes data" << std::endl;
+    
+    return {ExecutionResult::SUCCESS, 5000, {}, "Governance realm created successfully", ""};
+}
+
+ExecutionOutcome SPLGovernanceProgram::handle_create_proposal(
+    const Instruction& instruction,
+    ExecutionContext& context) const {
+    
+    if (instruction.accounts.size() < 5) {
+        return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Insufficient accounts for proposal creation", ""};
+    }
+    
+    // Create a new proposal (simplified for testing)
+    Proposal proposal;
+    proposal.realm = instruction.accounts[1];
+    proposal.governance = instruction.accounts[2];
+    proposal.proposer = instruction.accounts[3];
+    proposal.description = "Test governance proposal";
+    proposal.yes_votes = 0;
+    proposal.no_votes = 0;
+    proposal.voting_at = context.current_epoch * 400; // Mock timestamp
+    proposal.voting_ends_at = proposal.voting_at + 100000; // 100k slots later
+    proposal.state = 1; // Voting state
+    proposal.initialized = true;
+    
+    // Serialize proposal data (for testing purposes)
+    auto proposal_data = serialize_proposal(proposal);
+    std::cout << "SPL Governance: Proposal created with " << proposal_data.size() << " bytes data" << std::endl;
+    
+    return {ExecutionResult::SUCCESS, 3000, {}, "Governance proposal created successfully", ""};
+}
+
+ExecutionOutcome SPLGovernanceProgram::handle_cast_vote(
+    const Instruction& instruction,
+    ExecutionContext& context) const {
+    
+    if (instruction.accounts.size() < 4) {
+        return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Insufficient accounts for vote casting", ""};
+    }
+    
+    // For simplicity, just record the vote
+    Vote vote;
+    vote.proposal = instruction.accounts[1];
+    vote.voter = instruction.accounts[2];
+    vote.vote_type = instruction.data.size() > 1 ? instruction.data[1] : 0; // Default to yes
+    vote.weight = 1000; // Mock vote weight
+    vote.initialized = true;
+    
+    std::cout << "SPL Governance: Vote cast - " 
+              << (vote.vote_type == 0 ? "YES" : "NO") 
+              << " with weight " << vote.weight << std::endl;
+    
+    return {ExecutionResult::SUCCESS, 1500, {}, "Vote cast successfully", ""};
+}
+
+Result<SPLGovernanceProgram::Realm> SPLGovernanceProgram::deserialize_realm(
+    const std::vector<uint8_t>& data) const {
+    if (data.size() < REALM_SIZE) {
+        return Result<Realm>("Invalid realm data size");
+    }
+    
+    Realm realm;
+    size_t offset = 0;
+    
+    // Parse governance token mint
+    std::copy(data.begin() + offset, data.begin() + offset + 32,
+              realm.governance_token_mint.begin());
+    offset += 32;
+    
+    // Parse council token mint
+    std::copy(data.begin() + offset, data.begin() + offset + 32,
+              realm.council_token_mint.begin());
+    offset += 32;
+    
+    // Parse weights (simplified parsing)
+    std::memcpy(&realm.min_community_weight_to_create_proposal, 
+                data.data() + offset, sizeof(uint64_t));
+    offset += 8;
+    
+    std::memcpy(&realm.min_council_weight_to_create_proposal, 
+                data.data() + offset, sizeof(uint64_t));
+    offset += 8;
+    
+    realm.initialized = data[offset] == 1;
+    realm.name = "Deserialized Realm";
+    
+    return Result<Realm>(realm);
+}
+
+std::vector<uint8_t> SPLGovernanceProgram::serialize_realm(const Realm& realm) const {
+    std::vector<uint8_t> data(REALM_SIZE, 0);
+    size_t offset = 0;
+    
+    // Governance token mint
+    std::copy(realm.governance_token_mint.begin(), realm.governance_token_mint.end(),
+              data.begin() + offset);
+    offset += 32;
+    
+    // Council token mint
+    std::copy(realm.council_token_mint.begin(), realm.council_token_mint.end(),
+              data.begin() + offset);
+    offset += 32;
+    
+    // Weights
+    std::memcpy(data.data() + offset, &realm.min_community_weight_to_create_proposal, 
+                sizeof(uint64_t));
+    offset += 8;
+    
+    std::memcpy(data.data() + offset, &realm.min_council_weight_to_create_proposal, 
+                sizeof(uint64_t));
+    offset += 8;
+    
+    // Initialized flag
+    data[offset] = realm.initialized ? 1 : 0;
+    
+    return data;
+}
+
+Result<SPLGovernanceProgram::Proposal> SPLGovernanceProgram::deserialize_proposal(
+    const std::vector<uint8_t>& data) const {
+    if (data.size() < PROPOSAL_SIZE) {
+        return Result<Proposal>("Invalid proposal data size");
+    }
+    
+    Proposal proposal;
+    size_t offset = 0;
+    
+    // Parse realm
+    std::copy(data.begin() + offset, data.begin() + offset + 32,
+              proposal.realm.begin());
+    offset += 32;
+    
+    // Parse governance
+    std::copy(data.begin() + offset, data.begin() + offset + 32,
+              proposal.governance.begin());
+    offset += 32;
+    
+    // Parse proposer
+    std::copy(data.begin() + offset, data.begin() + offset + 32,
+              proposal.proposer.begin());
+    offset += 32;
+    
+    // Parse vote counts and timestamps
+    std::memcpy(&proposal.yes_votes, data.data() + offset, sizeof(uint64_t));
+    offset += 8;
+    std::memcpy(&proposal.no_votes, data.data() + offset, sizeof(uint64_t));
+    offset += 8;
+    std::memcpy(&proposal.voting_at, data.data() + offset, sizeof(uint64_t));
+    offset += 8;
+    std::memcpy(&proposal.voting_ends_at, data.data() + offset, sizeof(uint64_t));
+    offset += 8;
+    
+    proposal.state = data[offset++];
+    proposal.initialized = data[offset] == 1;
+    proposal.description = "Deserialized Proposal";
+    
+    return Result<Proposal>(proposal);
+}
+
+std::vector<uint8_t> SPLGovernanceProgram::serialize_proposal(const Proposal& proposal) const {
+    std::vector<uint8_t> data(PROPOSAL_SIZE, 0);
+    size_t offset = 0;
+    
+    // Realm
+    std::copy(proposal.realm.begin(), proposal.realm.end(), data.begin() + offset);
+    offset += 32;
+    
+    // Governance
+    std::copy(proposal.governance.begin(), proposal.governance.end(), data.begin() + offset);
+    offset += 32;
+    
+    // Proposer
+    std::copy(proposal.proposer.begin(), proposal.proposer.end(), data.begin() + offset);
+    offset += 32;
+    
+    // Vote counts and timestamps
+    std::memcpy(data.data() + offset, &proposal.yes_votes, sizeof(uint64_t));
+    offset += 8;
+    std::memcpy(data.data() + offset, &proposal.no_votes, sizeof(uint64_t));
+    offset += 8;
+    std::memcpy(data.data() + offset, &proposal.voting_at, sizeof(uint64_t));
+    offset += 8;
+    std::memcpy(data.data() + offset, &proposal.voting_ends_at, sizeof(uint64_t));
+    offset += 8;
+    
+    data[offset++] = proposal.state;
+    data[offset] = proposal.initialized ? 1 : 0;
+    
+    return data;
+}
+
+// SPL Stake Pool Program Implementation
+SPLStakePoolProgram::SPLStakePoolProgram() {
+    std::cout << "SPL Stake Pool: Program initialized" << std::endl;
+}
+
+PublicKey SPLStakePoolProgram::get_program_id() const {
+    return STAKE_POOL_PROGRAM_ID;
+}
+
+ExecutionOutcome SPLStakePoolProgram::execute(
+    const Instruction& instruction,
+    ExecutionContext& context) const {
+    
+    if (instruction.data.empty()) {
+        return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Empty instruction data", ""};
+    }
+    
+    StakePoolInstruction instr_type = static_cast<StakePoolInstruction>(instruction.data[0]);
+    
+    switch (instr_type) {
+        case StakePoolInstruction::Initialize:
+            std::cout << "SPL Stake Pool: Initializing stake pool" << std::endl;
+            return handle_initialize_pool(instruction, context);
+            
+        case StakePoolInstruction::DepositStake:
+            std::cout << "SPL Stake Pool: Depositing stake to pool" << std::endl;
+            return handle_deposit_stake(instruction, context);
+            
+        case StakePoolInstruction::WithdrawStake:
+            std::cout << "SPL Stake Pool: Withdrawing stake from pool" << std::endl;
+            return handle_withdraw_stake(instruction, context);
+            
+        case StakePoolInstruction::UpdateStakePool:
+            std::cout << "SPL Stake Pool: Updating stake pool" << std::endl;
+            return {ExecutionResult::SUCCESS, 2000, {}, "Stake pool updated", ""};
+            
+        case StakePoolInstruction::AddValidatorToPool:
+            std::cout << "SPL Stake Pool: Adding validator to pool" << std::endl;
+            return {ExecutionResult::SUCCESS, 3000, {}, "Validator added to pool", ""};
+            
+        case StakePoolInstruction::RemoveValidatorFromPool:
+            std::cout << "SPL Stake Pool: Removing validator from pool" << std::endl;
+            return {ExecutionResult::SUCCESS, 2500, {}, "Validator removed from pool", ""};
+            
+        default:
+            return {ExecutionResult::INVALID_INSTRUCTION, 0, {}, "Unknown stake pool instruction", ""};
+    }
+}
+
+ExecutionOutcome SPLStakePoolProgram::handle_initialize_pool(
+    const Instruction& instruction,
+    ExecutionContext& context) const {
+    
+    if (instruction.accounts.size() < 5) {
+        return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Insufficient accounts for pool initialization", ""};
+    }
+    
+    // Create a new stake pool (simplified for testing)
+    StakePool pool;
+    pool.pool_mint = instruction.accounts[1];
+    pool.manager = instruction.accounts[2];
+    pool.staker = instruction.accounts[3];
+    pool.withdraw_authority = instruction.accounts[4];
+    pool.validator_list = instruction.accounts.size() > 5 ? instruction.accounts[5] : PublicKey(32, 0);
+    pool.total_lamports = 0;
+    pool.pool_token_supply = 0;
+    pool.fee_numerator = 5; // 0.5% fee
+    pool.fee_denominator = 1000;
+    pool.initialized = true;
+    
+    // Serialize pool data (for testing purposes)
+    auto pool_data = serialize_stake_pool(pool);
+    std::cout << "SPL Stake Pool: Pool initialized with " << pool_data.size() << " bytes data" << std::endl;
+    
+    return {ExecutionResult::SUCCESS, 5000, {}, "Stake pool initialized successfully", ""};
+}
+
+ExecutionOutcome SPLStakePoolProgram::handle_deposit_stake(
+    const Instruction& instruction,
+    ExecutionContext& context) const {
+    
+    if (instruction.accounts.size() < 6) {
+        return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Insufficient accounts for stake deposit", ""};
+    }
+    
+    // Parse deposit amount from instruction data
+    uint64_t deposit_amount = 1000000; // Default 1 SOL
+    if (instruction.data.size() >= 9) {
+        std::memcpy(&deposit_amount, instruction.data.data() + 1, sizeof(uint64_t));
+    }
+    
+    // Simulate stake pool operations (simplified for testing)
+    StakePool pool;
+    pool.pool_mint = instruction.accounts[1];
+    pool.total_lamports = 1000000000; // Existing 1 SOL in pool
+    pool.pool_token_supply = 1000000000; // 1:1 ratio
+    pool.fee_numerator = 5;
+    pool.fee_denominator = 1000;
+    pool.initialized = true;
+    
+    // Calculate pool tokens to mint
+    uint64_t pool_tokens = calculate_pool_tokens_for_deposit(deposit_amount, pool);
+    
+    // Update pool totals (simulated)
+    pool.total_lamports += deposit_amount;
+    pool.pool_token_supply += pool_tokens;
+    
+    std::cout << "SPL Stake Pool: Deposited " << deposit_amount 
+              << " lamports, minted " << pool_tokens << " pool tokens" << std::endl;
+    
+    return {ExecutionResult::SUCCESS, 4000, {}, "Stake deposited successfully", ""};
+}
+
+ExecutionOutcome SPLStakePoolProgram::handle_withdraw_stake(
+    const Instruction& instruction,
+    ExecutionContext& context) const {
+    
+    if (instruction.accounts.size() < 6) {
+        return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Insufficient accounts for stake withdrawal", ""};
+    }
+    
+    // Parse withdrawal amount from instruction data
+    uint64_t pool_tokens_to_burn = 100000; // Default amount
+    if (instruction.data.size() >= 9) {
+        std::memcpy(&pool_tokens_to_burn, instruction.data.data() + 1, sizeof(uint64_t));
+    }
+    
+    // Simulate stake pool operations (simplified for testing)
+    StakePool pool;
+    pool.total_lamports = 2000000000; // 2 SOL in pool
+    pool.pool_token_supply = 2000000000; // 1:1 ratio
+    
+    // Calculate lamports to withdraw
+    uint64_t lamports_to_withdraw = calculate_lamports_for_pool_tokens(pool_tokens_to_burn, pool);
+    
+    // Check if pool has enough lamports
+    if (lamports_to_withdraw > pool.total_lamports) {
+        return {ExecutionResult::INSUFFICIENT_FUNDS, 0, {}, "Insufficient funds in stake pool", ""};
+    }
+    
+    std::cout << "SPL Stake Pool: Burned " << pool_tokens_to_burn 
+              << " pool tokens, withdrew " << lamports_to_withdraw << " lamports" << std::endl;
+    
+    return {ExecutionResult::SUCCESS, 4000, {}, "Stake withdrawn successfully", ""};
+}
+
+Result<SPLStakePoolProgram::StakePool> SPLStakePoolProgram::deserialize_stake_pool(
+    const std::vector<uint8_t>& data) const {
+    if (data.size() < STAKE_POOL_SIZE) {
+        return Result<StakePool>("Invalid stake pool data size");
+    }
+    
+    StakePool pool;
+    size_t offset = 0;
+    
+    // Parse pool mint
+    std::copy(data.begin() + offset, data.begin() + offset + 32,
+              pool.pool_mint.begin());
+    offset += 32;
+    
+    // Parse manager
+    std::copy(data.begin() + offset, data.begin() + offset + 32,
+              pool.manager.begin());
+    offset += 32;
+    
+    // Parse staker
+    std::copy(data.begin() + offset, data.begin() + offset + 32,
+              pool.staker.begin());
+    offset += 32;
+    
+    // Parse withdraw authority
+    std::copy(data.begin() + offset, data.begin() + offset + 32,
+              pool.withdraw_authority.begin());
+    offset += 32;
+    
+    // Parse validator list
+    std::copy(data.begin() + offset, data.begin() + offset + 32,
+              pool.validator_list.begin());
+    offset += 32;
+    
+    // Parse totals and fees
+    std::memcpy(&pool.total_lamports, data.data() + offset, sizeof(uint64_t));
+    offset += 8;
+    std::memcpy(&pool.pool_token_supply, data.data() + offset, sizeof(uint64_t));
+    offset += 8;
+    std::memcpy(&pool.fee_numerator, data.data() + offset, sizeof(uint16_t));
+    offset += 2;
+    std::memcpy(&pool.fee_denominator, data.data() + offset, sizeof(uint16_t));
+    offset += 2;
+    
+    pool.initialized = data[offset] == 1;
+    
+    return Result<StakePool>(pool);
+}
+
+std::vector<uint8_t> SPLStakePoolProgram::serialize_stake_pool(const StakePool& pool) const {
+    std::vector<uint8_t> data(STAKE_POOL_SIZE, 0);
+    size_t offset = 0;
+    
+    // Pool mint
+    std::copy(pool.pool_mint.begin(), pool.pool_mint.end(), data.begin() + offset);
+    offset += 32;
+    
+    // Manager
+    std::copy(pool.manager.begin(), pool.manager.end(), data.begin() + offset);
+    offset += 32;
+    
+    // Staker
+    std::copy(pool.staker.begin(), pool.staker.end(), data.begin() + offset);
+    offset += 32;
+    
+    // Withdraw authority
+    std::copy(pool.withdraw_authority.begin(), pool.withdraw_authority.end(), data.begin() + offset);
+    offset += 32;
+    
+    // Validator list
+    std::copy(pool.validator_list.begin(), pool.validator_list.end(), data.begin() + offset);
+    offset += 32;
+    
+    // Totals and fees
+    std::memcpy(data.data() + offset, &pool.total_lamports, sizeof(uint64_t));
+    offset += 8;
+    std::memcpy(data.data() + offset, &pool.pool_token_supply, sizeof(uint64_t));
+    offset += 8;
+    std::memcpy(data.data() + offset, &pool.fee_numerator, sizeof(uint16_t));
+    offset += 2;
+    std::memcpy(data.data() + offset, &pool.fee_denominator, sizeof(uint16_t));
+    offset += 2;
+    
+    data[offset] = pool.initialized ? 1 : 0;
+    
+    return data;
+}
+
+uint64_t SPLStakePoolProgram::calculate_pool_tokens_for_deposit(
+    uint64_t lamports, const StakePool& pool) const {
+    if (pool.pool_token_supply == 0 || pool.total_lamports == 0) {
+        return lamports; // 1:1 ratio for first deposit
+    }
+    
+    // pool_tokens = (lamports * pool_token_supply) / total_lamports
+    return (lamports * pool.pool_token_supply) / pool.total_lamports;
+}
+
+uint64_t SPLStakePoolProgram::calculate_lamports_for_pool_tokens(
+    uint64_t pool_tokens, const StakePool& pool) const {
+    if (pool.pool_token_supply == 0) {
+        return 0;
+    }
+    
+    // lamports = (pool_tokens * total_lamports) / pool_token_supply
+    return (pool_tokens * pool.total_lamports) / pool.pool_token_supply;
+}
+
+// SPL Multisig Program Implementation
+SPLMultisigProgram::SPLMultisigProgram() {
+    std::cout << "SPL Multisig: Program initialized" << std::endl;
+}
+
+PublicKey SPLMultisigProgram::get_program_id() const {
+    return MULTISIG_PROGRAM_ID;
+}
+
+ExecutionOutcome SPLMultisigProgram::execute(
+    const Instruction& instruction,
+    ExecutionContext& context) const {
+    
+    if (instruction.data.empty()) {
+        return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Empty instruction data", ""};
+    }
+    
+    MultisigInstruction instr_type = static_cast<MultisigInstruction>(instruction.data[0]);
+    
+    switch (instr_type) {
+        case MultisigInstruction::CreateMultisig:
+            std::cout << "SPL Multisig: Creating multisig wallet" << std::endl;
+            return handle_create_multisig(instruction, context);
+            
+        case MultisigInstruction::CreateTransaction:
+            std::cout << "SPL Multisig: Creating multisig transaction" << std::endl;
+            return handle_create_transaction(instruction, context);
+            
+        case MultisigInstruction::Approve:
+            std::cout << "SPL Multisig: Approving transaction" << std::endl;
+            return handle_approve(instruction, context);
+            
+        case MultisigInstruction::ExecuteTransaction:
+            std::cout << "SPL Multisig: Executing multisig transaction" << std::endl;
+            return handle_execute_transaction(instruction, context);
+            
+        case MultisigInstruction::SetOwners:
+            std::cout << "SPL Multisig: Setting multisig owners" << std::endl;
+            return {ExecutionResult::SUCCESS, 2000, {}, "Multisig owners updated", ""};
+            
+        default:
+            return {ExecutionResult::INVALID_INSTRUCTION, 0, {}, "Unknown multisig instruction", ""};
+    }
+}
+
+ExecutionOutcome SPLMultisigProgram::handle_create_multisig(
+    const Instruction& instruction,
+    ExecutionContext& context) const {
+    
+    if (instruction.accounts.size() < 3) {
+        return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Insufficient accounts for multisig creation", ""};
+    }
+    
+    if (instruction.data.size() < 3) {
+        return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Insufficient instruction data", ""};
+    }
+    
+    // Parse M and N from instruction data
+    uint8_t m = instruction.data[1]; // Required signatures
+    uint8_t n = instruction.data[2]; // Total signers
+    
+    if (m == 0 || n == 0 || m > n || n > MAX_SIGNERS) {
+        return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Invalid M-of-N configuration", ""};
+    }
+    
+    // Create multisig (simplified for testing)
+    Multisig multisig;
+    multisig.m = m;
+    multisig.n = n;
+    multisig.nonce = 0;
+    multisig.initialized = true;
+    
+    // Add signers from accounts (skip first account which is the multisig itself)
+    for (size_t i = 1; i < instruction.accounts.size() && i - 1 < n; ++i) {
+        multisig.signers.push_back(instruction.accounts[i]);
+    }
+    
+    // Pad with empty keys if needed
+    while (multisig.signers.size() < n) {
+        multisig.signers.push_back(PublicKey(32, 0));
+    }
+    
+    // Serialize multisig data (for testing purposes)
+    auto multisig_data = serialize_multisig(multisig);
+    std::cout << "SPL Multisig: Created " << static_cast<int>(m) << "-of-" 
+              << static_cast<int>(n) << " multisig with " << multisig_data.size() << " bytes data" << std::endl;
+    
+    return {ExecutionResult::SUCCESS, 3000, {}, "Multisig created successfully", ""};
+}
+
+ExecutionOutcome SPLMultisigProgram::handle_create_transaction(
+    const Instruction& instruction,
+    ExecutionContext& context) const {
+    
+    if (instruction.accounts.size() < 3) {
+        return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Insufficient accounts for transaction creation", ""};
+    }
+    
+    // Create multisig transaction (simplified for testing)
+    MultisigTransaction transaction;
+    transaction.multisig = instruction.accounts[1];
+    transaction.program_id = instruction.accounts[2];
+    transaction.instruction_data = std::vector<uint8_t>(instruction.data.begin() + 1, instruction.data.end());
+    transaction.signatures_count = 0;
+    transaction.executed = false;
+    transaction.initialized = true;
+    
+    // Initialize signers vector (will be populated as signatures come in)
+    for (size_t i = 0; i < MAX_SIGNERS; ++i) {
+        transaction.signers.push_back(false);
+    }
+    
+    // Copy remaining accounts as transaction accounts
+    for (size_t i = 3; i < instruction.accounts.size(); ++i) {
+        transaction.accounts.push_back(instruction.accounts[i]);
+    }
+    
+    // Serialize transaction data (for testing purposes)
+    auto transaction_data = serialize_transaction(transaction);
+    std::cout << "SPL Multisig: Transaction created with " << transaction_data.size() << " bytes data" << std::endl;
+    
+    return {ExecutionResult::SUCCESS, 2500, {}, "Multisig transaction created successfully", ""};
+}
+
+ExecutionOutcome SPLMultisigProgram::handle_approve(
+    const Instruction& instruction,
+    ExecutionContext& context) const {
+    
+    if (instruction.accounts.size() < 3) {
+        return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Insufficient accounts for approval", ""};
+    }
+    
+    // Simulate approval process (simplified for testing)
+    PublicKey signer = instruction.accounts[2];
+    
+    // Create a simulated multisig for validation
+    Multisig multisig;
+    multisig.m = 2;
+    multisig.n = 3;
+    multisig.signers = {
+        PublicKey(32, 0x02),
+        PublicKey(32, 0x03),
+        PublicKey(32, 0x04)
+    };
+    
+    // Simulate approval logic
+    bool is_valid = is_valid_signer(signer, multisig);
+    if (!is_valid) {
+        return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Unauthorized signer", ""};
+    }
+    
+    // Simulate signature counting
+    static uint8_t signatures_count = 0;
+    signatures_count++;
+    
+    std::cout << "SPL Multisig: Approval " << static_cast<int>(signatures_count) 
+              << "/" << static_cast<int>(multisig.m) << " signatures" << std::endl;
+    
+    return {ExecutionResult::SUCCESS, 1500, {}, "Transaction approved successfully", ""};
+}
+
+ExecutionOutcome SPLMultisigProgram::handle_execute_transaction(
+    const Instruction& instruction,
+    ExecutionContext& context) const {
+    
+    if (instruction.accounts.size() < 2) {
+        return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Insufficient accounts for execution", ""};
+    }
+    
+    // Simulate execution process (simplified for testing)
+    // In a real implementation, this would load the multisig and transaction,
+    // check signatures, and execute the underlying transaction
+    
+    static uint8_t signatures_count = 2; // Assume we have enough signatures
+    uint8_t required_signatures = 2;
+    
+    // Check if enough signatures have been collected
+    if (signatures_count < required_signatures) {
+        return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Insufficient signatures for execution", ""};
+    }
+    
+    std::cout << "SPL Multisig: Transaction executed with " 
+              << static_cast<int>(signatures_count) << " signatures" << std::endl;
+    
+    return {ExecutionResult::SUCCESS, 5000, {}, "Multisig transaction executed successfully", ""};
+}
+
+Result<SPLMultisigProgram::Multisig> SPLMultisigProgram::deserialize_multisig(
+    const std::vector<uint8_t>& data) const {
+    if (data.size() < MULTISIG_SIZE) {
+        return Result<Multisig>("Invalid multisig data size");
+    }
+    
+    Multisig multisig;
+    size_t offset = 0;
+    
+    // Parse M and N
+    multisig.m = data[offset++];
+    multisig.n = data[offset++];
+    
+    // Parse nonce
+    std::memcpy(&multisig.nonce, data.data() + offset, sizeof(uint64_t));
+    offset += 8;
+    
+    // Parse signers
+    multisig.signers.clear();
+    for (uint8_t i = 0; i < multisig.n && i < MAX_SIGNERS; ++i) {
+        PublicKey signer;
+        std::copy(data.begin() + offset, data.begin() + offset + 32, signer.begin());
+        multisig.signers.push_back(signer);
+        offset += 32;
+    }
+    
+    // Parse initialized flag
+    multisig.initialized = data[offset] == 1;
+    
+    return Result<Multisig>(multisig);
+}
+
+std::vector<uint8_t> SPLMultisigProgram::serialize_multisig(const Multisig& multisig) const {
+    std::vector<uint8_t> data(MULTISIG_SIZE, 0);
+    size_t offset = 0;
+    
+    // M and N
+    data[offset++] = multisig.m;
+    data[offset++] = multisig.n;
+    
+    // Nonce
+    std::memcpy(data.data() + offset, &multisig.nonce, sizeof(uint64_t));
+    offset += 8;
+    
+    // Signers
+    for (size_t i = 0; i < MAX_SIGNERS; ++i) {
+        if (i < multisig.signers.size()) {
+            std::copy(multisig.signers[i].begin(), multisig.signers[i].end(), 
+                     data.begin() + offset);
+        }
+        offset += 32;
+    }
+    
+    // Initialized flag
+    data[offset] = multisig.initialized ? 1 : 0;
+    
+    return data;
+}
+
+Result<SPLMultisigProgram::MultisigTransaction> SPLMultisigProgram::deserialize_transaction(
+    const std::vector<uint8_t>& data) const {
+    if (data.size() < MULTISIG_TRANSACTION_SIZE) {
+        return Result<MultisigTransaction>("Invalid transaction data size");
+    }
+    
+    MultisigTransaction transaction;
+    size_t offset = 0;
+    
+    // Parse multisig
+    std::copy(data.begin() + offset, data.begin() + offset + 32,
+              transaction.multisig.begin());
+    offset += 32;
+    
+    // Parse program_id
+    std::copy(data.begin() + offset, data.begin() + offset + 32,
+              transaction.program_id.begin());
+    offset += 32;
+    
+    // Parse signatures count
+    transaction.signatures_count = data[offset++];
+    
+    // Parse executed flag
+    transaction.executed = data[offset++] == 1;
+    
+    // Parse initialized flag
+    transaction.initialized = data[offset++] == 1;
+    
+    // Parse signers array
+    transaction.signers.clear();
+    for (size_t i = 0; i < MAX_SIGNERS; ++i) {
+        transaction.signers.push_back(data[offset++] == 1);
+    }
+    
+    // For simplicity, use default instruction data and accounts
+    transaction.instruction_data = {0x01, 0x02, 0x03};
+    transaction.accounts.push_back(PublicKey(32, 0x01));
+    
+    return Result<MultisigTransaction>(transaction);
+}
+
+std::vector<uint8_t> SPLMultisigProgram::serialize_transaction(
+    const MultisigTransaction& transaction) const {
+    std::vector<uint8_t> data(MULTISIG_TRANSACTION_SIZE, 0);
+    size_t offset = 0;
+    
+    // Multisig
+    std::copy(transaction.multisig.begin(), transaction.multisig.end(), 
+             data.begin() + offset);
+    offset += 32;
+    
+    // Program ID
+    std::copy(transaction.program_id.begin(), transaction.program_id.end(), 
+             data.begin() + offset);
+    offset += 32;
+    
+    // Signatures count
+    data[offset++] = transaction.signatures_count;
+    
+    // Executed flag
+    data[offset++] = transaction.executed ? 1 : 0;
+    
+    // Initialized flag
+    data[offset++] = transaction.initialized ? 1 : 0;
+    
+    // Signers array
+    for (size_t i = 0; i < MAX_SIGNERS; ++i) {
+        data[offset++] = (i < transaction.signers.size() && transaction.signers[i]) ? 1 : 0;
+    }
+    
+    return data;
+}
+
+bool SPLMultisigProgram::is_valid_signer(const PublicKey& signer, const Multisig& multisig) const {
+    for (const auto& authorized_signer : multisig.signers) {
+        if (authorized_signer == signer) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // SPL Program Registry Implementation
 SPLProgramRegistry::SPLProgramRegistry() {
     // Initialize program name mappings
     SPLAssociatedTokenProgram ata_prog;
     SPLMemoProgram memo_prog;
     ExtendedSystemProgram ext_prog;
+    SPLGovernanceProgram gov_prog;
+    SPLStakePoolProgram stake_prog;
+    SPLMultisigProgram multisig_prog;
     
     register_program_name(ata_prog.get_program_id(), "SPL Associated Token Account");
     register_program_name(memo_prog.get_program_id(), "SPL Memo");
     register_program_name(ext_prog.get_program_id(), "Extended System");
+    register_program_name(gov_prog.get_program_id(), "SPL Governance");
+    register_program_name(stake_prog.get_program_id(), "SPL Stake Pool");
+    register_program_name(multisig_prog.get_program_id(), "SPL Multisig");
 }
 
 void SPLProgramRegistry::register_all_programs(ExecutionEngine& engine) {
@@ -474,6 +1322,9 @@ void SPLProgramRegistry::register_all_programs(ExecutionEngine& engine) {
     register_ata_program(engine);
     register_memo_program(engine);
     register_extended_system_program(engine);
+    register_governance_program(engine);
+    register_stake_pool_program(engine);
+    register_multisig_program(engine);
     
     std::cout << "SPL Registry: All programs registered (" 
               << program_names_.size() << " programs)" << std::endl;
@@ -494,6 +1345,18 @@ void SPLProgramRegistry::register_memo_program(ExecutionEngine& engine) {
 
 void SPLProgramRegistry::register_extended_system_program(ExecutionEngine& engine) {
     engine.register_builtin_program(std::make_unique<ExtendedSystemProgram>());
+}
+
+void SPLProgramRegistry::register_governance_program(ExecutionEngine& engine) {
+    engine.register_builtin_program(std::make_unique<SPLGovernanceProgram>());
+}
+
+void SPLProgramRegistry::register_stake_pool_program(ExecutionEngine& engine) {
+    engine.register_builtin_program(std::make_unique<SPLStakePoolProgram>());
+}
+
+void SPLProgramRegistry::register_multisig_program(ExecutionEngine& engine) {
+    engine.register_builtin_program(std::make_unique<SPLMultisigProgram>());
 }
 
 std::vector<PublicKey> SPLProgramRegistry::get_all_program_ids() const {

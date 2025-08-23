@@ -192,6 +192,16 @@ target_include_directories(slonana_cluster_tests PRIVATE "${CMAKE_SOURCE_DIR}/te
 target_compile_definitions(slonana_cluster_tests PRIVATE STANDALONE_CLUSTER_TESTS)
 add_test(NAME cluster_tests COMMAND slonana_cluster_tests)
 
+# Snapshot system test suite
+add_executable(slonana_snapshot_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_snapshot.cpp"
+)
+target_link_libraries(slonana_snapshot_tests slonana_core)
+target_include_directories(slonana_snapshot_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_snapshot_tests PRIVATE STANDALONE_SNAPSHOT_TESTS)
+add_test(NAME snapshot_tests COMMAND slonana_snapshot_tests)
+
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")
 target_link_libraries(slonana-genesis slonana_core OpenSSL::SSL OpenSSL::Crypto)
