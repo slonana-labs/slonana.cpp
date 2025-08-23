@@ -134,8 +134,8 @@ jobs:
         echo "Batch Processing: ${{ matrix.node_config.batch_processing }}"
         echo "SIMD Acceleration: ${{ matrix.node_config.simd_acceleration }}"
         
-        # Start the validator in background
-        timeout ${{ inputs.test_duration || '120' }}s ./slonana_validator \
+        # Start the validator in background with proper timeout handling
+        ./slonana_validator \
           --config ../e2e-test-data/validator_config.json \
           --log-level info \
           --metrics-output ../e2e-test-data/metrics/runtime_metrics.json \
@@ -160,46 +160,65 @@ jobs:
         
         # Test RPC endpoint availability
         echo "Testing RPC endpoint availability..."
+        RPC_SUCCESS=false
         for i in {1..30}; do
           if curl -s -X POST -H "Content-Type: application/json" \
              -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' \
              http://localhost:8899/ > /dev/null 2>&1; then
             echo "✅ RPC endpoint is responsive"
+            RPC_SUCCESS=true
             break
-          fi
-          if [ $i -eq 30 ]; then
-            echo "❌ RPC endpoint not responsive after 30 attempts"
-            exit 1
           fi
           sleep 1
         done
         
-        # Monitor node for the specified duration
+        if [ "$RPC_SUCCESS" = false ]; then
+          echo "❌ RPC endpoint not responsive after 30 attempts"
+          cat ../e2e-test-data/logs/validator.log
+          kill -KILL $VALIDATOR_PID 2>/dev/null || true
+          exit 1
+        fi
+        
+        # Monitor node for the specified duration using timeout to handle duration
         echo "Monitoring node for ${{ inputs.test_duration || '120' }} seconds..."
         
-        # Collect metrics every 10 seconds
-        for i in $(seq 0 10 ${{ inputs.test_duration || '120' }}); do
-          echo "⏱️  Time: ${i}s"
+        # Set up duration handling
+        TEST_DURATION=${{ inputs.test_duration || '120' }}
+        START_TIME=$(date +%s)
+        SAMPLE_COUNT=0
+        
+        while true; do
+          CURRENT_TIME=$(date +%s)
+          ELAPSED=$((CURRENT_TIME - START_TIME))
+          
+          # Check if we've reached the test duration
+          if [ $ELAPSED -ge $TEST_DURATION ]; then
+            echo "✅ Test duration of ${TEST_DURATION}s completed"
+            break
+          fi
+          
+          echo "⏱️  Time: ${ELAPSED}s / ${TEST_DURATION}s"
           
           # Test basic RPC calls
           curl -s -X POST -H "Content-Type: application/json" \
                -d '{"jsonrpc":"2.0","id":1,"method":"getSlot"}' \
-               http://localhost:8899/ | jq '.result // "error"' > ../e2e-test-data/metrics/slot_$i.json || true
+               http://localhost:8899/ | jq '.result // "error"' > ../e2e-test-data/metrics/slot_${SAMPLE_COUNT}.json || true
           
           curl -s -X POST -H "Content-Type: application/json" \
                -d '{"jsonrpc":"2.0","id":1,"method":"getBlockHeight"}' \
-               http://localhost:8899/ | jq '.result // "error"' > ../e2e-test-data/metrics/height_$i.json || true
+               http://localhost:8899/ | jq '.result // "error"' > ../e2e-test-data/metrics/height_${SAMPLE_COUNT}.json || true
           
           # Get Prometheus metrics if available
-          curl -s http://localhost:9090/metrics > ../e2e-test-data/metrics/prometheus_$i.txt || true
+          curl -s http://localhost:9090/metrics > ../e2e-test-data/metrics/prometheus_${SAMPLE_COUNT}.txt 2>/dev/null || true
           
           # Check validator is still running
           if ! kill -0 $VALIDATOR_PID 2>/dev/null; then
-            echo "❌ Validator process died unexpectedly at ${i}s"
+            echo "❌ Validator process died unexpectedly at ${ELAPSED}s"
             cat ../e2e-test-data/logs/validator.log
             exit 1
           fi
           
+          SAMPLE_COUNT=$((SAMPLE_COUNT + 1))
           sleep 10
         done
         
@@ -215,6 +234,9 @@ jobs:
           echo "Force stopping validator..."
           kill -KILL $VALIDATOR_PID 2>/dev/null || true
         fi
+        
+        echo "✅ E2E test completed successfully"
+        exit 0
 
     - name: Stop monitoring
       if: always()
@@ -226,6 +248,7 @@ jobs:
         
         # Capture final network state
         ss -tuln > e2e-test-data/logs/network_after.log || true
+        exit 0
 
     - name: Analyze test results
       if: always()
@@ -280,6 +303,9 @@ jobs:
           echo "CPU and Memory usage summary:"
           tail -10 e2e-test-data/logs/system_resources.log || true
         fi
+        
+        echo "✅ Analysis completed successfully"
+        exit 0
 
     - name: Performance analysis (if enabled)
       if: ${{ inputs.enable_performance_analysis == true || inputs.enable_performance_analysis == 'true' }}
@@ -315,6 +341,9 @@ jobs:
             grep "poh_" "$LATEST_METRICS" | head -20 || true
           fi
         fi
+        
+        echo "✅ Performance analysis completed successfully"
+        exit 0
 
     - name: Upload test artifacts
       uses: actions/upload-artifact@v4
@@ -345,12 +374,20 @@ jobs:
         echo "- **PoH Configuration**: ${{ matrix.node_config.poh_tick_duration }}μs tick duration"
         echo "- **Batch Processing**: ${{ matrix.node_config.batch_processing }}"
         echo "- **SIMD Acceleration**: ${{ matrix.node_config.simd_acceleration }}"
-        echo "- **Test Status**: $([ $? -eq 0 ] && echo "✅ PASSED" || echo "❌ FAILED")"
+        
+        # Check test status based on previous step outcome
+        if [ "${{ job.status }}" = "success" ]; then
+          echo "- **Test Status**: ✅ PASSED"
+        else
+          echo "- **Test Status**: ❌ FAILED"
+        fi
         
         if [ -f e2e-test-data/logs/validator.log ]; then
           echo "- **Validator Log Size**: $(wc -l < e2e-test-data/logs/validator.log) lines"
           echo "- **Last Log Entry**: $(tail -1 e2e-test-data/logs/validator.log)"
         fi
+        
+        exit 0
 
   e2e-summary:
     needs: e2e-node-testing
