@@ -54,6 +54,27 @@ struct ValidatorConfig {
     uint32_t metrics_export_interval_ms = 1000;
     bool consensus_enable_timing_metrics = true;
     bool consensus_performance_target_validation = true;
+    
+    // Mainnet and network configuration
+    std::string network_id = "devnet";
+    std::string expected_genesis_hash;
+    std::vector<std::string> bootstrap_entrypoints;
+    std::vector<std::string> known_validators;
+    
+    // Security configuration
+    bool require_validator_identity = false;
+    bool enable_tls = false;
+    uint64_t minimum_validator_stake = 0;
+    uint64_t minimum_delegation_stake = 0;
+    
+    // Economic parameters
+    double inflation_rate = 0.08;
+    uint32_t epoch_length_slots = 432000;
+    
+    // Network discovery
+    uint32_t discovery_interval_ms = 30000;
+    uint32_t peer_connection_timeout_ms = 10000;
+    uint32_t max_peer_discovery_attempts = 3;
 };
 
 /**

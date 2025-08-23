@@ -1,4 +1,5 @@
 #include "slonana_validator.h"
+#include "network/discovery.h"
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -27,6 +28,9 @@ void print_usage(const char* program_name) {
     std::cout << "  --config FILE              Path to JSON configuration file" << std::endl;
     std::cout << "  --log-level LEVEL          Log level (debug, info, warn, error)" << std::endl;
     std::cout << "  --metrics-output FILE      Path to metrics output file" << std::endl;
+    std::cout << "  --network-id NETWORK       Network to connect to (mainnet, testnet, devnet)" << std::endl;
+    std::cout << "  --expected-genesis-hash HASH Expected genesis hash for validation" << std::endl;
+    std::cout << "  --known-validator ADDR     Add known validator entrypoint" << std::endl;
     std::cout << "  --no-rpc                   Disable RPC server" << std::endl;
     std::cout << "  --no-gossip                Disable gossip protocol" << std::endl;
     std::cout << "  --help                     Show this help message" << std::endl;
@@ -176,6 +180,12 @@ slonana::common::ValidatorConfig parse_arguments(int argc, char* argv[]) {
             config.log_level = argv[++i];
         } else if (arg == "--metrics-output" && i + 1 < argc) {
             config.metrics_output_path = argv[++i];
+        } else if (arg == "--network-id" && i + 1 < argc) {
+            config.network_id = argv[++i];
+        } else if (arg == "--expected-genesis-hash" && i + 1 < argc) {
+            config.expected_genesis_hash = argv[++i];
+        } else if (arg == "--known-validator" && i + 1 < argc) {
+            config.known_validators.push_back(argv[++i]);
         } else if (arg == "--no-rpc") {
             config.enable_rpc = false;
         } else if (arg == "--no-gossip") {
@@ -287,6 +297,22 @@ int main(int argc, char* argv[]) {
     std::cout << "Starting Solana C++ Validator..." << std::endl;
     std::cout << "Ledger path: " << config.ledger_path << std::endl;
     std::cout << "Identity: " << config.identity_keypair_path << std::endl;
+    
+    // Setup network-specific configuration
+    if (!config.network_id.empty()) {
+        std::cout << "Network: " << config.network_id << std::endl;
+        
+        // Auto-configure known validators for the network if not specified
+        if (config.known_validators.empty()) {
+            auto network_entrypoints = slonana::network::MainnetEntrypoints::get_entrypoints_for_network(config.network_id);
+            config.known_validators = network_entrypoints;
+            std::cout << "Auto-configured " << network_entrypoints.size() << " entrypoints for " << config.network_id << std::endl;
+        }
+    }
+    
+    if (!config.expected_genesis_hash.empty()) {
+        std::cout << "Expected genesis hash: " << config.expected_genesis_hash << std::endl;
+    }
     
     try {
         // Create and initialize the validator

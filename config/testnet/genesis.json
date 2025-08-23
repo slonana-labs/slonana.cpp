@@ -1,0 +1,35 @@
+{
+  "network_id": "testnet",
+  "chain_id": 102,
+  "network_type": "testnet", 
+  "version": "1.0.0",
+  "description": "Slonana Testnet Genesis Configuration",
+  "creation_time": 1703980800,
+  "magic_bytes": [84, 69, 83, 84],
+  "economics": {
+    "token_symbol": "tSLON",
+    "base_unit_name": "taldrins",
+    "total_supply": 100000000,
+    "initial_inflation_rate": 0.08,
+    "foundation_rate": 0.05,
+    "taper_rate": -0.15,
+    "foundation_allocation": 0.20,
+    "team_allocation": 0.15,
+    "community_allocation": 0.15,
+    "validator_allocation": 0.50,
+    "min_validator_stake": 100000,
+    "min_delegation": 100,
+    "vote_timeout_slashing": 0.05,
+    "equivocation_slashing": 1.0
+  },
+  "consensus": {
+    "epoch_length": 216000,
+    "slots_per_epoch": 216000,
+    "target_tick_duration_us": 400,
+    "ticks_per_slot": 64
+  },
+  "bootstrap_entrypoints": [
+    "testnet-seed1.slonana.org:8001",
+    "testnet-seed2.slonana.org:8001"
+  ]
+}

@@ -502,11 +502,12 @@ RpcResponse SolanaRpcServer::get_account_info(const RpcRequest& request) {
             if (account_info.has_value()) {
                 response.result = format_account_info(pubkey, account_info.value());
             } else {
-                response.result = "null";
+                // Return null with context for non-existent accounts (production behavior)
+                response.result = "{\"context\":" + get_current_context() + ",\"value\":null}";
             }
         } else {
-            // Return null for non-existent accounts (production behavior)
-            response.result = "null";
+            // Return null with context for non-existent accounts (production behavior)
+            response.result = "{\"context\":" + get_current_context() + ",\"value\":null}";
         }
         
     } catch (const std::exception& e) {

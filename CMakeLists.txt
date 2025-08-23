@@ -30,6 +30,7 @@ file(GLOB_RECURSE CORE_SOURCES
     "${SRC_DIR}/monitoring/*.cpp"
     "${SRC_DIR}/security/*.cpp"
     "${SRC_DIR}/cluster/*.cpp"
+    "${SRC_DIR}/genesis/*.cpp"
     "${SRC_DIR}/slonana_validator.cpp"
 )
 
@@ -130,6 +131,16 @@ add_test(NAME monitoring_tests COMMAND slonana_monitoring_tests)
 add_test(NAME consensus_timing_tests COMMAND slonana_consensus_timing_tests)
 add_test(NAME proof_of_history_tests COMMAND slonana_proof_of_history_tests)
 
+# Genesis and mainnet tests
+add_executable(slonana_genesis_tests 
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_genesis.cpp"
+)
+target_link_libraries(slonana_genesis_tests slonana_core OpenSSL::SSL OpenSSL::Crypto)
+target_include_directories(slonana_genesis_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_genesis_tests PRIVATE STANDALONE_GENESIS_TESTS)
+add_test(NAME genesis_tests COMMAND slonana_genesis_tests)
+
 # Comprehensive benchmarking suite
 add_executable(slonana_benchmarks 
     "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
@@ -141,6 +152,11 @@ target_include_directories(slonana_benchmarks PRIVATE "${CMAKE_SOURCE_DIR}/tests
 # Add benchmark test (optional - can be run separately)
 add_test(NAME benchmark_suite COMMAND slonana_benchmarks)
 
+# Genesis CLI tool
+add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")
+target_link_libraries(slonana-genesis slonana_core OpenSSL::SSL OpenSSL::Crypto)
+
 # Install targets
 install(TARGETS slonana_validator DESTINATION bin)
 install(TARGETS slonana_benchmarks DESTINATION bin)
+install(TARGETS slonana-genesis DESTINATION bin)

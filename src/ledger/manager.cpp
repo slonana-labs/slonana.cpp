@@ -3,7 +3,7 @@
 #include <fstream>
 #include <filesystem>
 #include <algorithm>
-#include <openssl/sha.h>
+#include <openssl/evp.h>
 
 namespace slonana {
 namespace ledger {
@@ -39,13 +39,24 @@ Transaction::Transaction(const std::vector<uint8_t>& raw_data) {
             message.assign(raw_data.begin() + offset, raw_data.begin() + offset + msg_len);
         }
         
-        // Compute SHA-256 hash from raw transaction data
+        // Compute SHA-256 hash from raw transaction data using modern EVP API
         hash.resize(32);
         if (!raw_data.empty()) {
-            SHA256_CTX ctx;
-            SHA256_Init(&ctx);
-            SHA256_Update(&ctx, raw_data.data(), raw_data.size());
-            SHA256_Final(hash.data(), &ctx);
+            EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+            if (ctx) {
+                if (EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) == 1 &&
+                    EVP_DigestUpdate(ctx, raw_data.data(), raw_data.size()) == 1) {
+                    unsigned int hash_len;
+                    if (EVP_DigestFinal_ex(ctx, hash.data(), &hash_len) != 1) {
+                        std::fill(hash.begin(), hash.end(), 0);
+                    }
+                } else {
+                    std::fill(hash.begin(), hash.end(), 0);
+                }
+                EVP_MD_CTX_free(ctx);
+            } else {
+                std::fill(hash.begin(), hash.end(), 0);
+            }
         } else {
             std::fill(hash.begin(), hash.end(), 0);
         }
@@ -222,15 +233,26 @@ bool Block::verify() const {
 }
 
 Hash Block::compute_hash() const {
-    // Compute SHA-256 hash of the serialized block
+    // Compute SHA-256 hash of the serialized block using modern EVP API
     Hash result(32);
     auto serialized = serialize();
     
     if (!serialized.empty()) {
-        SHA256_CTX ctx;
-        SHA256_Init(&ctx);
-        SHA256_Update(&ctx, serialized.data(), serialized.size());
-        SHA256_Final(result.data(), &ctx);
+        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+        if (ctx) {
+            if (EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) == 1 &&
+                EVP_DigestUpdate(ctx, serialized.data(), serialized.size()) == 1) {
+                unsigned int hash_len;
+                if (EVP_DigestFinal_ex(ctx, result.data(), &hash_len) != 1) {
+                    std::fill(result.begin(), result.end(), 0);
+                }
+            } else {
+                std::fill(result.begin(), result.end(), 0);
+            }
+            EVP_MD_CTX_free(ctx);
+        } else {
+            std::fill(result.begin(), result.end(), 0);
+        }
     } else {
         std::fill(result.begin(), result.end(), 0);
     }
