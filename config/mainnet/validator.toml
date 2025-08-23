@@ -1,0 +1,53 @@
+# Mainnet Validator Configuration
+# Production-ready settings for Slonana mainnet validators
+
+# Network Configuration
+network_id = "mainnet"
+expected_genesis_hash = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
+
+# Validator Identity and Paths
+identity_keypair_path = "/etc/slonana/mainnet-keypair.json"
+ledger_path = "/var/lib/slonana/mainnet-ledger"
+
+# Network Binding
+rpc_bind_address = "0.0.0.0:8899"
+gossip_bind_address = "0.0.0.0:8001"
+
+# Bootstrap Entrypoints
+known_validators = [
+    "mainnet-seed1.slonana.org:8001",
+    "mainnet-seed2.slonana.org:8001", 
+    "mainnet-seed3.slonana.org:8001"
+]
+
+# Performance and Resources
+max_connections = 2000
+enable_rpc = true
+enable_gossip = true
+
+# Consensus Configuration
+enable_consensus = true
+enable_proof_of_history = true
+poh_target_tick_duration_us = 400
+poh_ticks_per_slot = 64
+poh_hashing_threads = 8
+poh_enable_simd_acceleration = true
+
+# Monitoring and Metrics
+enable_prometheus = true
+prometheus_port = 9090
+enable_health_checks = true
+metrics_export_interval_ms = 5000
+consensus_enable_timing_metrics = true
+
+# Logging
+log_level = "info"
+metrics_output_path = "/var/log/slonana/mainnet-metrics.json"
+
+# Security
+require_validator_identity = true
+enable_tls = true
+
+# Staking Requirements
+minimum_validator_stake = 1000000
+minimum_delegation_stake = 1000

@@ -1,0 +1,91 @@
+{
+  "network_id": "mainnet",
+  "chain_id": 101,
+  "network_type": "mainnet",
+  "version": "1.0.0",
+  "description": "Slonana Mainnet Genesis Configuration",
+  "creation_time": 1703980800,
+  "magic_bytes": [77, 65, 73, 78],
+  "economics": {
+    "total_supply": 1000000000,
+    "initial_inflation_rate": 0.05,
+    "foundation_rate": 0.05,
+    "taper_rate": -0.15,
+    "foundation_allocation": 0.20,
+    "team_allocation": 0.15,
+    "community_allocation": 0.15,
+    "validator_allocation": 0.50,
+    "min_validator_stake": 1000000,
+    "min_delegation": 1000,
+    "vote_timeout_slashing": 0.05,
+    "equivocation_slashing": 1.0
+  },
+  "consensus": {
+    "epoch_length": 432000,
+    "slots_per_epoch": 432000,
+    "target_tick_duration_us": 400,
+    "ticks_per_slot": 64
+  },
+  "bootstrap_entrypoints": [
+    "mainnet-seed1.slonana.org:8001",
+    "mainnet-seed2.slonana.org:8001",
+    "mainnet-seed3.slonana.org:8001"
+  ],
+  "network_discovery": {
+    "dns_seeds": [
+      "mainnet-seeds.slonana.org",
+      "seeds.slonana.org"
+    ],
+    "entrypoints": [
+      {
+        "address": "mainnet-seed1.slonana.org",
+        "port": 8001,
+        "is_primary": true,
+        "region": "us-east",
+        "description": "Primary US East seed"
+      },
+      {
+        "address": "mainnet-seed2.slonana.org", 
+        "port": 8001,
+        "is_primary": true,
+        "region": "eu-west",
+        "description": "Primary EU West seed"
+      },
+      {
+        "address": "mainnet-seed3.slonana.org",
+        "port": 8001,
+        "is_primary": true,
+        "region": "asia-pac",
+        "description": "Primary Asia Pacific seed"
+      },
+      {
+        "address": "seed1.slonana.org",
+        "port": 8001,
+        "is_primary": false,
+        "region": "us-west",
+        "description": "Secondary US West seed"
+      },
+      {
+        "address": "seed2.slonana.org",
+        "port": 8001,
+        "is_primary": false,
+        "region": "eu-central", 
+        "description": "Secondary EU Central seed"
+      }
+    ],
+    "discovery_interval_ms": 30000,
+    "max_peers": 1000,
+    "connection_timeout_ms": 10000,
+    "retry_attempts": 3
+  },
+  "security": {
+    "require_tls": true,
+    "require_validator_identity": true,
+    "minimum_stake_for_voting": 1000000,
+    "trusted_validators": []
+  },
+  "monitoring": {
+    "enable_metrics_reporting": true,
+    "metrics_endpoint": "https://metrics.slonana.org/v1/submit"
+  }
+}
