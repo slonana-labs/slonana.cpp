@@ -105,12 +105,13 @@ bool SnapshotManager::create_full_snapshot(uint64_t slot, const std::string& led
         
         // Update statistics
         auto end_time = std::chrono::steady_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+        double duration_ms = duration.count() / 1000.0;
         
         stats_.total_snapshots_created++;
         stats_.total_bytes_written += file_size;
         stats_.average_creation_time_ms = 
-            (stats_.average_creation_time_ms * (stats_.total_snapshots_created - 1) + duration.count()) / 
+            (stats_.average_creation_time_ms * (stats_.total_snapshots_created - 1) + duration_ms) / 
             stats_.total_snapshots_created;
         stats_.last_snapshot_slot = slot;
         stats_.last_snapshot_time = std::chrono::system_clock::now();
@@ -119,7 +120,7 @@ bool SnapshotManager::create_full_snapshot(uint64_t slot, const std::string& led
         std::cout << "  File: " << snapshot_file << std::endl;
         std::cout << "  Size: " << file_size << " bytes" << std::endl;
         std::cout << "  Accounts: " << accounts.size() << std::endl;
-        std::cout << "  Duration: " << duration.count() << "ms" << std::endl;
+        std::cout << "  Duration: " << duration_ms << "ms" << std::endl;
         
         return true;
     } catch (const std::exception& e) {
@@ -194,17 +195,23 @@ bool SnapshotManager::create_incremental_snapshot(uint64_t slot, uint64_t base_s
         
         auto file_size = fs::file_size(snapshot_path);
         auto end_time = std::chrono::steady_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+        double duration_ms = duration.count() / 1000.0;
         
         // Update statistics
         stats_.total_snapshots_created++;
         stats_.total_bytes_written += file_size;
+        stats_.average_creation_time_ms = 
+            (stats_.average_creation_time_ms * (stats_.total_snapshots_created - 1) + duration_ms) / 
+            stats_.total_snapshots_created;
+        stats_.last_snapshot_slot = slot;
+        stats_.last_snapshot_time = std::chrono::system_clock::now();
         
         std::cout << "Snapshot Manager: Incremental snapshot created successfully" << std::endl;
         std::cout << "  File: " << snapshot_file << std::endl;
         std::cout << "  Size: " << file_size << " bytes" << std::endl;
         std::cout << "  Changed accounts: " << changed_accounts.size() << std::endl;
-        std::cout << "  Duration: " << duration.count() << "ms" << std::endl;
+        std::cout << "  Duration: " << duration_ms << "ms" << std::endl;
         
         return true;
     } catch (const std::exception& e) {
@@ -273,18 +280,19 @@ bool SnapshotManager::restore_from_snapshot(const std::string& snapshot_path, co
         // In a real implementation, this would restore the ledger state
         
         auto end_time = std::chrono::steady_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+        double duration_ms = duration.count() / 1000.0;
         
         // Update statistics
         stats_.total_snapshots_restored++;
         stats_.total_bytes_read += fs::file_size(snapshot_path);
         stats_.average_restoration_time_ms = 
-            (stats_.average_restoration_time_ms * (stats_.total_snapshots_restored - 1) + duration.count()) / 
+            (stats_.average_restoration_time_ms * (stats_.total_snapshots_restored - 1) + duration_ms) / 
             stats_.total_snapshots_restored;
         
         std::cout << "Snapshot Manager: Restoration completed successfully" << std::endl;
         std::cout << "  Restored accounts: " << accounts.size() << std::endl;
-        std::cout << "  Duration: " << duration.count() << "ms" << std::endl;
+        std::cout << "  Duration: " << duration_ms << "ms" << std::endl;
         
         return true;
     } catch (const std::exception& e) {
@@ -771,7 +779,7 @@ SnapshotStreamingService::SnapshotStreamingService(std::shared_ptr<SnapshotManag
     std::cout << "Snapshot Streaming Service: Initialized" << std::endl;
 }
 
-bool SnapshotStreamingService::start_snapshot_stream(const std::string& snapshot_path, const std::string& peer_address) {
+bool SnapshotStreamingService::start_snapshot_stream(const std::string& snapshot_path, const std::string& peer_address, size_t chunk_size) {
     auto start_time = std::chrono::steady_clock::now();
     
     std::cout << "Snapshot Streaming Service: Starting stream of " << snapshot_path 
@@ -779,7 +787,7 @@ bool SnapshotStreamingService::start_snapshot_stream(const std::string& snapshot
     
     try {
         // Generate chunks
-        auto chunks = get_snapshot_chunks(snapshot_path, 512 * 1024); // 512KB chunks
+        auto chunks = get_snapshot_chunks(snapshot_path, chunk_size);
         
         // Simulate streaming chunks
         for (const auto& chunk : chunks) {

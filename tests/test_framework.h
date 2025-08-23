@@ -16,7 +16,7 @@
 class TestPortManager {
 public:
     static int get_next_port() {
-        static std::atomic<int> next_port{19000}; // Start from 19000 to avoid conflicts
+        static std::atomic<int> next_port{20000}; // Start from 20000 to avoid conflicts with commonly used ports
         return next_port.fetch_add(1);
     }
     

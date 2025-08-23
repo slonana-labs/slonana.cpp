@@ -177,7 +177,7 @@ public:
     ~SnapshotStreamingService() = default;
 
     // Streaming operations
-    bool start_snapshot_stream(const std::string& snapshot_path, const std::string& peer_address);
+    bool start_snapshot_stream(const std::string& snapshot_path, const std::string& peer_address, size_t chunk_size = 1024 * 1024);
     std::vector<SnapshotChunk> get_snapshot_chunks(const std::string& snapshot_path, size_t chunk_size = 1024 * 1024) const;
     bool receive_snapshot_chunk(const SnapshotChunk& chunk, const std::string& output_path);
     

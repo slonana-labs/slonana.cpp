@@ -22,8 +22,14 @@ void test_websocket_server_lifecycle() {
     // Wait a moment for server to fully initialize
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     
-    // Test server stop
+    // Test server stop with timeout mechanism
+    auto stop_start = std::chrono::high_resolution_clock::now();
     ws_server->stop();
+    auto stop_end = std::chrono::high_resolution_clock::now();
+    auto stop_duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop_end - stop_start);
+    
+    // Should stop within reasonable time
+    ASSERT_LT(stop_duration.count(), 5000); // 5 second timeout
     ASSERT_FALSE(ws_server->is_running());
 }
 
