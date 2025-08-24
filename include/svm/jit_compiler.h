@@ -222,6 +222,29 @@ public:
     void import_profiles(const std::string& filename);
 };
 
+// Bytecode registry for storing and retrieving program bytecode
+class BytecodeRegistry {
+private:
+    std::unordered_map<std::string, std::vector<uint8_t>> bytecode_cache_;
+    mutable std::mutex cache_mutex_;
+    static std::unique_ptr<BytecodeRegistry> instance_;
+    static std::mutex instance_mutex_;
+    
+    BytecodeRegistry() = default;
+    
+public:
+    static BytecodeRegistry* get_instance();
+    
+    void register_program(const std::string& program_id, const std::vector<uint8_t>& bytecode);
+    std::vector<uint8_t> get_program_bytecode(const std::string& program_id) const;
+    bool has_program(const std::string& program_id) const;
+    void remove_program(const std::string& program_id);
+    void clear_all();
+    
+    std::vector<std::string> get_all_program_ids() const;
+    size_t get_program_count() const;
+};
+
 // Main JIT compilation engine
 class JITCompiler {
 private:

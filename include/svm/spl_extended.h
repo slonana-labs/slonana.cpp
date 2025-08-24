@@ -149,6 +149,9 @@ public:
         std::vector<uint8_t> data;
     };
     
+    // Alias for easier use
+    using NameRecord = NameRegistryState;
+    
     static ExecutionResult execute_instruction(
         const std::vector<uint8_t>& instruction_data,
         const std::vector<AccountInfo>& accounts
