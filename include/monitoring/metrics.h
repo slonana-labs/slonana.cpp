@@ -305,18 +305,17 @@ public:
      */
     static std::unique_ptr<IMetricsExporter> create_json_exporter();
 };
+
+/**
+ * @brief Global metrics registry singleton
+ */
+class GlobalMetrics {
+private:
+    static std::unique_ptr<IMetricsRegistry> instance_;
     
-    /**
-     * @brief Create a Prometheus format exporter
-     * @return unique pointer to Prometheus exporter
-     */
-    static std::unique_ptr<IMetricsExporter> create_prometheus_exporter();
-    
-    /**
-     * @brief Create a JSON format exporter
-     * @return unique pointer to JSON exporter
-     */
-    static std::unique_ptr<IMetricsExporter> create_json_exporter();
+public:
+    static IMetricsRegistry& registry();
+    static void initialize();
 };
 
 }} // namespace slonana::monitoring

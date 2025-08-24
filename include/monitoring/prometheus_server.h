@@ -1,6 +1,7 @@
 #pragma once
 
 #include "monitoring/metrics.h"
+#include "monitoring/prometheus_exporter.h"
 #include <string>
 #include <memory>
 #include <thread>

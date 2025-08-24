@@ -1,53 +1,783 @@
 #include "svm/spl_programs.h"
+#include "svm/spl_extended.h"
 #include <algorithm>
 #include <random>
 #include <iomanip>
 #include <sstream>
 #include <iostream>
 #include <cstring>
+#include <unordered_map>
 
 namespace slonana {
 namespace svm {
 
 // Program IDs (using placeholder values - would be actual Solana program IDs in production)
-const PublicKey SPLAssociatedTokenProgram::ATA_PROGRAM_ID = PublicKey(32, 0x08);
-const std::string SPLAssociatedTokenProgram::ATA_SEED = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+const std::string TokenProgram::PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+const std::string AssociatedTokenProgram::PROGRAM_ID = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+const std::string MemoProgram::PROGRAM_ID = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
+const std::string NameServiceProgram::PROGRAM_ID = "namesLPneVptA9Z5rqUDD9tMTWEJwofgaYwp8cawRkX";
+const std::string MetadataProgram::PROGRAM_ID = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s";
 
-const PublicKey SPLMemoProgram::MEMO_PROGRAM_ID = PublicKey(32, 0x09);
-
-const PublicKey ExtendedSystemProgram::EXTENDED_SYSTEM_PROGRAM_ID = PublicKey(32, 0x0A);
-
-const PublicKey SPLGovernanceProgram::GOVERNANCE_PROGRAM_ID = PublicKey(32, 0x0B);
-const PublicKey SPLStakePoolProgram::STAKE_POOL_PROGRAM_ID = PublicKey(32, 0x0C);
-const PublicKey SPLMultisigProgram::MULTISIG_PROGRAM_ID = PublicKey(32, 0x0D);
-
-// SPL Associated Token Account Program Implementation
-SPLAssociatedTokenProgram::SPLAssociatedTokenProgram() {
-    std::cout << "SPL ATA: Program initialized" << std::endl;
-}
-
-PublicKey SPLAssociatedTokenProgram::get_program_id() const {
-    return ATA_PROGRAM_ID;
-}
-
-ExecutionOutcome SPLAssociatedTokenProgram::execute(
-    const Instruction& instruction,
-    ExecutionContext& context) const {
+// Token Program Implementation
+ExecutionResult TokenProgram::execute_instruction(
+    const std::vector<uint8_t>& instruction_data,
+    const std::vector<AccountInfo>& accounts) {
     
-    if (instruction.data.empty()) {
-        return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Empty instruction data", ""};
+    if (instruction_data.empty()) {
+        return spl_utils::create_program_error("Empty instruction data");
     }
     
-    ATAInstruction instr_type = static_cast<ATAInstruction>(instruction.data[0]);
+    Instruction instruction_type = static_cast<Instruction>(instruction_data[0]);
     
-    switch (instr_type) {
-        case ATAInstruction::Create:
-            std::cout << "SPL ATA: Creating associated token account" << std::endl;
-            return handle_create_ata(instruction, context);
-            
-        case ATAInstruction::CreateIdempotent:
-            std::cout << "SPL ATA: Creating idempotent associated token account" << std::endl;
-            return handle_create_ata_idempotent(instruction, context);
+    switch (instruction_type) {
+        case Instruction::INITIALIZE_MINT:
+            return initialize_mint(instruction_data, accounts);
+        case Instruction::INITIALIZE_ACCOUNT:
+            return initialize_account(instruction_data, accounts);
+        case Instruction::TRANSFER:
+            return transfer(instruction_data, accounts);
+        case Instruction::APPROVE:
+            return approve(instruction_data, accounts);
+        case Instruction::MINT_TO:
+            return mint_to(instruction_data, accounts);
+        case Instruction::BURN:
+            return burn(instruction_data, accounts);
+        case Instruction::TRANSFER_CHECKED:
+            return transfer_checked(instruction_data, accounts);
+        default:
+            return spl_utils::create_program_error("Unknown instruction", 1);
+    }
+}
+
+ExecutionResult TokenProgram::initialize_mint(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts) {
+    if (accounts.size() < 2) {
+        return spl_utils::create_program_error("Insufficient accounts");
+    }
+    
+    if (data.size() < 3) {
+        return spl_utils::create_program_error("Insufficient instruction data");
+    }
+    
+    const auto& mint_account = accounts[0];
+    if (!spl_utils::validate_writable(mint_account)) {
+        return spl_utils::create_program_error("Mint account must be writable");
+    }
+    
+    uint8_t decimals = data[1];
+    if (decimals > 9) {
+        return spl_utils::create_program_error("Invalid decimals value");
+    }
+    
+    // Initialize mint account data structure
+    MintAccount mint_data;
+    mint_data.is_initialized = true;
+    mint_data.decimals = decimals;
+    mint_data.mint_authority = accounts.size() > 1 ? accounts[1].pubkey : "";
+    mint_data.supply = 0;
+    mint_data.freeze_authority = accounts.size() > 2 ? accounts[2].pubkey : "";
+    
+    std::cout << "Token: Initialized mint with " << static_cast<int>(decimals) << " decimals" << std::endl;
+    return spl_utils::create_success_result();
+}
+
+ExecutionResult TokenProgram::initialize_account(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts) {
+    if (accounts.size() < 3) {
+        return spl_utils::create_program_error("Insufficient accounts");
+    }
+    
+    const auto& token_account = accounts[0];
+    const auto& mint_account = accounts[1];
+    const auto& owner_account = accounts[2];
+    
+    if (!spl_utils::validate_writable(token_account)) {
+        return spl_utils::create_program_error("Token account must be writable");
+    }
+    
+    // Initialize token account
+    TokenAccount token_data;
+    token_data.mint = mint_account.pubkey;
+    token_data.owner = owner_account.pubkey;
+    token_data.amount = 0;
+    token_data.delegate = "";
+    token_data.state = 1; // initialized
+    token_data.is_native = false;
+    token_data.delegated_amount = 0;
+    token_data.close_authority = "";
+    
+    std::cout << "Token: Initialized account for mint " << mint_account.pubkey << std::endl;
+    return spl_utils::create_success_result();
+}
+
+ExecutionResult TokenProgram::transfer(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts) {
+    if (accounts.size() < 3) {
+        return spl_utils::create_program_error("Insufficient accounts");
+    }
+    
+    if (data.size() < 9) {
+        return spl_utils::create_program_error("Insufficient instruction data");
+    }
+    
+    const auto& source_account = accounts[0];
+    const auto& destination_account = accounts[1];
+    const auto& authority_account = accounts[2];
+    
+    if (!spl_utils::validate_writable(source_account) || !spl_utils::validate_writable(destination_account)) {
+        return spl_utils::create_program_error("Source and destination must be writable");
+    }
+    
+    if (!spl_utils::validate_signer(authority_account)) {
+        return spl_utils::create_program_error("Authority must be signer");
+    }
+    
+    uint64_t amount = spl_utils::unpack_u64(data, 1);
+    
+    // Verify source has sufficient balance
+    uint64_t source_balance = get_token_balance(source_account.pubkey);
+    if (source_balance < amount) {
+        return spl_utils::create_program_error("Insufficient funds");
+    }
+    
+    // Verify authority owns source account
+    if (!verify_token_owner(source_account.pubkey, authority_account.pubkey)) {
+        return spl_utils::create_program_error("Invalid authority");
+    }
+    
+    // Perform transfer
+    uint64_t destination_balance = get_token_balance(destination_account.pubkey);
+    update_token_balance(source_account.pubkey, source_balance - amount);
+    update_token_balance(destination_account.pubkey, destination_balance + amount);
+    
+    std::cout << "Token: Transferred " << amount << " tokens" << std::endl;
+    return spl_utils::create_success_result();
+}
+
+ExecutionResult TokenProgram::approve(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts) {
+    if (accounts.size() < 3) {
+        return spl_utils::create_program_error("Insufficient accounts");
+    }
+    
+    if (data.size() < 9) {
+        return spl_utils::create_program_error("Insufficient instruction data");
+    }
+    
+    const auto& source_account = accounts[0];
+    const auto& delegate_account = accounts[1];
+    const auto& owner_account = accounts[2];
+    
+    if (!spl_utils::validate_writable(source_account)) {
+        return spl_utils::create_program_error("Source account must be writable");
+    }
+    
+    if (!spl_utils::validate_signer(owner_account)) {
+        return spl_utils::create_program_error("Owner must be signer");
+    }
+    
+    uint64_t amount = spl_utils::unpack_u64(data, 1);
+    
+    // Verify owner authority
+    if (!verify_token_owner(source_account.pubkey, owner_account.pubkey)) {
+        return spl_utils::create_program_error("Invalid owner");
+    }
+    
+    std::cout << "Token: Approved delegate " << delegate_account.pubkey << " for " << amount << " tokens" << std::endl;
+    return spl_utils::create_success_result();
+}
+
+ExecutionResult TokenProgram::mint_to(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts) {
+    if (accounts.size() < 3) {
+        return spl_utils::create_program_error("Insufficient accounts");
+    }
+    
+    if (data.size() < 9) {
+        return spl_utils::create_program_error("Insufficient instruction data");
+    }
+    
+    const auto& mint_account = accounts[0];
+    const auto& destination_account = accounts[1];
+    const auto& mint_authority = accounts[2];
+    
+    if (!spl_utils::validate_writable(mint_account) || !spl_utils::validate_writable(destination_account)) {
+        return spl_utils::create_program_error("Mint and destination must be writable");
+    }
+    
+    if (!spl_utils::validate_signer(mint_authority)) {
+        return spl_utils::create_program_error("Mint authority must be signer");
+    }
+    
+    uint64_t amount = spl_utils::unpack_u64(data, 1);
+    
+    // Verify mint authority
+    if (!verify_mint_authority(mint_account.pubkey, mint_authority.pubkey)) {
+        return spl_utils::create_program_error("Invalid mint authority");
+    }
+    
+    // Mint tokens
+    uint64_t current_balance = get_token_balance(destination_account.pubkey);
+    update_token_balance(destination_account.pubkey, current_balance + amount);
+    
+    std::cout << "Token: Minted " << amount << " tokens to " << destination_account.pubkey << std::endl;
+    return spl_utils::create_success_result();
+}
+
+ExecutionResult TokenProgram::burn(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts) {
+    if (accounts.size() < 3) {
+        return spl_utils::create_program_error("Insufficient accounts");
+    }
+    
+    if (data.size() < 9) {
+        return spl_utils::create_program_error("Insufficient instruction data");
+    }
+    
+    const auto& token_account = accounts[0];
+    const auto& mint_account = accounts[1];
+    const auto& authority = accounts[2];
+    
+    if (!spl_utils::validate_writable(token_account) || !spl_utils::validate_writable(mint_account)) {
+        return spl_utils::create_program_error("Token and mint accounts must be writable");
+    }
+    
+    if (!spl_utils::validate_signer(authority)) {
+        return spl_utils::create_program_error("Authority must be signer");
+    }
+    
+    uint64_t amount = spl_utils::unpack_u64(data, 1);
+    
+    // Verify authority
+    if (!verify_token_owner(token_account.pubkey, authority.pubkey)) {
+        return spl_utils::create_program_error("Invalid authority");
+    }
+    
+    // Verify sufficient balance
+    uint64_t current_balance = get_token_balance(token_account.pubkey);
+    if (current_balance < amount) {
+        return spl_utils::create_program_error("Insufficient funds");
+    }
+    
+    // Burn tokens
+    update_token_balance(token_account.pubkey, current_balance - amount);
+    
+    std::cout << "Token: Burned " << amount << " tokens from " << token_account.pubkey << std::endl;
+    return spl_utils::create_success_result();
+}
+
+ExecutionResult TokenProgram::transfer_checked(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts) {
+    if (accounts.size() < 4) {
+        return spl_utils::create_program_error("Insufficient accounts");
+    }
+    
+    if (data.size() < 10) {
+        return spl_utils::create_program_error("Insufficient instruction data");
+    }
+    
+    const auto& source_account = accounts[0];
+    const auto& mint_account = accounts[1];
+    const auto& destination_account = accounts[2];
+    const auto& authority_account = accounts[3];
+    
+    uint64_t amount = spl_utils::unpack_u64(data, 1);
+    uint8_t decimals = data[9];
+    
+    // Additional checks for mint decimals
+    // In a real implementation, we'd verify the mint's decimals match
+    
+    // Delegate to regular transfer after validation
+    return transfer(data, {source_account, destination_account, authority_account});
+}
+
+// Helper functions
+bool TokenProgram::verify_mint_authority(const std::string& mint_account, const std::string& authority) {
+    // In a real implementation, this would check the mint's authority field
+    return true; // Simplified
+}
+
+bool TokenProgram::verify_token_owner(const std::string& token_account, const std::string& owner) {
+    // In a real implementation, this would check the token account's owner field
+    return true; // Simplified
+}
+
+uint64_t TokenProgram::get_token_balance(const std::string& token_account) {
+    // In a real implementation, this would read from account data
+    static std::unordered_map<std::string, uint64_t> balances;
+    return balances[token_account];
+}
+
+void TokenProgram::update_token_balance(const std::string& token_account, uint64_t new_balance) {
+    // In a real implementation, this would write to account data
+    static std::unordered_map<std::string, uint64_t> balances;
+    balances[token_account] = new_balance;
+}
+
+// Associated Token Account Program Implementation
+ExecutionResult AssociatedTokenProgram::execute_instruction(
+    const std::vector<uint8_t>& instruction_data,
+    const std::vector<AccountInfo>& accounts) {
+    
+    if (instruction_data.empty()) {
+        return spl_utils::create_program_error("Empty instruction data");
+    }
+    
+    Instruction instruction_type = static_cast<Instruction>(instruction_data[0]);
+    
+    switch (instruction_type) {
+        case Instruction::CREATE:
+            return create_associated_token_account(accounts, false);
+        case Instruction::CREATE_IDEMPOTENT:
+            return create_associated_token_account(accounts, true);
+        case Instruction::RECOVER_NESTED:
+            // Implementation would go here
+            return spl_utils::create_program_error("Recover nested not implemented");
+        default:
+            return spl_utils::create_program_error("Unknown instruction");
+    }
+}
+
+std::string AssociatedTokenProgram::derive_associated_token_address(
+    const std::string& wallet_address,
+    const std::string& token_mint_address) {
+    
+    // In a real implementation, this would use Solana's PDA derivation
+    std::string seeds = wallet_address + token_mint_address + PROGRAM_ID;
+    
+    // Simple hash-based derivation (placeholder)
+    std::hash<std::string> hasher;
+    size_t hash = hasher(seeds);
+    
+    std::stringstream ss;
+    ss << "ATA_" << std::hex << hash;
+    return ss.str();
+}
+
+ExecutionResult AssociatedTokenProgram::create_associated_token_account(
+    const std::vector<AccountInfo>& accounts,
+    bool idempotent) {
+    
+    if (accounts.size() < 7) {
+        return spl_utils::create_program_error("Insufficient accounts");
+    }
+    
+    const auto& funding_account = accounts[0];
+    const auto& associated_account = accounts[1];
+    const auto& wallet_account = accounts[2];
+    const auto& mint_account = accounts[3];
+    const auto& system_program = accounts[4];
+    const auto& token_program = accounts[5];
+    
+    if (!spl_utils::validate_signer(funding_account)) {
+        return spl_utils::create_program_error("Funding account must be signer");
+    }
+    
+    if (!spl_utils::validate_writable(associated_account)) {
+        return spl_utils::create_program_error("Associated account must be writable");
+    }
+    
+    // Verify derived address
+    std::string expected_address = derive_associated_token_address(wallet_account.pubkey, mint_account.pubkey);
+    if (associated_account.pubkey != expected_address && !idempotent) {
+        return spl_utils::create_program_error("Invalid associated token address");
+    }
+    
+    // Check if account already exists (for idempotent creation)
+    if (idempotent && spl_utils::is_token_account(associated_account)) {
+        std::cout << "ATA: Account already exists, skipping creation" << std::endl;
+        return spl_utils::create_success_result();
+    }
+    
+    // Create token account (simplified)
+    std::cout << "ATA: Created associated token account " << associated_account.pubkey << std::endl;
+    return spl_utils::create_success_result();
+}
+
+// Memo Program Implementation
+ExecutionResult MemoProgram::execute_instruction(
+    const std::vector<uint8_t>& instruction_data,
+    const std::vector<AccountInfo>& accounts) {
+    
+    if (instruction_data.empty()) {
+        return spl_utils::create_program_error("Empty instruction data");
+    }
+    
+    // Memo data starts from byte 0 (no instruction type byte)
+    std::string memo_text(instruction_data.begin(), instruction_data.end());
+    
+    if (!validate_memo_length(memo_text)) {
+        return spl_utils::create_program_error("Memo too long");
+    }
+    
+    // Extract required signers from accounts
+    std::vector<std::string> signers;
+    for (const auto& account : accounts) {
+        if (spl_utils::validate_signer(account)) {
+            signers.push_back(account.pubkey);
+        }
+    }
+    
+    if (!validate_signers(signers, accounts)) {
+        return spl_utils::create_program_error("Invalid signers");
+    }
+    
+    MemoData memo_data;
+    memo_data.memo_text = memo_text;
+    memo_data.required_signers = signers;
+    memo_data.timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    
+    std::cout << "Memo: Recorded memo: " << memo_text.substr(0, 50) 
+              << (memo_text.length() > 50 ? "..." : "") << std::endl;
+    
+    return spl_utils::create_success_result();
+}
+
+bool MemoProgram::validate_memo_length(const std::string& memo) {
+    return memo.length() <= MAX_MEMO_LENGTH;
+}
+
+bool MemoProgram::validate_signers(const std::vector<std::string>& signers, const std::vector<AccountInfo>& accounts) {
+    // Verify all required signers are present and actually signed
+    for (const auto& signer : signers) {
+        bool found = false;
+        for (const auto& account : accounts) {
+            if (account.pubkey == signer && spl_utils::validate_signer(account)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Name Service Program Implementation
+ExecutionResult NameServiceProgram::execute_instruction(
+    const std::vector<uint8_t>& instruction_data,
+    const std::vector<AccountInfo>& accounts) {
+    
+    if (instruction_data.empty()) {
+        return spl_utils::create_program_error("Empty instruction data");
+    }
+    
+    Instruction instruction_type = static_cast<Instruction>(instruction_data[0]);
+    
+    switch (instruction_type) {
+        case Instruction::CREATE:
+            return create_name_registry(instruction_data, accounts);
+        case Instruction::UPDATE:
+            return update_name_registry(instruction_data, accounts);
+        case Instruction::TRANSFER:
+            return transfer_ownership(instruction_data, accounts);
+        case Instruction::DELETE:
+            // Implementation would go here
+            return spl_utils::create_program_error("Delete not implemented");
+        default:
+            return spl_utils::create_program_error("Unknown instruction");
+    }
+}
+
+std::string NameServiceProgram::derive_name_account_key(
+    const std::string& name,
+    const std::string& name_class,
+    const std::string& parent_name) {
+    
+    // In a real implementation, this would use Solana's PDA derivation
+    std::string seeds = name + name_class + parent_name + PROGRAM_ID;
+    
+    std::hash<std::string> hasher;
+    size_t hash = hasher(seeds);
+    
+    std::stringstream ss;
+    ss << "NAME_" << std::hex << hash;
+    return ss.str();
+}
+
+ExecutionResult NameServiceProgram::create_name_registry(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts) {
+    if (accounts.size() < 3) {
+        return spl_utils::create_program_error("Insufficient accounts");
+    }
+    
+    const auto& name_account = accounts[0];
+    const auto& name_owner = accounts[1];
+    const auto& payer = accounts[2];
+    
+    if (!spl_utils::validate_writable(name_account)) {
+        return spl_utils::create_program_error("Name account must be writable");
+    }
+    
+    if (!spl_utils::validate_signer(payer)) {
+        return spl_utils::create_program_error("Payer must be signer");
+    }
+    
+    // Extract name data from instruction (simplified)
+    if (data.size() < 10) {
+        return spl_utils::create_program_error("Insufficient instruction data");
+    }
+    
+    std::string name = spl_utils::unpack_string(data, 1, 32);
+    
+    NameRegistryState registry_state;
+    registry_state.parent_name = "";
+    registry_state.owner = name_owner.pubkey;
+    registry_state.class_hash = "";
+    registry_state.data = std::vector<uint8_t>(data.begin() + 33, data.end());
+    
+    std::cout << "Name Service: Created name registry for '" << name << "'" << std::endl;
+    return spl_utils::create_success_result();
+}
+
+ExecutionResult NameServiceProgram::update_name_registry(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts) {
+    if (accounts.size() < 2) {
+        return spl_utils::create_program_error("Insufficient accounts");
+    }
+    
+    const auto& name_account = accounts[0];
+    const auto& name_owner = accounts[1];
+    
+    if (!spl_utils::validate_writable(name_account)) {
+        return spl_utils::create_program_error("Name account must be writable");
+    }
+    
+    if (!spl_utils::validate_signer(name_owner)) {
+        return spl_utils::create_program_error("Name owner must be signer");
+    }
+    
+    // Update name registry data
+    std::cout << "Name Service: Updated name registry " << name_account.pubkey << std::endl;
+    return spl_utils::create_success_result();
+}
+
+ExecutionResult NameServiceProgram::transfer_ownership(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts) {
+    if (accounts.size() < 3) {
+        return spl_utils::create_program_error("Insufficient accounts");
+    }
+    
+    const auto& name_account = accounts[0];
+    const auto& current_owner = accounts[1];
+    const auto& new_owner = accounts[2];
+    
+    if (!spl_utils::validate_writable(name_account)) {
+        return spl_utils::create_program_error("Name account must be writable");
+    }
+    
+    if (!spl_utils::validate_signer(current_owner)) {
+        return spl_utils::create_program_error("Current owner must be signer");
+    }
+    
+    std::cout << "Name Service: Transferred ownership of " << name_account.pubkey 
+              << " to " << new_owner.pubkey << std::endl;
+    return spl_utils::create_success_result();
+}
+
+// Metadata Program Implementation
+ExecutionResult MetadataProgram::execute_instruction(
+    const std::vector<uint8_t>& instruction_data,
+    const std::vector<AccountInfo>& accounts) {
+    
+    if (instruction_data.empty()) {
+        return spl_utils::create_program_error("Empty instruction data");
+    }
+    
+    Instruction instruction_type = static_cast<Instruction>(instruction_data[0]);
+    
+    switch (instruction_type) {
+        case Instruction::CREATE_METADATA_ACCOUNT:
+        case Instruction::CREATE_METADATA_ACCOUNT_V2:
+        case Instruction::CREATE_METADATA_ACCOUNT_V3:
+            return create_metadata_account(instruction_data, accounts);
+        case Instruction::UPDATE_METADATA_ACCOUNT:
+        case Instruction::UPDATE_METADATA_ACCOUNT_V2:
+            return update_metadata_account(instruction_data, accounts);
+        case Instruction::CREATE_MASTER_EDITION:
+        case Instruction::CREATE_MASTER_EDITION_V3:
+            return create_master_edition(instruction_data, accounts);
+        case Instruction::VERIFY_COLLECTION:
+            return verify_collection(instruction_data, accounts);
+        default:
+            return spl_utils::create_program_error("Unknown or unimplemented instruction");
+    }
+}
+
+ExecutionResult MetadataProgram::create_metadata_account(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts) {
+    if (accounts.size() < 7) {
+        return spl_utils::create_program_error("Insufficient accounts");
+    }
+    
+    const auto& metadata_account = accounts[0];
+    const auto& mint_account = accounts[1];
+    const auto& mint_authority = accounts[2];
+    const auto& payer = accounts[3];
+    const auto& update_authority = accounts[4];
+    
+    if (!spl_utils::validate_writable(metadata_account)) {
+        return spl_utils::create_program_error("Metadata account must be writable");
+    }
+    
+    if (!spl_utils::validate_signer(mint_authority) || !spl_utils::validate_signer(payer)) {
+        return spl_utils::create_program_error("Required signers missing");
+    }
+    
+    // Verify metadata account is derived correctly
+    std::string expected_metadata = derive_metadata_account(mint_account.pubkey);
+    if (metadata_account.pubkey != expected_metadata) {
+        return spl_utils::create_program_error("Invalid metadata account address");
+    }
+    
+    // Parse metadata from instruction data (simplified)
+    if (data.size() < 100) {
+        return spl_utils::create_program_error("Insufficient metadata data");
+    }
+    
+    Metadata metadata;
+    metadata.update_authority = update_authority.pubkey;
+    metadata.mint = mint_account.pubkey;
+    metadata.name = spl_utils::unpack_string(data, 1, 32);
+    metadata.symbol = spl_utils::unpack_string(data, 33, 10);
+    metadata.uri = spl_utils::unpack_string(data, 43, 200);
+    metadata.seller_fee_basis_points = spl_utils::unpack_u64(data, 243) & 0xFFFF;
+    metadata.primary_sale_happened = false;
+    metadata.is_mutable = true;
+    
+    if (!validate_metadata_uri(metadata.uri)) {
+        return spl_utils::create_program_error("Invalid metadata URI");
+    }
+    
+    std::cout << "Metadata: Created metadata account for NFT '" << metadata.name << "'" << std::endl;
+    return spl_utils::create_success_result();
+}
+
+ExecutionResult MetadataProgram::update_metadata_account(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts) {
+    if (accounts.size() < 2) {
+        return spl_utils::create_program_error("Insufficient accounts");
+    }
+    
+    const auto& metadata_account = accounts[0];
+    const auto& update_authority = accounts[1];
+    
+    if (!spl_utils::validate_writable(metadata_account)) {
+        return spl_utils::create_program_error("Metadata account must be writable");
+    }
+    
+    if (!spl_utils::validate_signer(update_authority)) {
+        return spl_utils::create_program_error("Update authority must be signer");
+    }
+    
+    std::cout << "Metadata: Updated metadata account " << metadata_account.pubkey << std::endl;
+    return spl_utils::create_success_result();
+}
+
+ExecutionResult MetadataProgram::create_master_edition(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts) {
+    if (accounts.size() < 7) {
+        return spl_utils::create_program_error("Insufficient accounts");
+    }
+    
+    const auto& edition_account = accounts[0];
+    const auto& mint_account = accounts[1];
+    const auto& update_authority = accounts[2];
+    const auto& mint_authority = accounts[3];
+    const auto& payer = accounts[4];
+    const auto& metadata_account = accounts[5];
+    
+    if (!spl_utils::validate_writable(edition_account)) {
+        return spl_utils::create_program_error("Edition account must be writable");
+    }
+    
+    if (!spl_utils::validate_signer(update_authority) || 
+        !spl_utils::validate_signer(mint_authority) || 
+        !spl_utils::validate_signer(payer)) {
+        return spl_utils::create_program_error("Required signers missing");
+    }
+    
+    // Verify edition account is derived correctly
+    std::string expected_edition = derive_master_edition_account(mint_account.pubkey);
+    if (edition_account.pubkey != expected_edition) {
+        return spl_utils::create_program_error("Invalid master edition account address");
+    }
+    
+    std::cout << "Metadata: Created master edition for mint " << mint_account.pubkey << std::endl;
+    return spl_utils::create_success_result();
+}
+
+ExecutionResult MetadataProgram::verify_collection(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts) {
+    if (accounts.size() < 3) {
+        return spl_utils::create_program_error("Insufficient accounts");
+    }
+    
+    const auto& metadata_account = accounts[0];
+    const auto& collection_authority = accounts[1];
+    const auto& collection_mint = accounts[2];
+    
+    if (!spl_utils::validate_writable(metadata_account)) {
+        return spl_utils::create_program_error("Metadata account must be writable");
+    }
+    
+    if (!spl_utils::validate_signer(collection_authority)) {
+        return spl_utils::create_program_error("Collection authority must be signer");
+    }
+    
+    std::cout << "Metadata: Verified collection for metadata " << metadata_account.pubkey << std::endl;
+    return spl_utils::create_success_result();
+}
+
+bool MetadataProgram::validate_creator_shares(const std::vector<Creator>& creators) {
+    uint8_t total_share = 0;
+    for (const auto& creator : creators) {
+        total_share += creator.share;
+    }
+    return total_share == 100;
+}
+
+bool MetadataProgram::validate_metadata_uri(const std::string& uri) {
+    // Basic URI validation
+    return !uri.empty() && uri.length() <= 200 &&
+           (uri.find("http://") == 0 || uri.find("https://") == 0 || uri.find("ipfs://") == 0);
+}
+
+// Extended SPL Program Registry Implementation
+ExtendedSPLProgramRegistry::ExtendedSPLProgramRegistry() {
+    // Register all SPL programs
+    programs_[TokenProgram::PROGRAM_ID] = TokenProgram::execute_instruction;
+    programs_[AssociatedTokenProgram::PROGRAM_ID] = AssociatedTokenProgram::execute_instruction;
+    programs_[MemoProgram::PROGRAM_ID] = MemoProgram::execute_instruction;
+    programs_[NameServiceProgram::PROGRAM_ID] = NameServiceProgram::execute_instruction;
+    programs_[MetadataProgram::PROGRAM_ID] = MetadataProgram::execute_instruction;
+    
+    std::cout << "Extended SPL Program Registry initialized with " << programs_.size() << " programs" << std::endl;
+}
+
+bool ExtendedSPLProgramRegistry::is_spl_program(const std::string& program_id) const {
+    return programs_.count(program_id) > 0;
+}
+
+ExecutionResult ExtendedSPLProgramRegistry::execute_spl_program(
+    const std::string& program_id,
+    const std::vector<uint8_t>& instruction_data,
+    const std::vector<AccountInfo>& accounts) {
+    
+    auto it = programs_.find(program_id);
+    if (it == programs_.end()) {
+        return spl_utils::create_program_error("Unknown SPL program: " + program_id);
+    }
+    
+    try {
+        return it->second(instruction_data, accounts);
+    } catch (const std::exception& e) {
+        return spl_utils::create_program_error("SPL program execution failed: " + std::string(e.what()));
+    }
+}
+
+std::vector<std::string> ExtendedSPLProgramRegistry::get_supported_programs() const {
+    std::vector<std::string> program_ids;
+    for (const auto& pair : programs_) {
+        program_ids.push_back(pair.first);
+    }
+    return program_ids;
+}
+
+void ExtendedSPLProgramRegistry::register_custom_program(
+    const std::string& program_id,
+    std::function<ExecutionResult(const std::vector<uint8_t>&, const std::vector<AccountInfo>&)> executor) {
+    
+    programs_[program_id] = executor;
+    std::cout << "Registered custom SPL program: " << program_id << std::endl;
             
         case ATAInstruction::RecoverNested:
             std::cout << "SPL ATA: Recovering nested account" << std::endl;
@@ -1385,5 +2115,178 @@ void SPLProgramRegistry::register_program_name(
     program_names_[program_id] = name;
 }
 
-} // namespace svm
-} // namespace slonana
+
+// Utility functions for SPL program operations
+namespace spl_utils {
+
+std::vector<uint8_t> pack_u64(uint64_t value) {
+    std::vector<uint8_t> packed(8);
+    for (int i = 0; i < 8; i++) {
+        packed[i] = (value >> (i * 8)) & 0xFF;
+    }
+    return packed;
+}
+
+uint64_t unpack_u64(const std::vector<uint8_t>& data, size_t offset) {
+    if (offset + 8 > data.size()) {
+        return 0;
+    }
+    
+    uint64_t value = 0;
+    for (int i = 0; i < 8; i++) {
+        value |= (static_cast<uint64_t>(data[offset + i]) << (i * 8));
+    }
+    return value;
+}
+
+std::vector<uint8_t> pack_string(const std::string& str) {
+    std::vector<uint8_t> packed;
+    
+    // Pack length (4 bytes)
+    uint32_t length = str.size();
+    for (int i = 0; i < 4; i++) {
+        packed.push_back((length >> (i * 8)) & 0xFF);
+    }
+    
+    // Pack string data
+    packed.insert(packed.end(), str.begin(), str.end());
+    
+    return packed;
+}
+
+std::string unpack_string(const std::vector<uint8_t>& data, size_t offset, size_t max_length) {
+    if (offset >= data.size()) {
+        return "";
+    }
+    
+    size_t end_offset = std::min(offset + max_length, data.size());
+    
+    // Find null terminator
+    size_t actual_length = 0;
+    for (size_t i = offset; i < end_offset; i++) {
+        if (data[i] == 0) {
+            break;
+        }
+        actual_length++;
+    }
+    
+    return std::string(data.begin() + offset, data.begin() + offset + actual_length);
+}
+
+bool verify_program_derived_address(
+    const std::string& address,
+    const std::vector<std::vector<uint8_t>>& seeds,
+    const std::string& program_id) {
+    
+    std::string derived = derive_program_address(seeds, program_id);
+    return address == derived;
+}
+
+std::string derive_program_address(
+    const std::vector<std::vector<uint8_t>>& seeds,
+    const std::string& program_id) {
+    
+    // Simplified PDA derivation (real implementation would use SHA256 and curve operations)
+    std::string combined_seeds;
+    for (const auto& seed : seeds) {
+        combined_seeds.append(seed.begin(), seed.end());
+    }
+    combined_seeds += program_id;
+    
+    std::hash<std::string> hasher;
+    size_t hash = hasher(combined_seeds);
+    
+    std::stringstream ss;
+    ss << "PDA_" << std::hex << hash;
+    return ss.str();
+}
+
+bool validate_account_size(const AccountInfo& account, size_t expected_size) {
+    return account.data.size() >= expected_size;
+}
+
+bool validate_account_owner(const AccountInfo& account, const std::string& expected_owner) {
+    return account.owner == expected_owner;
+}
+
+bool validate_signer(const AccountInfo& account) {
+    return account.is_signer;
+}
+
+bool validate_writable(const AccountInfo& account) {
+    return account.is_writable;
+}
+
+// Token-specific utilities
+bool is_mint_account(const AccountInfo& account) {
+    // Check if account is owned by Token program and has mint structure
+    return account.owner == TokenProgram::PROGRAM_ID && account.data.size() >= 82; // Mint account size
+}
+
+bool is_token_account(const AccountInfo& account) {
+    // Check if account is owned by Token program and has token account structure
+    return account.owner == TokenProgram::PROGRAM_ID && account.data.size() >= 165; // Token account size
+}
+
+bool is_associated_token_account(const std::string& account_address, const std::string& wallet, const std::string& mint) {
+    std::string expected = AssociatedTokenProgram::derive_associated_token_address(wallet, mint);
+    return account_address == expected;
+}
+
+// Metadata utilities
+std::string derive_metadata_account(const std::string& mint_address) {
+    std::vector<std::vector<uint8_t>> seeds = {
+        {'m', 'e', 't', 'a', 'd', 'a', 't', 'a'},
+        std::vector<uint8_t>(mint_address.begin(), mint_address.end())
+    };
+    return derive_program_address(seeds, MetadataProgram::PROGRAM_ID);
+}
+
+std::string derive_master_edition_account(const std::string& mint_address) {
+    std::vector<std::vector<uint8_t>> seeds = {
+        {'m', 'e', 't', 'a', 'd', 'a', 't', 'a'},
+        std::vector<uint8_t>(mint_address.begin(), mint_address.end()),
+        {'e', 'd', 'i', 't', 'i', 'o', 'n'}
+    };
+    return derive_program_address(seeds, MetadataProgram::PROGRAM_ID);
+}
+
+std::string derive_edition_marker_account(const std::string& mint_address, uint64_t edition) {
+    auto edition_bytes = pack_u64(edition / 248); // Edition marker accounts hold 248 editions each
+    std::vector<std::vector<uint8_t>> seeds = {
+        {'m', 'e', 't', 'a', 'd', 'a', 't', 'a'},
+        std::vector<uint8_t>(mint_address.begin(), mint_address.end()),
+        {'e', 'd', 'i', 't', 'i', 'o', 'n'},
+        edition_bytes
+    };
+    return derive_program_address(seeds, MetadataProgram::PROGRAM_ID);
+}
+
+// Error handling
+ExecutionResult create_program_error(const std::string& message, uint32_t error_code) {
+    ExecutionResult result;
+    result.success = false;
+    result.error_message = message;
+    result.compute_units_consumed = 0;
+    result.logs.push_back("Program error: " + message);
+    return result;
+}
+
+ExecutionResult create_success_result() {
+    ExecutionResult result;
+    result.success = true;
+    result.error_message = "";
+    result.compute_units_consumed = 1; // Base compute units
+    result.logs.push_back("Program executed successfully");
+    return result;
+}
+
+ExecutionResult create_success_result(const std::vector<uint8_t>& return_data) {
+    ExecutionResult result = create_success_result();
+    result.return_data = return_data;
+    return result;
+}
+
+} // namespace spl_utils
+
+}} // namespace slonana::svm

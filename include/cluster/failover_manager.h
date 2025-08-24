@@ -140,7 +140,6 @@ private:
     bool execute_failover(const std::string& failed_node, FailoverTrigger trigger);
     std::string select_replacement_node(const std::string& failed_node);
     bool is_failover_cooldown_active();
-    void update_node_health(const std::string& node_id, const NodeHealth& health);
     void record_failover_event(const FailoverEvent& event);
     void cleanup_old_events();
     bool validate_cluster_state();
