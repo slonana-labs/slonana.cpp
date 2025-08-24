@@ -342,7 +342,20 @@ std::vector<Hash> LedgerManager::get_block_chain(const Hash& from_hash, size_t c
 }
 
 std::optional<Transaction> LedgerManager::get_transaction(const Hash& tx_hash) const {
-    // Stub implementation - would search through block transactions
+    // Production implementation: Search through block transactions in ledger database
+    
+    // Search through all blocks in the ledger
+    for (const auto& block : impl_->blocks_) {
+        // Search through transactions in this block
+        for (const auto& transaction : block.transactions) {
+            // Calculate transaction hash and compare
+            Hash calculated_hash = compute_transaction_hash(transaction.message);
+            if (calculated_hash == tx_hash) {
+                return transaction;
+            }
+        }
+    }
+    
     return std::nullopt;
 }
 
@@ -359,13 +372,90 @@ bool LedgerManager::is_block_valid(const Block& block) const {
 }
 
 bool LedgerManager::is_chain_consistent() const {
-    // Stub implementation - would verify parent-child relationships
+    // Production implementation: Verify parent-child relationships across the entire chain
+    
+    if (impl_->blocks_.empty()) {
+        return true; // Empty chain is consistent
+    }
+    
+    // Sort blocks by slot for verification
+    std::vector<Block> sorted_blocks = impl_->blocks_;
+    std::sort(sorted_blocks.begin(), sorted_blocks.end(), 
+              [](const Block& a, const Block& b) { return a.slot < b.slot; });
+    
+    // Verify each block's parent relationship
+    for (size_t i = 1; i < sorted_blocks.size(); ++i) {
+        const Block& current_block = sorted_blocks[i];
+        const Block& parent_block = sorted_blocks[i-1];
+        
+        // Verify parent hash reference
+        if (current_block.parent_hash != parent_block.block_hash) {
+            std::cerr << "Chain inconsistency: Block at slot " << current_block.slot 
+                      << " has invalid parent hash" << std::endl;
+            return false;
+        }
+        
+        // Verify slot progression (allow gaps for missed slots)
+        if (current_block.slot <= parent_block.slot) {
+            std::cerr << "Chain inconsistency: Non-progressive slots between " 
+                      << parent_block.slot << " and " << current_block.slot << std::endl;
+            return false;
+        }
+        
+        // Verify block hash integrity
+        if (!current_block.verify()) {
+            std::cerr << "Chain inconsistency: Block at slot " << current_block.slot 
+                      << " failed verification" << std::endl;
+            return false;
+        }
+    }
+    
     return true;
 }
 
 common::Result<bool> LedgerManager::compact_ledger() {
-    std::cout << "Compacting ledger (stub implementation)" << std::endl;
-    return common::Result<bool>(true);
+    std::cout << "Starting ledger compaction..." << std::endl;
+    
+    try {
+        // Production implementation: Remove old blocks beyond retention period
+        auto current_time = std::chrono::system_clock::now();
+        auto retention_limit = current_time - std::chrono::hours(24 * 30); // 30 days retention
+        
+        size_t blocks_removed = 0;
+        auto blocks_before = impl_->blocks_.size();
+        
+        // Remove old blocks (keep recent blocks)
+        impl_->blocks_.erase(
+            std::remove_if(impl_->blocks_.begin(), impl_->blocks_.end(),
+                [&](const Block& block) {
+                    auto block_time = std::chrono::system_clock::from_time_t(block.timestamp);
+                    bool should_remove = (block_time < retention_limit) && 
+                                       (block.slot < impl_->latest_slot_ - 1000000); // Keep at least 1M recent slots
+                    if (should_remove) {
+                        blocks_removed++;
+                        std::cout << "Removing old block at slot " << block.slot << std::endl;
+                    }
+                    return should_remove;
+                }),
+            impl_->blocks_.end());
+        
+        // Update latest slot if needed
+        if (!impl_->blocks_.empty()) {
+            auto latest_block = std::max_element(impl_->blocks_.begin(), impl_->blocks_.end(),
+                [](const Block& a, const Block& b) { return a.slot < b.slot; });
+            impl_->latest_slot_ = latest_block->slot;
+        }
+        
+        std::cout << "Ledger compaction completed. Removed " << blocks_removed 
+                  << " old blocks. Current blocks: " << impl_->blocks_.size() 
+                  << " (was " << blocks_before << ")" << std::endl;
+        
+        return common::Result<bool>(true);
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Ledger compaction failed: " << e.what() << std::endl;
+        return common::Result<bool>("Compaction failed: " + std::string(e.what()));
+    }
 }
 
 uint64_t LedgerManager::get_ledger_size() const {

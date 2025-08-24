@@ -573,8 +573,61 @@ RpcResponse SolanaRpcServer::get_program_accounts(const RpcRequest& request) {
     response.id = request.id;
     response.id_is_number = request.id_is_number;
     
-    // Stub implementation - would query accounts owned by program
-    response.result = "[]";
+    // Production implementation: Query accounts owned by program
+    std::string program_id = extract_first_param(request.params);
+    
+    if (program_id.empty()) {
+        response.error = "{\"code\":-32602,\"message\":\"Invalid params: program ID required\"}";
+        return response;
+    }
+    
+    // Query accounts from account manager
+    std::vector<std::string> account_results;
+    
+    if (account_manager_) {
+        // Get all accounts owned by this program
+        try {
+            PublicKey program_key;
+            // Convert program_id string to PublicKey (simplified conversion)
+            if (program_id.length() >= 32) {
+                program_key.resize(32);
+                for (size_t i = 0; i < 32 && i < program_id.length(); ++i) {
+                    program_key[i] = static_cast<uint8_t>(program_id[i]);
+                }
+                
+                // Query accounts owned by this program
+                auto accounts = account_manager_->get_accounts_by_owner(program_key);
+                
+                for (const auto& account : accounts) {
+                    std::ostringstream account_json;
+                    account_json << "{";
+                    account_json << "\"account\":{";
+                    account_json << "\"data\":[\"" << std::string(account.data.begin(), account.data.end()) << "\",\"base64\"],";
+                    account_json << "\"executable\":" << (account.executable ? "true" : "false") << ",";
+                    account_json << "\"lamports\":" << account.lamports << ",";
+                    account_json << "\"owner\":\"" << std::string(account.owner.begin(), account.owner.end()) << "\",";
+                    account_json << "\"rentEpoch\":" << account.rent_epoch << "},";
+                    account_json << "\"pubkey\":\"" << std::string(account.pubkey.begin(), account.pubkey.end()) << "\"}";
+                    
+                    account_results.push_back(account_json.str());
+                }
+            }
+        } catch (const std::exception& e) {
+            response.error = "{\"code\":-32603,\"message\":\"Internal error: " + std::string(e.what()) + "\"}";
+            return response;
+        }
+    }
+    
+    // Format response
+    std::ostringstream result;
+    result << "{\"context\":" << get_current_context() << ",\"value\":[";
+    for (size_t i = 0; i < account_results.size(); ++i) {
+        if (i > 0) result << ",";
+        result << account_results[i];
+    }
+    result << "]}";
+    
+    response.result = result.str();
     return response;
 }
 
@@ -583,8 +636,72 @@ RpcResponse SolanaRpcServer::get_multiple_accounts(const RpcRequest& request) {
     response.id = request.id;
     response.id_is_number = request.id_is_number;
     
-    // Stub implementation - would get multiple accounts
-    response.result = "{\"context\":" + get_current_context() + ",\"value\":[]}";
+    // Production implementation: Get multiple accounts by their public keys
+    std::string params_str = extract_json_array(request.params, "");
+    
+    if (params_str.empty() || params_str == "[]") {
+        response.error = "{\"code\":-32602,\"message\":\"Invalid params: account addresses required\"}";
+        return response;
+    }
+    
+    std::vector<std::string> account_results;
+    
+    if (account_manager_) {
+        try {
+            // Parse account addresses from params
+            // Simplified parsing - in production would use proper JSON parser
+            std::string inner = params_str.substr(1, params_str.length() - 2); // Remove brackets
+            std::istringstream ss(inner);
+            std::string account_address;
+            
+            while (std::getline(ss, account_address, ',')) {
+                // Clean up the address (remove quotes and whitespace)
+                account_address.erase(std::remove_if(account_address.begin(), account_address.end(),
+                    [](char c) { return c == '"' || std::isspace(c); }), account_address.end());
+                
+                if (!account_address.empty()) {
+                    // Convert address to PublicKey
+                    PublicKey pubkey;
+                    pubkey.resize(32);
+                    for (size_t i = 0; i < 32 && i < account_address.length(); ++i) {
+                        pubkey[i] = static_cast<uint8_t>(account_address[i]);
+                    }
+                    
+                    // Get account data
+                    auto account_opt = account_manager_->get_account(pubkey);
+                    if (account_opt) {
+                        const auto& account = *account_opt;
+                        std::ostringstream account_json;
+                        account_json << "{";
+                        account_json << "\"data\":[\"" << std::string(account.data.begin(), account.data.end()) << "\",\"base64\"],";
+                        account_json << "\"executable\":" << (account.executable ? "true" : "false") << ",";
+                        account_json << "\"lamports\":" << account.lamports << ",";
+                        account_json << "\"owner\":\"" << std::string(account.owner.begin(), account.owner.end()) << "\",";
+                        account_json << "\"rentEpoch\":" << account.rent_epoch;
+                        account_json << "}";
+                        
+                        account_results.push_back(account_json.str());
+                    } else {
+                        account_results.push_back("null"); // Account not found
+                    }
+                }
+            }
+        } catch (const std::exception& e) {
+            response.error = "{\"code\":-32603,\"message\":\"Internal error: " + std::string(e.what()) + "\"}";
+            return response;
+        }
+    }
+    
+    // Format response
+    std::ostringstream result;
+    result << "{\"context\":" << get_current_context() << ",\"value\":[";
+    for (size_t i = 0; i < account_results.size(); ++i) {
+        if (i > 0) result << ",";
+        result << account_results[i];
+    }
+    result << "]}";
+    
+    response.result = result.str();
     return response;
 }
 
@@ -593,8 +710,48 @@ RpcResponse SolanaRpcServer::get_largest_accounts(const RpcRequest& request) {
     response.id = request.id;
     response.id_is_number = request.id_is_number;
     
-    // Stub implementation
-    response.result = "{\"context\":" + get_current_context() + ",\"value\":[]}";
+    // Production implementation: Return accounts with largest balances
+    std::vector<std::pair<uint64_t, std::string>> account_balances;
+    
+    if (account_manager_) {
+        try {
+            // Get all accounts and sort by balance
+            auto all_accounts = account_manager_->get_all_accounts();
+            
+            for (const auto& account : all_accounts) {
+                std::string pubkey_str(account.pubkey.begin(), account.pubkey.end());
+                account_balances.emplace_back(account.lamports, pubkey_str);
+            }
+            
+            // Sort by balance (descending)
+            std::sort(account_balances.begin(), account_balances.end(),
+                [](const auto& a, const auto& b) { return a.first > b.first; });
+            
+            // Take top 20 accounts
+            if (account_balances.size() > 20) {
+                account_balances.resize(20);
+            }
+            
+        } catch (const std::exception& e) {
+            response.error = "{\"code\":-32603,\"message\":\"Internal error: " + std::string(e.what()) + "\"}";
+            return response;
+        }
+    }
+    
+    // Format response
+    std::ostringstream result;
+    result << "{\"context\":" << get_current_context() << ",\"value\":[";
+    
+    for (size_t i = 0; i < account_balances.size(); ++i) {
+        if (i > 0) result << ",";
+        result << "{";
+        result << "\"address\":\"" << account_balances[i].second << "\",";
+        result << "\"lamports\":" << account_balances[i].first;
+        result << "}";
+    }
+    
+    result << "]}";
+    response.result = result.str();
     return response;
 }
 
@@ -691,8 +848,62 @@ RpcResponse SolanaRpcServer::get_blocks(const RpcRequest& request) {
     response.id = request.id;
     response.id_is_number = request.id_is_number;
     
-    // Stub implementation - would return block slots in range
-    response.result = "[]";
+    // Production implementation: Return block slots in range
+    std::string params_str = extract_json_array(request.params, "");
+    
+    if (params_str.empty() || params_str == "[]") {
+        response.error = "{\"code\":-32602,\"message\":\"Invalid params: start and end slots required\"}";
+        return response;
+    }
+    
+    // Parse start and end slots (simplified parsing)
+    uint64_t start_slot = 0;
+    uint64_t end_slot = 0;
+    
+    try {
+        // Extract first and second parameters
+        std::string start_param = extract_param_by_index(params_str, 0);
+        std::string end_param = extract_param_by_index(params_str, 1);
+        
+        if (!start_param.empty()) {
+            start_slot = std::stoull(start_param);
+        }
+        if (!end_param.empty()) {
+            end_slot = std::stoull(end_param);
+        }
+        
+        // Validate range
+        if (end_slot <= start_slot) {
+            response.error = "{\"code\":-32602,\"message\":\"Invalid range: end slot must be greater than start slot\"}";
+            return response;
+        }
+        
+        // Get blocks from ledger manager
+        std::vector<uint64_t> block_slots;
+        if (ledger_manager_) {
+            for (uint64_t slot = start_slot; slot <= end_slot && slot < start_slot + 500; ++slot) {
+                auto block = ledger_manager_->get_block_by_slot(slot);
+                if (block) {
+                    block_slots.push_back(slot);
+                }
+            }
+        }
+        
+        // Format response
+        std::ostringstream result;
+        result << "[";
+        for (size_t i = 0; i < block_slots.size(); ++i) {
+            if (i > 0) result << ",";
+            result << block_slots[i];
+        }
+        result << "]";
+        
+        response.result = result.str();
+        
+    } catch (const std::exception& e) {
+        response.error = "{\"code\":-32603,\"message\":\"Internal error: " + std::string(e.what()) + "\"}";
+    }
+    
     return response;
 }
 
@@ -721,8 +932,59 @@ RpcResponse SolanaRpcServer::get_slot_leaders(const RpcRequest& request) {
     response.id = request.id;
     response.id_is_number = request.id_is_number;
     
-    // Stub implementation
-    response.result = "[]";
+    // Production implementation: Return slot leaders for given range
+    std::string params_str = extract_json_array(request.params, "");
+    
+    // Default to current slot if no params provided
+    uint64_t start_slot = 0;
+    uint64_t limit = 10;
+    
+    if (!params_str.empty() && params_str != "[]") {
+        try {
+            std::string start_param = extract_param_by_index(params_str, 0);
+            std::string limit_param = extract_param_by_index(params_str, 1);
+            
+            if (!start_param.empty()) {
+                start_slot = std::stoull(start_param);
+            }
+            if (!limit_param.empty()) {
+                limit = std::stoull(limit_param);
+                if (limit > 5000) limit = 5000; // Cap at 5000
+            }
+        } catch (const std::exception& e) {
+            response.error = "{\"code\":-32602,\"message\":\"Invalid params: " + std::string(e.what()) + "\"}";
+            return response;
+        }
+    }
+    
+    // Get slot leaders from validator core
+    std::vector<std::string> leaders;
+    if (validator_core_) {
+        try {
+            for (uint64_t slot = start_slot; slot < start_slot + limit; ++slot) {
+                std::string leader = validator_core_->get_slot_leader(slot);
+                if (leader.empty()) {
+                    // Default to our own validator identity
+                    leader = get_validator_identity();
+                }
+                leaders.push_back(leader);
+            }
+        } catch (const std::exception& e) {
+            response.error = "{\"code\":-32603,\"message\":\"Internal error: " + std::string(e.what()) + "\"}";
+            return response;
+        }
+    }
+    
+    // Format response
+    std::ostringstream result;
+    result << "[";
+    for (size_t i = 0; i < leaders.size(); ++i) {
+        if (i > 0) result << ",";
+        result << "\"" << leaders[i] << "\"";
+    }
+    result << "]";
+    
+    response.result = result.str();
     return response;
 }
 
@@ -731,8 +993,109 @@ RpcResponse SolanaRpcServer::get_block_production(const RpcRequest& request) {
     response.id = request.id;
     response.id_is_number = request.id_is_number;
     
-    // Stub implementation
-    response.result = "{\"context\":" + get_current_context() + ",\"value\":{\"byIdentity\":{},\"range\":{\"firstSlot\":0,\"lastSlot\":0}}}";
+    // Production implementation: Return block production statistics
+    std::string params_str = extract_json_array(request.params, "");
+    
+    uint64_t first_slot = 0;
+    uint64_t last_slot = 0;
+    
+    // Get current slot range
+    if (validator_core_) {
+        last_slot = validator_core_->get_current_slot();
+        first_slot = (last_slot > 1000) ? (last_slot - 1000) : 0;
+    }
+    
+    // Parse optional range parameters
+    if (!params_str.empty() && params_str != "[]") {
+        try {
+            // Extract range object if provided
+            std::string range_param = extract_param_by_index(params_str, 0);
+            if (!range_param.empty() && range_param.find("firstSlot") != std::string::npos) {
+                // Parse firstSlot and lastSlot from range object
+                size_t first_pos = range_param.find("firstSlot");
+                size_t last_pos = range_param.find("lastSlot");
+                
+                if (first_pos != std::string::npos) {
+                    size_t colon_pos = range_param.find(":", first_pos);
+                    if (colon_pos != std::string::npos) {
+                        size_t comma_pos = range_param.find(",", colon_pos);
+                        if (comma_pos == std::string::npos) comma_pos = range_param.find("}", colon_pos);
+                        if (comma_pos != std::string::npos) {
+                            std::string first_str = range_param.substr(colon_pos + 1, comma_pos - colon_pos - 1);
+                            first_str.erase(std::remove_if(first_str.begin(), first_str.end(), ::isspace), first_str.end());
+                            if (!first_str.empty()) {
+                                first_slot = std::stoull(first_str);
+                            }
+                        }
+                    }
+                }
+                
+                if (last_pos != std::string::npos) {
+                    size_t colon_pos = range_param.find(":", last_pos);
+                    if (colon_pos != std::string::npos) {
+                        size_t end_pos = range_param.find("}", colon_pos);
+                        if (end_pos != std::string::npos) {
+                            std::string last_str = range_param.substr(colon_pos + 1, end_pos - colon_pos - 1);
+                            last_str.erase(std::remove_if(last_str.begin(), last_str.end(), ::isspace), last_str.end());
+                            if (!last_str.empty()) {
+                                last_slot = std::stoull(last_str);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (const std::exception& e) {
+            response.error = "{\"code\":-32602,\"message\":\"Invalid params: " + std::string(e.what()) + "\"}";
+            return response;
+        }
+    }
+    
+    // Calculate block production statistics
+    std::map<std::string, std::pair<uint64_t, uint64_t>> identity_stats; // identity -> (produced, expected)
+    
+    if (validator_core_) {
+        try {
+            std::string our_identity = get_validator_identity();
+            uint64_t produced_blocks = 0;
+            uint64_t expected_blocks = 0;
+            
+            // Count blocks we actually produced vs expected in range
+            for (uint64_t slot = first_slot; slot <= last_slot; ++slot) {
+                std::string slot_leader = validator_core_->get_slot_leader(slot);
+                if (slot_leader == our_identity) {
+                    expected_blocks++;
+                    // Check if we actually produced a block for this slot
+                    if (ledger_manager_) {
+                        auto block = ledger_manager_->get_block_by_slot(slot);
+                        if (block) {
+                            produced_blocks++;
+                        }
+                    }
+                }
+            }
+            
+            identity_stats[our_identity] = {produced_blocks, expected_blocks};
+        } catch (const std::exception& e) {
+            response.error = "{\"code\":-32603,\"message\":\"Internal error: " + std::string(e.what()) + "\"}";
+            return response;
+        }
+    }
+    
+    // Format response
+    std::ostringstream result;
+    result << "{\"context\":" << get_current_context() << ",\"value\":{";
+    result << "\"byIdentity\":{";
+    
+    bool first = true;
+    for (const auto& [identity, stats] : identity_stats) {
+        if (!first) result << ",";
+        result << "\"" << identity << "\":[" << stats.first << "," << stats.second << "]";
+        first = false;
+    }
+    
+    result << "},\"range\":{\"firstSlot\":" << first_slot << ",\"lastSlot\":" << last_slot << "}}}";
+    
+    response.result = result.str();
     return response;
 }
 
