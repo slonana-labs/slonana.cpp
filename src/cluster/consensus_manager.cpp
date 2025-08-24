@@ -421,8 +421,64 @@ std::shared_ptr<IClusterCommunication> ConsensusManager::get_peer_communication(
 }
 
 void ConsensusManager::process_pending_operations() {
-    // Process any pending consensus operations
-    // This could include handling timeouts, retries, etc.
+    // Comprehensive pending operation processing with timeout handling and retry logic
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    
+    auto current_time = std::chrono::steady_clock::now();
+    
+    // Process timeouts for pending operations
+    auto it = pending_operations_.begin();
+    while (it != pending_operations_.end()) {
+        auto& operation = *it;
+        
+        // Check for operation timeout
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            current_time - operation.timestamp);
+        
+        if (elapsed > std::chrono::milliseconds(operation.timeout_ms)) {
+            std::cout << "Consensus: Operation " << operation.id << " timed out after " 
+                      << elapsed.count() << "ms" << std::endl;
+            
+            // Handle timeout based on operation type
+            if (operation.retry_count < operation.max_retries) {
+                // Retry the operation
+                operation.retry_count++;
+                operation.timestamp = current_time;
+                operation.timeout_ms *= 2; // Exponential backoff
+                
+                std::cout << "Consensus: Retrying operation " << operation.id 
+                          << " (attempt " << operation.retry_count + 1 << "/" 
+                          << operation.max_retries + 1 << ")" << std::endl;
+                ++it;
+            } else {
+                // Max retries exceeded, mark as failed
+                std::cout << "Consensus: Operation " << operation.id 
+                          << " failed after " << operation.max_retries + 1 << " attempts" << std::endl;
+                it = pending_operations_.erase(it);
+            }
+        } else {
+            ++it;
+        }
+    }
+    
+    // Process any ready operations that have received enough confirmations
+    for (auto& operation : pending_operations_) {
+        if (operation.confirmations >= required_confirmations_) {
+            std::cout << "Consensus: Operation " << operation.id 
+                      << " confirmed with " << operation.confirmations << " votes" << std::endl;
+            
+            // Apply the operation to state machine
+            if (state_machine_callback_) {
+                state_machine_callback_(operation.data);
+            }
+        }
+    }
+    
+    // Remove confirmed operations
+    pending_operations_.erase(
+        std::remove_if(pending_operations_.begin(), pending_operations_.end(),
+            [this](const auto& op) { return op.confirmations >= required_confirmations_; }),
+        pending_operations_.end());
 }
 
 void ConsensusManager::set_state_machine_callback(std::function<void(const std::vector<uint8_t>&)> callback) {

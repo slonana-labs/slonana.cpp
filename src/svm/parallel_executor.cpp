@@ -19,6 +19,18 @@
 // #include <numa.h>  // Optional NUMA support - disabled for broader compatibility
 #endif
 
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#include <pthread.h>
+#include <mach/thread_policy.h>
+#include <mach/mach.h>
+#endif
+
+#ifdef _WIN32
+#include <windows.h>
+#include <winbase.h>
+#endif
+
 #ifdef _WIN32
 #include <windows.h>
 #include <processthreadsapi.h>
@@ -1287,9 +1299,94 @@ size_t get_optimal_thread_count() {
     return hardware_threads > 0 ? hardware_threads : 4; // Fallback to 4
 }
 
+size_t detect_l3_cache_size() {
+    size_t l3_cache_size = 8 * 1024 * 1024; // 8MB fallback
+    
+    #ifdef __linux__
+    // Try to detect actual L3 cache size on Linux
+    std::ifstream cache_file("/sys/devices/system/cpu/cpu0/cache/index3/size");
+    if (cache_file.is_open()) {
+        std::string cache_str;
+        cache_file >> cache_str;
+        if (!cache_str.empty()) {
+            // Parse cache size (format: "8192K" or "8M")
+            char unit = cache_str.back();
+            std::string num_str = cache_str.substr(0, cache_str.length() - 1);
+            try {
+                size_t value = std::stoul(num_str);
+                if (unit == 'K' || unit == 'k') {
+                    l3_cache_size = value * 1024;
+                } else if (unit == 'M' || unit == 'm') {
+                    l3_cache_size = value * 1024 * 1024;
+                } else if (unit == 'G' || unit == 'g') {
+                    l3_cache_size = value * 1024 * 1024 * 1024;
+                }
+            } catch (const std::exception&) {
+                // Use fallback on parse error
+            }
+        }
+        cache_file.close();
+    }
+    
+    #elif defined(__APPLE__)
+    // Try to detect cache size on macOS using sysctlbyname
+    size_t cache_size = 0;
+    size_t size = sizeof(cache_size);
+    if (sysctlbyname("hw.l3cachesize", &cache_size, &size, nullptr, 0) == 0) {
+        l3_cache_size = cache_size;
+    }
+    
+    #elif defined(_WIN32)
+    // Try to detect cache size on Windows
+    DWORD buffer_size = 0;
+    GetLogicalProcessorInformation(nullptr, &buffer_size);
+    
+    if (buffer_size > 0) {
+        std::vector<SYSTEM_LOGICAL_PROCESSOR_INFORMATION> buffer(
+            buffer_size / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION));
+        
+        if (GetLogicalProcessorInformation(buffer.data(), &buffer_size)) {
+            for (const auto& info : buffer) {
+                if (info.Relationship == RelationCache && info.Cache.Level == 3) {
+                    l3_cache_size = info.Cache.Size;
+                    break;
+                }
+            }
+        }
+    }
+    #endif
+    
+    // Ensure reasonable bounds (1MB minimum, 64MB maximum for fallback)
+    l3_cache_size = std::max(l3_cache_size, static_cast<size_t>(1024 * 1024));
+    l3_cache_size = std::min(l3_cache_size, static_cast<size_t>(64 * 1024 * 1024));
+    
+    return l3_cache_size;
+}
+
 size_t get_optimal_memory_pool_size() {
-    // Simple heuristic based on available memory
-    return 256; // 256MB default
+    // Advanced memory pool sizing based on system resources and workload characteristics
+    size_t available_memory = get_system_memory_info().available_memory;
+    size_t total_memory = get_system_memory_info().total_memory;
+    
+    // Calculate optimal pool size as percentage of available memory
+    size_t base_pool_size = available_memory / 4; // Use 25% of available memory
+    
+    // Adjust based on system load and CPU count
+    size_t cpu_count = std::thread::hardware_concurrency();
+    size_t load_factor = std::min(cpu_count * 64, static_cast<size_t>(512)); // MB per CPU, max 512MB
+    
+    // Factor in L3 cache size for better memory locality
+    size_t l3_cache_size = detect_l3_cache_size();
+    size_t cache_based_pool = l3_cache_size * cpu_count * 2; // 2x L3 cache per CPU
+    
+    // Use the maximum of the calculated sizes, but cap at reasonable limits
+    size_t optimal_size = std::max({base_pool_size, load_factor * 1024 * 1024, cache_based_pool});
+    
+    // Apply reasonable bounds (64MB minimum, 2GB maximum)
+    optimal_size = std::max(optimal_size, static_cast<size_t>(64 * 1024 * 1024));
+    optimal_size = std::min(optimal_size, static_cast<size_t>(2ULL * 1024 * 1024 * 1024));
+    
+    return optimal_size / (1024 * 1024); // Return in MB
 }
 
 std::vector<std::string> detect_account_conflicts(const std::vector<ExecutionTask>& tasks) {
@@ -1455,19 +1552,7 @@ void optimize_scheduler_parameters() {
     
     // Detect system characteristics
     size_t cpu_count = std::thread::hardware_concurrency();
-    size_t l3_cache_size = 8 * 1024 * 1024; // 8MB default assumption
-    
-    // Try to detect actual cache size on Linux
-    #ifdef __linux__
-    std::ifstream cache_file("/sys/devices/system/cpu/cpu0/cache/index3/size");
-    if (cache_file.is_open()) {
-        std::string cache_str;
-        cache_file >> cache_str;
-        if (!cache_str.empty() && cache_str.back() == 'K') {
-            l3_cache_size = std::stoul(cache_str.substr(0, cache_str.length() - 1)) * 1024;
-        }
-    }
-    #endif
+    size_t l3_cache_size = detect_l3_cache_size(); // Use production cache detection
     
     // Calculate optimal parameters
     size_t optimal_queue_size = cpu_count * 4; // 4x CPU count for queue depth
@@ -1700,12 +1785,66 @@ std::vector<std::vector<ExecutionTask>> partition_tasks_by_dependency(
 }
 
 uint64_t estimate_task_execution_time(const ExecutionTask& task) {
-    // Simple estimation based on bytecode size and account count
-    uint64_t base_time = 1000; // 1ms base
-    uint64_t bytecode_factor = task.bytecode.size() / 100; // 10us per 100 bytes
-    uint64_t account_factor = task.accounts.size() * 50; // 50us per account
+    // Advanced execution time estimation using instruction analysis and system profiling
+    uint64_t base_time = 500; // 0.5ms base overhead
     
-    return base_time + bytecode_factor + account_factor;
+    // Analyze bytecode complexity for more accurate timing
+    uint64_t instruction_count = task.bytecode.size() / 8; // Assume 8-byte instructions
+    uint64_t complex_instruction_penalty = 0;
+    
+    // Scan for complex operations that require more time
+    for (size_t i = 0; i < task.bytecode.size(); i += 8) {
+        if (i + 7 < task.bytecode.size()) {
+            uint8_t opcode = task.bytecode[i];
+            
+            // Categorize instruction complexity
+            if (opcode >= 0x85 && opcode <= 0x95) {
+                // Syscall instructions - high latency
+                complex_instruction_penalty += 100; // 100us per syscall
+            } else if (opcode >= 0x61 && opcode <= 0x7B) {
+                // Memory operations - moderate latency  
+                complex_instruction_penalty += 10; // 10us per memory op
+            } else if (opcode == 0x05 || (opcode >= 0x15 && opcode <= 0x25)) {
+                // Branch instructions - pipeline penalty
+                complex_instruction_penalty += 5; // 5us per branch
+            }
+        }
+    }
+    
+    // Account access overhead with more sophisticated modeling
+    uint64_t account_overhead = 0;
+    for (const auto& account : task.accounts) {
+        // Base account access cost
+        account_overhead += 25; // 25us per account
+        
+        // Data size overhead
+        account_overhead += account.data.size() / 1000; // 1us per 1KB
+        
+        // Signer verification overhead
+        if (account.is_signer) {
+            account_overhead += 200; // 200us for signature verification
+        }
+    }
+    
+    // Factor in system load and cache effects
+    static thread_local uint64_t cache_warmup_bonus = 0;
+    if (cache_warmup_bonus < 100) {
+        cache_warmup_bonus += 10;
+        account_overhead += (100 - cache_warmup_bonus); // Cache warmup penalty
+    }
+    
+    // Calculate final estimate with non-linear scaling
+    uint64_t total_time = base_time + 
+                         (instruction_count * 2) + // 2us per instruction
+                         complex_instruction_penalty +
+                         account_overhead;
+    
+    // Apply complexity scaling factor for large tasks
+    if (instruction_count > 1000) {
+        total_time *= 1.2; // 20% penalty for large programs
+    }
+    
+    return total_time;
 }
 
 uint64_t calculate_critical_path_length(const std::vector<ExecutionTask>& tasks) {

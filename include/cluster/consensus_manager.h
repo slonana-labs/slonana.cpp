@@ -128,6 +128,20 @@ private:
     // State machine callback
     std::function<void(const std::vector<uint8_t>&)> state_machine_callback_;
     
+    // Pending operations management
+    struct PendingOperation {
+        std::string id;
+        std::vector<uint8_t> data;
+        std::chrono::steady_clock::time_point timestamp;
+        int timeout_ms;
+        int retry_count;
+        int max_retries;
+        int confirmations;
+    };
+    
+    std::vector<PendingOperation> pending_operations_;
+    int required_confirmations_ = 3; // Majority consensus
+    
     // Private methods
     void election_loop();
     void heartbeat_loop();

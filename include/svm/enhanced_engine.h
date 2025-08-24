@@ -129,6 +129,10 @@ private:
  */
 class SPLTokenProgram : public BuiltinProgram {
 public:
+    static const PublicKey TOKEN_PROGRAM_ID;
+    static constexpr size_t MINT_ACCOUNT_SIZE = 82;
+    static constexpr size_t TOKEN_ACCOUNT_SIZE = 165;
+    
     SPLTokenProgram();
     ~SPLTokenProgram() override = default;
 
@@ -208,10 +212,6 @@ private:
     Result<TokenAccount> deserialize_token_account(const std::vector<uint8_t>& data) const;
     std::vector<uint8_t> serialize_mint(const MintAccount& mint) const;
     std::vector<uint8_t> serialize_token_account(const TokenAccount& account) const;
-
-    static const PublicKey TOKEN_PROGRAM_ID;
-    static constexpr size_t MINT_ACCOUNT_SIZE = 82;
-    static constexpr size_t TOKEN_ACCOUNT_SIZE = 165;
 };
 
 } // namespace svm

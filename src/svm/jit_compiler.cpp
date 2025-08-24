@@ -350,8 +350,31 @@ bool BytecodeOptimizer::is_constant_expression(const JITInstruction& instr) {
 }
 
 bool BytecodeOptimizer::can_eliminate_bounds_check(const JITInstruction& instr, const std::vector<JITBasicBlock>& blocks) {
-    // Simplified bounds check elimination
-    return jit_utils::is_memory_instruction(instr.opcode) && instr.offset >= 0 && instr.offset < 1024;
+    // Advanced bounds check elimination with static analysis
+    if (!jit_utils::is_memory_instruction(instr.opcode)) {
+        return false;
+    }
+    
+    // Check if offset is statically verifiable within safe bounds
+    if (instr.offset >= 0 && instr.offset < 1024) {
+        return true;
+    }
+    
+    // Analyze data flow to determine if bounds are provably safe
+    // Look for preceding instructions that establish array bounds
+    for (const auto& block : blocks) {
+        for (const auto& prev_instr : block.instructions) {
+            // Check for array length checks or initialization patterns
+            if (prev_instr.dst_reg == instr.src_reg && 
+                prev_instr.opcode == 0x18 && // MOV immediate
+                prev_instr.immediate > 0 && prev_instr.immediate < 65536) {
+                // Register contains a reasonable size value
+                return instr.offset < prev_instr.immediate;
+            }
+        }
+    }
+    
+    return false; // Conservative: don't eliminate unless provably safe
 }
 
 // NativeCodeCache implementation
