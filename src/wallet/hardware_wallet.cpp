@@ -158,8 +158,9 @@ private:
                             response.push_back(0x40); // Signature length
                             
                             // Generate deterministic signature (in production, would use private key)
-                            std::hash<std::vector<uint8_t>> hasher;
-                            size_t hash_value = hasher(std::vector<uint8_t>(command.begin() + 5, command.end()));
+                            std::hash<std::string> hasher;
+                            std::string hash_input(command.begin() + 5, command.end());
+                            size_t hash_value = hasher(hash_input);
                             
                             for (int i = 0; i < 64; ++i) {
                                 response.push_back(static_cast<uint8_t>((hash_value >> (i % 8)) ^ (i * 23)));
@@ -185,9 +186,6 @@ private:
             response = {0x6F, 0x00}; // Technical problem
             return false;
         }
-            };
-            return true;
-        }
         
         // Mock response for transaction signing (0x80 0x05)
         if (command.size() >= 2 && command[0] == 0x80 && command[1] == 0x05) {
@@ -209,7 +207,7 @@ private:
         
         return false;
     }
-    
+
 public:
     bool initialize() override {
         try {
