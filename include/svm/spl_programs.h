@@ -3,6 +3,7 @@
 #include "svm/engine.h"
 #include <unordered_map>
 #include <array>
+#include <mutex>
 
 namespace slonana {
 namespace svm {
@@ -415,14 +416,14 @@ private:
     bool parse_multisig_account(const std::vector<uint8_t>& data, Multisig& multisig) const;
     
     // Advanced cryptographic verification methods
-    std::vector<uint8_t> compute_transaction_hash(const std::vector<uint8_t>& transaction_data);
+    std::vector<uint8_t> compute_transaction_hash(const std::vector<uint8_t>& transaction_data) const;
     bool verify_signature(const std::vector<uint8_t>& signature,
                          const std::vector<uint8_t>& message_hash,
-                         const std::vector<uint8_t>& multisig_data);
+                         const std::vector<uint8_t>& multisig_data) const;
     bool verify_ed25519_signature(const std::vector<uint8_t>& signature,
                                  const std::vector<uint8_t>& message,
-                                 const std::vector<uint8_t>& public_key);
-    ExecutionResult execute_underlying_transaction(const std::vector<uint8_t>& transaction_data);
+                                 const std::vector<uint8_t>& public_key) const;
+    ExecutionResult execute_underlying_transaction(const std::vector<uint8_t>& transaction_data) const;
 
     static const PublicKey MULTISIG_PROGRAM_ID;
     static constexpr size_t MULTISIG_SIZE = 512;

@@ -1040,14 +1040,6 @@ void ExtendedSPLProgramRegistry::register_custom_program(
     
     programs_[program_id] = executor;
     std::cout << "Registered custom SPL program: " << program_id << std::endl;
-            
-        case ATAInstruction::RecoverNested:
-            std::cout << "SPL ATA: Recovering nested account" << std::endl;
-            return {ExecutionResult::SUCCESS, 1000, {}, "Nested account recovered", ""};
-            
-        default:
-            return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Unknown ATA instruction", ""};
-    }
 }
 
 ExecutionOutcome SPLAssociatedTokenProgram::handle_create_ata(
@@ -1592,12 +1584,13 @@ ExecutionOutcome SPLGovernanceProgram::handle_cast_vote(
     vote.vote_type = instruction.data.size() > 1 ? instruction.data[1] : 0; // Default to yes
     
     // Calculate vote weight based on voter's governance token holdings
-    const auto& voter_token_account = instruction.accounts[3];
-    if (voter_token_account.data.size() >= 72) { // Token account size
+    const auto& voter_token_account_key = instruction.accounts[3];
+    auto it = context.accounts.find(voter_token_account_key);
+    if (it != context.accounts.end() && it->second.data.size() >= 72) { // Token account size
         // Extract token amount from account data (offset 64, 8 bytes little-endian)
         uint64_t token_amount = 0;
         for (int i = 0; i < 8; ++i) {
-            token_amount |= static_cast<uint64_t>(voter_token_account.data[64 + i]) << (i * 8);
+            token_amount |= static_cast<uint64_t>(it->second.data[64 + i]) << (i * 8);
         }
         vote.weight = token_amount / 1000000; // Scale down from micro-tokens
     } else {
@@ -2158,11 +2151,15 @@ ExecutionOutcome SPLMultisigProgram::handle_approve(
     PublicKey signer = instruction.accounts[2];
     
     // Get actual multisig account from context for validation
-    const AccountInfo& multisig_account = instruction.accounts[1];
+    const PublicKey& multisig_account_key = instruction.accounts[1];
+    auto multisig_it = context.accounts.find(multisig_account_key);
+    if (multisig_it == context.accounts.end()) {
+        return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Multisig account not found", ""};
+    }
     
     // Parse multisig account data
     Multisig multisig;
-    if (!parse_multisig_account(multisig_account.data, multisig)) {
+    if (!parse_multisig_account(multisig_it->second.data, multisig)) {
         return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Invalid multisig account data", ""};
     }
     
@@ -2197,23 +2194,33 @@ ExecutionOutcome SPLMultisigProgram::handle_execute_transaction(
     
     // Production multisig execution with complete signature verification
     // Load multisig account data and transaction details from instruction accounts
-    const auto& multisig_account = instruction.accounts[0];
-    const auto& transaction_account = instruction.accounts[1];
+    const auto& multisig_account_key = instruction.accounts[0];
+    const auto& transaction_account_key = instruction.accounts[1];
+    
+    auto multisig_it = context.accounts.find(multisig_account_key);
+    auto transaction_it = context.accounts.find(transaction_account_key);
+    
+    if (multisig_it == context.accounts.end()) {
+        return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Multisig account not found", ""};
+    }
+    if (transaction_it == context.accounts.end()) {
+        return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Transaction account not found", ""};
+    }
     
     // Parse multisig configuration from account data
-    if (multisig_account.data.size() < 34) { // 32 bytes pubkey + 1 byte m + 1 byte n
+    if (multisig_it->second.data.size() < 34) { // 32 bytes pubkey + 1 byte m + 1 byte n
         return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Invalid multisig account data", ""};
     }
     
-    uint8_t required_signatures = multisig_account.data[32];
-    uint8_t total_signers = multisig_account.data[33];
+    uint8_t required_signatures = multisig_it->second.data[32];
+    uint8_t total_signers = multisig_it->second.data[33];
     
     // Parse transaction data and verify signatures
-    if (transaction_account.data.size() < 1) {
+    if (transaction_it->second.data.size() < 1) {
         return {ExecutionResult::PROGRAM_ERROR, 0, {}, "Invalid transaction account data", ""};
     }
     
-    uint8_t collected_signatures = transaction_account.data[0];
+    uint8_t collected_signatures = transaction_it->second.data[0];
     
     // Verify signature count meets threshold
     if (collected_signatures < required_signatures) {
@@ -2224,21 +2231,21 @@ ExecutionOutcome SPLMultisigProgram::handle_execute_transaction(
     }
     
     // Verify each signature against the transaction hash
-    std::vector<uint8_t> transaction_hash = compute_transaction_hash(transaction_account.data);
+    std::vector<uint8_t> transaction_hash = compute_transaction_hash(transaction_it->second.data);
     bool all_signatures_valid = true;
     
     for (uint8_t i = 0; i < collected_signatures; ++i) {
         size_t sig_offset = 1 + (i * 64); // Each signature is 64 bytes
-        if (transaction_account.data.size() < sig_offset + 64) {
+        if (transaction_it->second.data.size() < sig_offset + 64) {
             all_signatures_valid = false;
             break;
         }
         
         // Extract signature and verify
-        std::vector<uint8_t> signature(transaction_account.data.begin() + sig_offset,
-                                      transaction_account.data.begin() + sig_offset + 64);
+        std::vector<uint8_t> signature(transaction_it->second.data.begin() + sig_offset,
+                                      transaction_it->second.data.begin() + sig_offset + 64);
         
-        if (!verify_signature(signature, transaction_hash, multisig_account.data)) {
+        if (!verify_signature(signature, transaction_hash, multisig_it->second.data)) {
             all_signatures_valid = false;
             break;
         }
@@ -2249,7 +2256,7 @@ ExecutionOutcome SPLMultisigProgram::handle_execute_transaction(
     }
     
     // Execute the underlying transaction
-    ExecutionResult underlying_result = execute_underlying_transaction(transaction_account.data);
+    ExecutionResult underlying_result = execute_underlying_transaction(transaction_it->second.data);
     
     std::cout << "SPL Multisig: Transaction executed with " 
               << static_cast<int>(collected_signatures) << "/" << static_cast<int>(required_signatures) 
@@ -2258,7 +2265,7 @@ ExecutionOutcome SPLMultisigProgram::handle_execute_transaction(
     return {underlying_result, 8000, {}, "Multisig transaction executed successfully", ""};
 }
 
-std::vector<uint8_t> SPLMultisigProgram::compute_transaction_hash(const std::vector<uint8_t>& transaction_data) {
+std::vector<uint8_t> SPLMultisigProgram::compute_transaction_hash(const std::vector<uint8_t>& transaction_data) const {
     // Compute SHA-256 hash of transaction data for signature verification
     std::vector<uint8_t> hash(32, 0);
     
@@ -2284,7 +2291,7 @@ std::vector<uint8_t> SPLMultisigProgram::compute_transaction_hash(const std::vec
 
 bool SPLMultisigProgram::verify_signature(const std::vector<uint8_t>& signature,
                                          const std::vector<uint8_t>& message_hash,
-                                         const std::vector<uint8_t>& multisig_data) {
+                                         const std::vector<uint8_t>& multisig_data) const {
     // Ed25519 signature verification for multisig
     if (signature.size() != 64 || message_hash.size() != 32) {
         return false;
@@ -2314,7 +2321,7 @@ bool SPLMultisigProgram::verify_signature(const std::vector<uint8_t>& signature,
 
 bool SPLMultisigProgram::verify_ed25519_signature(const std::vector<uint8_t>& signature,
                                                  const std::vector<uint8_t>& message,
-                                                 const std::vector<uint8_t>& public_key) {
+                                                 const std::vector<uint8_t>& public_key) const {
     // Ed25519 signature verification implementation
     if (signature.size() != 64 || public_key.size() != 32) {
         return false;
@@ -2348,7 +2355,7 @@ bool SPLMultisigProgram::verify_ed25519_signature(const std::vector<uint8_t>& si
     return curve_valid && entropy_valid;
 }
 
-ExecutionResult SPLMultisigProgram::execute_underlying_transaction(const std::vector<uint8_t>& transaction_data) {
+ExecutionResult SPLMultisigProgram::execute_underlying_transaction(const std::vector<uint8_t>& transaction_data) const {
     // Execute the actual transaction that was signed by the multisig
     if (transaction_data.size() < 100) { // Minimum transaction size
         return ExecutionResult::PROGRAM_ERROR;
@@ -2468,7 +2475,7 @@ Result<SPLMultisigProgram::MultisigTransaction> SPLMultisigProgram::deserialize_
     
     // Parse instruction data and accounts from multisig transaction data
     if (data.size() < offset + 4) {
-        return Result<MultisigTransaction>::error("Insufficient data for instruction data length");
+        return Result<MultisigTransaction>("Insufficient data for instruction data length");
     }
     
     uint32_t instruction_data_length = (data[offset] << 24) | (data[offset + 1] << 16) | 
@@ -2476,7 +2483,7 @@ Result<SPLMultisigProgram::MultisigTransaction> SPLMultisigProgram::deserialize_
     offset += 4;
     
     if (data.size() < offset + instruction_data_length) {
-        return Result<MultisigTransaction>::error("Insufficient data for instruction data");
+        return Result<MultisigTransaction>("Insufficient data for instruction data");
     }
     
     transaction.instruction_data.resize(instruction_data_length);
@@ -2486,7 +2493,7 @@ Result<SPLMultisigProgram::MultisigTransaction> SPLMultisigProgram::deserialize_
     
     // Parse account count and accounts
     if (data.size() < offset + 1) {
-        return Result<MultisigTransaction>::error("Insufficient data for account count");
+        return Result<MultisigTransaction>("Insufficient data for account count");
     }
     
     uint8_t account_count = data[offset++];
@@ -2630,8 +2637,21 @@ void SPLProgramRegistry::register_program_name(
 }
 
 
+// Forward declarations
+bool validate_ed25519_off_curve_point(uint64_t point_value);
+
 // Utility functions for SPL program operations
 namespace spl_utils {
+
+// Helper to convert PublicKey to string for comparisons
+std::string pubkey_to_string(const PublicKey& pubkey) {
+    if (pubkey.empty()) return "";
+    std::ostringstream oss;
+    for (size_t i = 0; i < std::min(pubkey.size(), size_t(8)); ++i) {
+        oss << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(pubkey[i]);
+    }
+    return oss.str();
+}
 
 std::vector<uint8_t> pack_u64(uint64_t value) {
     std::vector<uint8_t> packed(8);
@@ -2759,7 +2779,7 @@ bool validate_account_size(const AccountInfo& account, size_t expected_size) {
     return account.data.size() >= expected_size;
 }
 
-bool validate_account_owner(const AccountInfo& account, const std::string& expected_owner) {
+bool validate_account_owner(const AccountInfo& account, const PublicKey& expected_owner) {
     return account.owner == expected_owner;
 }
 
@@ -2774,12 +2794,12 @@ bool validate_writable(const AccountInfo& account) {
 // Token-specific utilities
 bool is_mint_account(const AccountInfo& account) {
     // Check if account is owned by Token program and has mint structure
-    return account.owner == TokenProgram::PROGRAM_ID && account.data.size() >= 82; // Mint account size
+    return slonana::svm::pubkey_to_string(account.owner) == TokenProgram::PROGRAM_ID && account.data.size() >= 82; // Mint account size
 }
 
 bool is_token_account(const AccountInfo& account) {
     // Check if account is owned by Token program and has token account structure
-    return account.owner == TokenProgram::PROGRAM_ID && account.data.size() >= 165; // Token account size
+    return slonana::svm::pubkey_to_string(account.owner) == TokenProgram::PROGRAM_ID && account.data.size() >= 165; // Token account size
 }
 
 bool is_associated_token_account(const std::string& account_address, const std::string& wallet, const std::string& mint) {
