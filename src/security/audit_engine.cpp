@@ -215,8 +215,33 @@ AuditReport SecurityAuditEngine::get_report() {
     report.status = AuditStatus::COMPLETED;
     
     report.total_rules_executed = rules_.size();
-    report.rules_passed = rules_.size(); // Simplified for now
-    report.rules_failed = 0;
+    
+    // Calculate actual rule pass/fail counts based on findings
+    size_t rules_failed = 0;
+    size_t rules_passed = 0;
+    
+    // Count failed rules based on critical and high severity findings
+    for (const auto& finding : findings_) {
+        if (finding.severity == SeverityLevel::CRITICAL || 
+            finding.severity == SeverityLevel::HIGH) {
+            rules_failed++;
+        }
+    }
+    
+    // Count rules with medium/low findings as warnings (still passed but with notes)
+    size_t rules_with_warnings = 0;
+    for (const auto& finding : findings_) {
+        if (finding.severity == SeverityLevel::MEDIUM || 
+            finding.severity == SeverityLevel::LOW) {
+            rules_with_warnings++;
+        }
+    }
+    
+    // Rules passed = total - critical failures
+    rules_passed = rules_.size() - rules_failed;
+    
+    report.rules_passed = rules_passed;
+    report.rules_failed = rules_failed;
     
     report.critical_findings = get_critical_count();
     report.high_findings = get_high_count();
