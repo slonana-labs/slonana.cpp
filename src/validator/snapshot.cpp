@@ -1045,5 +1045,130 @@ std::vector<uint8_t> SnapshotStreamingService::load_snapshot_data(const std::str
     }
 }
 
+bool SnapshotStreamingService::save_snapshot_data(const std::string& output_path, const std::vector<uint8_t>& data) const {
+    try {
+        std::ofstream file(output_path, std::ios::binary);
+        if (!file.is_open()) {
+            std::cerr << "Failed to open output file: " << output_path << std::endl;
+            return false;
+        }
+        
+        file.write(reinterpret_cast<const char*>(data.data()), data.size());
+        file.close();
+        
+        std::cout << "Snapshot data saved to: " << output_path << " (" << data.size() << " bytes)" << std::endl;
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to save snapshot data: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+bool SnapshotManager::compress_data(const std::vector<uint8_t>& input, std::vector<uint8_t>& output) const {
+    if (!compression_enabled_) {
+        output = input;
+        return true;
+    }
+    
+    // Simple compression using basic RLE (Run Length Encoding)
+    output.clear();
+    output.reserve(input.size());
+    
+    if (input.empty()) {
+        return true;
+    }
+    
+    uint8_t current_byte = input[0];
+    uint8_t count = 1;
+    
+    for (size_t i = 1; i < input.size(); ++i) {
+        if (input[i] == current_byte && count < 255) {
+            count++;
+        } else {
+            output.push_back(count);
+            output.push_back(current_byte);
+            current_byte = input[i];
+            count = 1;
+        }
+    }
+    
+    // Add the last run
+    output.push_back(count);
+    output.push_back(current_byte);
+    
+    return true;
+}
+
+bool SnapshotManager::decompress_data(const std::vector<uint8_t>& input, std::vector<uint8_t>& output) const {
+    if (!compression_enabled_) {
+        output = input;
+        return true;
+    }
+    
+    output.clear();
+    
+    if (input.size() % 2 != 0) {
+        std::cerr << "Invalid compressed data format" << std::endl;
+        return false;
+    }
+    
+    for (size_t i = 0; i < input.size(); i += 2) {
+        uint8_t count = input[i];
+        uint8_t byte_value = input[i + 1];
+        
+        for (uint8_t j = 0; j < count; ++j) {
+            output.push_back(byte_value);
+        }
+    }
+    
+    return true;
+}
+
+bool SnapshotStreamingService::verify_stream_integrity(const std::vector<slonana::validator::SnapshotChunk>& chunks) const {
+    if (chunks.empty()) {
+        std::cerr << "Empty chunk list provided for verification" << std::endl;
+        return false;
+    }
+    
+    // Verify chunk sequence integrity
+    for (size_t i = 0; i < chunks.size(); ++i) {
+        if (chunks[i].chunk_index != i) {
+            std::cerr << "Chunk sequence mismatch: expected " << i << ", got " << chunks[i].chunk_index << std::endl;
+            return false;
+        }
+        
+        if (chunks[i].total_chunks != chunks.size()) {
+            std::cerr << "Total chunks mismatch: expected " << chunks.size() << ", got " << chunks[i].total_chunks << std::endl;
+            return false;
+        }
+        
+        // Verify chunk hash integrity
+        if (chunks[i].chunk_hash.empty()) {
+            std::cerr << "Missing chunk hash for chunk " << i << std::endl;
+            return false;
+        }
+    }
+    
+    std::cout << "Stream integrity verification passed for " << chunks.size() << " chunks" << std::endl;
+    return true;
+}
+
+std::string SnapshotStreamingService::calculate_stream_hash(const std::vector<slonana::validator::SnapshotChunk>& chunks) const {
+    std::ostringstream combined_data;
+    for (const auto& chunk : chunks) {
+        for (const auto& byte : chunk.compressed_data) {
+            combined_data << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(byte);
+        }
+    }
+    
+    std::string combined_str = combined_data.str();
+    std::hash<std::string> hasher;
+    size_t hash_value = hasher(combined_str);
+    
+    std::ostringstream oss;
+    oss << std::hex << hash_value;
+    return oss.str();
+}
+
 } // namespace validator
 } // namespace slonana

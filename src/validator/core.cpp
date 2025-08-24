@@ -3,6 +3,7 @@
 #include "monitoring/consensus_metrics.h"
 #include <iostream>
 #include <algorithm>
+#include <cmath>
 
 namespace slonana {
 namespace validator {
@@ -99,13 +100,13 @@ uint64_t ForkChoice::get_fork_weight(const Hash& fork_head) const {
     for (const auto& vote : impl_->votes_) {
         if (vote.block_hash == fork_head) {
             // Get validator's stake weight
-            uint64_t validator_stake = get_validator_stake(vote.validator_pubkey);
+            uint64_t validator_stake = get_validator_stake(Hash(vote.validator_identity.begin(), vote.validator_identity.end()));
             
             // Add stake weight to fork
             total_weight += validator_stake;
             
             // Track individual validator contributions
-            validator_stakes[vote.validator_pubkey] += validator_stake;
+            validator_stakes[Hash(vote.validator_identity.begin(), vote.validator_identity.end())] += validator_stake;
         }
     }
     
@@ -120,7 +121,7 @@ uint64_t ForkChoice::get_fork_weight(const Hash& fork_head) const {
             // Apply time decay (votes older than 60 seconds lose weight)
             if (vote_age.count() > 60) {
                 double decay_factor = std::exp(-0.1 * vote_age.count() / 60.0); // Exponential decay
-                uint64_t validator_stake = get_validator_stake(vote.validator_pubkey);
+                uint64_t validator_stake = get_validator_stake(Hash(vote.validator_identity.begin(), vote.validator_identity.end()));
                 uint64_t decayed_weight = static_cast<uint64_t>(validator_stake * decay_factor);
                 
                 if (decayed_weight < validator_stake) {

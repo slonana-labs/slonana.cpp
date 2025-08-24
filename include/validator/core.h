@@ -43,6 +43,8 @@ public:
     // Fork management
     std::vector<Hash> get_forks() const;
     uint64_t get_fork_weight(const Hash& fork_head) const;
+    uint64_t get_validator_stake(const Hash& validator_pubkey) const;
+    uint64_t get_confirmation_depth(const Hash& fork_head) const;
 
 private:
     class Impl;
