@@ -10,6 +10,8 @@
 #include <queue>
 #include <unordered_map>
 #include <unordered_set>
+#include <future>
+#include <functional>
 
 namespace slonana {
 namespace svm {
@@ -45,6 +47,81 @@ struct ExecutionTask {
     std::atomic<bool> ready_to_execute{false};
     std::atomic<bool> is_executing{false};
     std::atomic<bool> is_completed{false};
+    
+    // Custom constructors to handle atomic and function members
+    ExecutionTask() = default;
+    
+    ExecutionTask(const ExecutionTask& other) 
+        : task_id(other.task_id)
+        , program_id(other.program_id)
+        , bytecode(other.bytecode)
+        , accounts(other.accounts)
+        , instruction_data(other.instruction_data)
+        , read_accounts(other.read_accounts)
+        , write_accounts(other.write_accounts)
+        , priority(other.priority)
+        , submission_time(other.submission_time)
+        , completion_callback(other.completion_callback)
+        , dependencies(other.dependencies)
+        , ready_to_execute(other.ready_to_execute.load())
+        , is_executing(other.is_executing.load())
+        , is_completed(other.is_completed.load()) {}
+    
+    ExecutionTask(ExecutionTask&& other) noexcept
+        : task_id(std::move(other.task_id))
+        , program_id(std::move(other.program_id))
+        , bytecode(std::move(other.bytecode))
+        , accounts(std::move(other.accounts))
+        , instruction_data(std::move(other.instruction_data))
+        , read_accounts(std::move(other.read_accounts))
+        , write_accounts(std::move(other.write_accounts))
+        , priority(other.priority)
+        , submission_time(other.submission_time)
+        , completion_callback(std::move(other.completion_callback))
+        , dependencies(std::move(other.dependencies))
+        , ready_to_execute(other.ready_to_execute.load())
+        , is_executing(other.is_executing.load())
+        , is_completed(other.is_completed.load()) {}
+    
+    ExecutionTask& operator=(const ExecutionTask& other) {
+        if (this != &other) {
+            task_id = other.task_id;
+            program_id = other.program_id;
+            bytecode = other.bytecode;
+            accounts = other.accounts;
+            instruction_data = other.instruction_data;
+            read_accounts = other.read_accounts;
+            write_accounts = other.write_accounts;
+            priority = other.priority;
+            submission_time = other.submission_time;
+            completion_callback = other.completion_callback;
+            dependencies = other.dependencies;
+            ready_to_execute.store(other.ready_to_execute.load());
+            is_executing.store(other.is_executing.load());
+            is_completed.store(other.is_completed.load());
+        }
+        return *this;
+    }
+    
+    ExecutionTask& operator=(ExecutionTask&& other) noexcept {
+        if (this != &other) {
+            task_id = std::move(other.task_id);
+            program_id = std::move(other.program_id);
+            bytecode = std::move(other.bytecode);
+            accounts = std::move(other.accounts);
+            instruction_data = std::move(other.instruction_data);
+            read_accounts = std::move(other.read_accounts);
+            write_accounts = std::move(other.write_accounts);
+            priority = other.priority;
+            submission_time = other.submission_time;
+            completion_callback = std::move(other.completion_callback);
+            dependencies = std::move(other.dependencies);
+            ready_to_execute.store(other.ready_to_execute.load());
+            is_executing.store(other.is_executing.load());
+            is_completed.store(other.is_completed.load());
+        }
+        return *this;
+    }
 };
 
 struct ParallelExecutionStats {
@@ -106,13 +183,14 @@ class ThreadPool {
 private:
     std::vector<std::thread> workers_;
     std::queue<std::function<void()>> tasks_;
-    std::mutex queue_mutex_;
+    mutable std::mutex queue_mutex_;
     std::condition_variable condition_;
     std::atomic<bool> stop_{false};
     size_t num_threads_;
     
-    // Load balancing
-    std::vector<std::atomic<size_t>> thread_task_counts_;
+    // Load balancing 
+    std::vector<size_t> thread_task_counts_;
+    mutable std::mutex task_counts_mutex_;
     std::atomic<size_t> total_tasks_queued_{0};
     
 public:
@@ -144,7 +222,7 @@ private:
     };
     
     std::vector<MemoryBlock> blocks_;
-    std::mutex pool_mutex_;
+    mutable std::mutex pool_mutex_;
     size_t total_allocated_ = 0;
     size_t total_requested_ = 0;
     size_t max_pool_size_;
@@ -197,7 +275,7 @@ private:
     };
     
     std::unordered_map<std::string, SpeculativeState> speculative_states_;
-    std::mutex speculation_mutex_;
+    mutable std::mutex speculation_mutex_;
     
 public:
     SpeculativeExecutor();
@@ -228,7 +306,7 @@ private:
     // Task management
     std::queue<std::unique_ptr<ExecutionTask>> pending_tasks_;
     std::vector<std::unique_ptr<ExecutionTask>> active_tasks_;
-    std::mutex task_mutex_;
+    mutable std::mutex task_mutex_;
     std::condition_variable task_cv_;
     
     // Execution control

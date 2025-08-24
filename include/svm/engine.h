@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <optional>
 
 namespace slonana {
@@ -52,6 +53,29 @@ struct ExecutionContext {
     uint64_t consumed_compute_units = 0;
     bool transaction_succeeded = true;
     std::string error_message;
+    
+    // Track modified accounts during execution
+    std::unordered_set<PublicKey> modified_accounts;
+};
+
+/**
+ * Account information for program execution
+ */
+struct AccountInfo {
+    PublicKey pubkey;
+    bool is_signer;
+    bool is_writable;
+    Lamports lamports;
+    std::vector<uint8_t> data;
+    PublicKey owner;
+    bool executable;
+    Slot rent_epoch;
+    
+    AccountInfo() = default;
+    AccountInfo(const AccountInfo&) = default;
+    AccountInfo(AccountInfo&&) = default;
+    AccountInfo& operator=(const AccountInfo&) = default;
+    AccountInfo& operator=(AccountInfo&&) = default;
 };
 
 /**
@@ -63,7 +87,8 @@ enum class ExecutionResult {
     PROGRAM_ERROR,
     ACCOUNT_NOT_FOUND,
     INSUFFICIENT_FUNDS,
-    INVALID_INSTRUCTION
+    INVALID_INSTRUCTION,
+    FAILED  // Added for backward compatibility
 };
 
 struct ExecutionOutcome {

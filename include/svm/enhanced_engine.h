@@ -179,6 +179,8 @@ private:
         bool is_frozen;
         PublicKey delegate;
         uint64_t delegated_amount;
+        uint8_t state;        // Added missing field
+        bool is_native;       // Added missing field
     };
 
     // Instruction handlers

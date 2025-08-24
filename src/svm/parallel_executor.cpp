@@ -11,6 +11,16 @@
 #include <iomanip>
 #include <cstring>
 
+// Helper function to convert PublicKey to string for lookups
+static std::string pubkey_to_string(const slonana::common::PublicKey& pubkey) {
+    if (pubkey.empty()) return "";
+    std::ostringstream oss;
+    for (size_t i = 0; i < std::min(pubkey.size(), size_t(8)); ++i) {
+        oss << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(pubkey[i]);
+    }
+    return oss.str();
+}
+
 // Platform-specific includes
 #ifdef __linux__
 #include <sched.h>
@@ -258,9 +268,9 @@ bool DependencyAnalyzer::has_cyclic_dependency(const std::vector<ExecutionTask*>
 
 // ThreadPool implementation
 ThreadPool::ThreadPool(size_t num_threads) : num_threads_(num_threads), stop_(false) {
-    thread_task_counts_.resize(num_threads_);
+    // Initialize task counts
+    thread_task_counts_.resize(num_threads_, 0);
     for (size_t i = 0; i < num_threads_; ++i) {
-        thread_task_counts_[i].store(0);
         workers_.emplace_back(&ThreadPool::worker_loop, this, i);
     }
     
@@ -312,7 +322,7 @@ size_t ThreadPool::get_queue_size() const {
 size_t ThreadPool::get_active_tasks() const {
     size_t active = 0;
     for (const auto& count : thread_task_counts_) {
-        active += count.load();
+        active += count;
     }
     return active;
 }
@@ -352,18 +362,25 @@ void ThreadPool::worker_loop(size_t thread_id) {
             tasks_.pop();
         }
         
-        thread_task_counts_[thread_id].fetch_add(1);
+        {
+            std::lock_guard<std::mutex> lock(task_counts_mutex_);
+            thread_task_counts_[thread_id]++;
+        }
         task();
-        thread_task_counts_[thread_id].fetch_sub(1);
+        {
+            std::lock_guard<std::mutex> lock(task_counts_mutex_);
+            thread_task_counts_[thread_id]--;
+        }
     }
 }
 
 size_t ThreadPool::get_least_busy_thread() const {
-    size_t min_tasks = thread_task_counts_[0].load();
+    std::lock_guard<std::mutex> lock(task_counts_mutex_);
+    size_t min_tasks = thread_task_counts_[0];
     size_t least_busy = 0;
     
     for (size_t i = 1; i < thread_task_counts_.size(); ++i) {
-        size_t tasks = thread_task_counts_[i].load();
+        size_t tasks = thread_task_counts_[i];
         if (tasks < min_tasks) {
             min_tasks = tasks;
             least_busy = i;
@@ -588,7 +605,7 @@ bool SpeculativeExecutor::begin_speculation(const std::string& task_id, const st
     
     // Create snapshots of account states
     for (const auto& account : accounts) {
-        state.account_snapshots[account.pubkey] = create_account_snapshot(account);
+        state.account_snapshots[pubkey_to_string(account.pubkey)] = create_account_snapshot(account);
     }
     
     speculative_states_[task_id] = std::move(state);
@@ -598,11 +615,7 @@ bool SpeculativeExecutor::begin_speculation(const std::string& task_id, const st
 ExecutionResult SpeculativeExecutor::execute_speculatively(const ExecutionTask& task) {
     // This would execute the task speculatively
     // For now, return a placeholder result
-    ExecutionResult result;
-    result.success = true;
-    result.compute_units_consumed = 1000;
-    result.error_message = "";
-    return result;
+    return ExecutionResult::SUCCESS;
 }
 
 bool SpeculativeExecutor::validate_speculation(const std::string& task_id, const std::vector<AccountInfo>& current_accounts) {
@@ -617,7 +630,7 @@ bool SpeculativeExecutor::validate_speculation(const std::string& task_id, const
     
     // Validate that account states haven't changed
     for (const auto& account : current_accounts) {
-        auto snapshot_it = state.account_snapshots.find(account.pubkey);
+        auto snapshot_it = state.account_snapshots.find(pubkey_to_string(account.pubkey));
         if (snapshot_it != state.account_snapshots.end()) {
             if (!compare_account_state(account, snapshot_it->second)) {
                 state.is_valid = false;
@@ -781,9 +794,9 @@ std::string ParallelExecutor::submit_task(
     // Extract account access patterns
     for (const auto& account : accounts) {
         if (account.is_writable) {
-            task->write_accounts.push_back(account.pubkey);
+            task->write_accounts.push_back(pubkey_to_string(account.pubkey));
         } else {
-            task->read_accounts.push_back(account.pubkey);
+            task->read_accounts.push_back(pubkey_to_string(account.pubkey));
         }
     }
     
@@ -824,9 +837,9 @@ std::future<ExecutionResult> ParallelExecutor::submit_task_async(
     // Extract account access patterns
     for (const auto& account : accounts) {
         if (account.is_writable) {
-            task->write_accounts.push_back(account.pubkey);
+            task->write_accounts.push_back(pubkey_to_string(account.pubkey));
         } else {
-            task->read_accounts.push_back(account.pubkey);
+            task->read_accounts.push_back(pubkey_to_string(account.pubkey));
         }
     }
     
@@ -1098,15 +1111,10 @@ void ParallelExecutor::execute_single_task(ExecutionTask* task) {
 
 ExecutionResult ParallelExecutor::execute_sequential(const ExecutionTask& task) {
     // Simple sequential execution
-    ExecutionResult result;
-    result.success = true;
-    result.compute_units_consumed = task.bytecode.size(); // Placeholder
-    result.error_message = "";
-    
     // Simulate execution time
     std::this_thread::sleep_for(std::chrono::microseconds(100));
     
-    return result;
+    return ExecutionResult::SUCCESS;
 }
 
 ExecutionResult ParallelExecutor::execute_parallel(const ExecutionTask& task) {
@@ -1363,10 +1371,40 @@ size_t detect_l3_cache_size() {
     return l3_cache_size;
 }
 
+struct MemoryInfo {
+    size_t total_memory;
+    size_t available_memory;
+};
+
+static MemoryInfo get_system_memory_info() {
+    MemoryInfo info;
+    // Simple fallback values
+    info.total_memory = 8ULL * 1024 * 1024 * 1024; // 8GB
+    info.available_memory = 4ULL * 1024 * 1024 * 1024; // 4GB
+    
+#ifdef __linux__
+    // Try to read actual memory info on Linux
+    std::ifstream meminfo("/proc/meminfo");
+    std::string line;
+    while (std::getline(meminfo, line)) {
+        if (line.find("MemTotal:") == 0) {
+            size_t value = std::stoull(line.substr(9)) * 1024; // Convert KB to bytes
+            info.total_memory = value;
+        } else if (line.find("MemAvailable:") == 0) {
+            size_t value = std::stoull(line.substr(13)) * 1024; // Convert KB to bytes
+            info.available_memory = value;
+        }
+    }
+#endif
+    
+    return info;
+}
+
 size_t get_optimal_memory_pool_size() {
     // Advanced memory pool sizing based on system resources and workload characteristics
-    size_t available_memory = get_system_memory_info().available_memory;
-    size_t total_memory = get_system_memory_info().total_memory;
+    MemoryInfo mem_info = get_system_memory_info();
+    size_t available_memory = mem_info.available_memory;
+    size_t total_memory = mem_info.total_memory;
     
     // Calculate optimal pool size as percentage of available memory
     size_t base_pool_size = available_memory / 4; // Use 25% of available memory

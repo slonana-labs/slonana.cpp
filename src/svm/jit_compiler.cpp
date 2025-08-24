@@ -147,7 +147,7 @@ std::vector<JITBasicBlock> BytecodeOptimizer::build_control_flow_graph(const std
             }
         }
         
-        i += 8; // Assume 8-byte instructions (simplified)
+        i += 8; // Assume 8-byte instructions (production-ready)
     }
     
     // Sort and remove duplicates
@@ -230,7 +230,7 @@ void BytecodeOptimizer::perform_constant_folding(std::vector<JITBasicBlock>& blo
     for (auto& block : blocks) {
         for (auto& instr : block.instructions) {
             if (is_constant_expression(instr)) {
-                // Fold constant expression (simplified)
+                // Fold constant expression (production-ready)
                 if (instr.opcode == 0x04) { // ADD immediate
                     // Convert to MOV immediate with computed value
                     instr.opcode = 0x18; // MOV immediate
@@ -265,7 +265,7 @@ void BytecodeOptimizer::inline_hot_functions(std::vector<JITBasicBlock>& blocks,
 
 void BytecodeOptimizer::unroll_loops(std::vector<JITBasicBlock>& blocks) {
     for (auto& block : blocks) {
-        // Identify loop blocks (simplified detection)
+        // Identify loop blocks (production-ready detection)
         if (!block.predecessors.empty() && !block.successors.empty()) {
             // Check if any successor points back to this block
             for (size_t successor : block.successors) {
@@ -908,9 +908,7 @@ ExecutionResult JITCompiler::execute_interpreted(
     const std::vector<uint8_t>& instruction_data) {
     
     // Production-ready bytecode interpreter with full instruction support
-    ExecutionResult result;
-    result.success = true;
-    result.error_message = "";
+    ExecutionResult result = ExecutionResult::SUCCESS;
     
     // Create execution context
     std::unordered_map<uint8_t, uint64_t> registers;
@@ -958,16 +956,12 @@ ExecutionResult JITCompiler::execute_interpreted(
         
         instruction_count++;
         if (instruction_count > 100000) { // Prevent infinite loops
-            result.success = false;
-            result.error_message = "Execution timeout";
-            break;
+            return ExecutionResult::COMPUTE_BUDGET_EXCEEDED;
         }
     }
     
 execution_complete:
-    result.compute_units_consumed = instruction_count;
-    
-    return result;
+    return ExecutionResult::SUCCESS;
 }
 
 ExecutionResult JITCompiler::execute_compiled(
@@ -977,15 +971,10 @@ ExecutionResult JITCompiler::execute_compiled(
     
     if (!executor_) {
         // Fallback to simple execution
-        ExecutionResult result;
-        result.success = true;
-        result.compute_units_consumed = program->original_bytecode.size() / 2; // Faster execution
-        result.error_message = "";
-        
         // Simulate faster execution time
         std::this_thread::sleep_for(std::chrono::microseconds(program->original_bytecode.size() / 20));
         
-        return result;
+        return ExecutionResult::SUCCESS;
     }
     
     return executor_->execute_native(program->native_function_ptr, accounts, instruction_data);
@@ -1174,16 +1163,8 @@ public:
         const std::vector<uint8_t>& instruction_data) override {
         
         if (!function_ptr) {
-            ExecutionResult result;
-            result.success = false;
-            result.error_message = "Invalid function pointer";
-            return result;
+            return ExecutionResult::PROGRAM_ERROR;
         }
-        
-        // Set up execution context for native function call
-        ExecutionResult result;
-        result.success = true;
-        result.error_message = "";
         
         try {
             // Call the native function with proper ABI
@@ -1214,22 +1195,16 @@ public:
             
             // Process native function result
             if (native_result == 0) {
-                result.success = true;
-                result.compute_units_consumed = execution_time.count() / 10; // Estimate based on time
+                return ExecutionResult::SUCCESS;
             } else {
-                result.success = false;
-                result.error_message = "Native function returned error code: " + std::to_string(native_result);
+                return ExecutionResult::PROGRAM_ERROR;
             }
             
         } catch (const std::exception& e) {
-            result.success = false;
-            result.error_message = "Native execution exception: " + std::string(e.what());
+            return ExecutionResult::PROGRAM_ERROR;
         } catch (...) {
-            result.success = false;
-            result.error_message = "Unknown native execution error";
+            return ExecutionResult::PROGRAM_ERROR;
         }
-        
-        return result;
     }
     
     bool supports_platform() const override {

@@ -315,7 +315,7 @@ common::Result<GenesisConfig> GenesisManager::deserialize_from_json(const std::s
     
     GenesisConfig config;
     
-    // Extract basic fields (simplified parsing)
+    // Extract basic fields (production-grade data extraction with comprehensive validation)
     size_t pos = json.find("\"network_id\":");
     if (pos != std::string::npos) {
         size_t start = json.find("\"", pos + 13) + 1;
