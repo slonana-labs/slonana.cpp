@@ -4,6 +4,7 @@
 #include <iostream>
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 
 namespace slonana {
 namespace validator {
