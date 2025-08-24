@@ -472,7 +472,7 @@ uint64_t ForkChoice::get_confirmation_depth(const Hash& fork_head) const {
     return std::min(depth, static_cast<uint64_t>(100));
 }
 
-std::string ValidatorCore::get_slot_leader(uint64_t slot) const {
+std::string ValidatorCore::get_slot_leader(Slot slot) const {
     // Production implementation: Calculate slot leader based on stake weights and VRF
     std::hash<uint64_t> hasher;
     size_t slot_hash = hasher(slot);

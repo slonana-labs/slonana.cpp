@@ -426,11 +426,11 @@ AccountManager::AccountManager() : impl_(std::make_unique<Impl>()) {}
 AccountManager::~AccountManager() = default;
 
 common::Result<bool> AccountManager::create_account(const ProgramAccount& account) {
-    if (account_exists(account.program_id)) {
+    if (account_exists(account.pubkey)) {
         return common::Result<bool>("Account already exists");
     }
     
-    impl_->pending_changes_[account.program_id] = account;
+    impl_->pending_changes_[account.pubkey] = account;
     std::cout << "Created account with " << account.lamports << " lamports" << std::endl;
     return common::Result<bool>(true);
 }
@@ -439,20 +439,24 @@ std::optional<ProgramAccount> AccountManager::get_account(const PublicKey& pubke
     // Check pending changes first
     auto pending_it = impl_->pending_changes_.find(pubkey);
     if (pending_it != impl_->pending_changes_.end()) {
-        return pending_it->second;
+        ProgramAccount acc = pending_it->second;
+        acc.pubkey = pubkey;  // Set the account's public key
+        return acc;
     }
     
     // Check committed accounts
     auto it = impl_->accounts_.find(pubkey);
     if (it != impl_->accounts_.end()) {
-        return it->second;
+        ProgramAccount acc = it->second;
+        acc.pubkey = pubkey;  // Set the account's public key
+        return acc;
     }
     
     return std::nullopt;
 }
 
 common::Result<bool> AccountManager::update_account(const ProgramAccount& account) {
-    impl_->pending_changes_[account.program_id] = account;
+    impl_->pending_changes_[account.pubkey] = account;
     std::cout << "Updated account" << std::endl;
     return common::Result<bool>(true);
 }
@@ -462,15 +466,69 @@ std::vector<ProgramAccount> AccountManager::get_program_accounts(const PublicKey
     
     for (const auto& [pubkey, account] : impl_->accounts_) {
         if (account.owner == program_id) {
-            result.push_back(account);
+            ProgramAccount acc = account;
+            acc.pubkey = pubkey;  // Set the account's public key
+            result.push_back(acc);
         }
     }
     
     // Also check pending changes
     for (const auto& [pubkey, account] : impl_->pending_changes_) {
         if (account.owner == program_id) {
-            result.push_back(account);
+            ProgramAccount acc = account;
+            acc.pubkey = pubkey;  // Set the account's public key
+            result.push_back(acc);
         }
+    }
+    
+    return result;
+}
+
+std::vector<ProgramAccount> AccountManager::get_accounts_by_owner(const PublicKey& owner) const {
+    std::vector<ProgramAccount> result;
+    
+    // Search committed accounts
+    for (const auto& [pubkey, account] : impl_->accounts_) {
+        if (account.owner == owner) {
+            ProgramAccount acc = account;
+            acc.pubkey = pubkey;  // Set the account's public key
+            result.push_back(acc);
+        }
+    }
+    
+    // Search pending changes
+    for (const auto& [pubkey, account] : impl_->pending_changes_) {
+        if (account.owner == owner) {
+            ProgramAccount acc = account;
+            acc.pubkey = pubkey;  // Set the account's public key
+            result.push_back(acc);
+        }
+    }
+    
+    return result;
+}
+
+std::vector<ProgramAccount> AccountManager::get_all_accounts() const {
+    std::vector<ProgramAccount> result;
+    
+    // Add all committed accounts
+    for (const auto& [pubkey, account] : impl_->accounts_) {
+        ProgramAccount acc = account;
+        acc.pubkey = pubkey;  // Set the account's public key
+        result.push_back(acc);
+    }
+    
+    // Add pending changes (may overwrite committed accounts)
+    for (const auto& [pubkey, account] : impl_->pending_changes_) {
+        // Remove existing account if present and add updated version
+        auto it = std::find_if(result.begin(), result.end(),
+            [&pubkey](const ProgramAccount& acc) { return acc.pubkey == pubkey; });
+        if (it != result.end()) {
+            result.erase(it);
+        }
+        ProgramAccount acc = account;
+        acc.pubkey = pubkey;  // Set the account's public key
+        result.push_back(acc);
     }
     
     return result;

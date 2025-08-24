@@ -8,6 +8,7 @@
 #include <atomic>
 #include <thread>
 #include <mutex>
+#include <set>
 
 namespace slonana {
 namespace network {
@@ -102,6 +103,16 @@ private:
      * Parse entrypoint string (address:port)
      */
     static NetworkPeer parse_entrypoint(const std::string& entrypoint);
+    
+    /**
+     * Resolve DNS seed to peer addresses
+     */
+    std::vector<NetworkPeer> resolve_dns_seed(const std::string& dns_seed);
+    
+    /**
+     * Validate IP address format
+     */
+    bool is_valid_ip_address(const std::string& address);
 
     common::ValidatorConfig config_;
     genesis::GenesisConfig genesis_config_;
@@ -170,12 +181,37 @@ private:
      * Handle incoming connections
      */
     void handle_incoming_connections();
+    
+    /**
+     * Validate peer connectivity
+     */
+    bool validate_peer_connectivity(const NetworkPeer& peer);
+    
+    /**
+     * Update peer transmission statistics
+     */
+    void update_peer_transmission_stats(const NetworkPeer& peer, size_t bytes_sent, int64_t transmission_time_ms);
+    
+    /**
+     * Perform connection handshake with peer
+     */
+    bool perform_connection_handshake(const NetworkPeer& peer);
+    
+    /**
+     * Negotiate protocol version with peer
+     */
+    bool negotiate_protocol_version(const NetworkPeer& peer);
+    
+    /**
+     * Check if peer is blacklisted
+     */
+    bool is_peer_blacklisted(const NetworkPeer& peer);
 
     common::ValidatorConfig config_;
     std::shared_ptr<NetworkDiscovery> discovery_;
     std::atomic<bool> running_{false};
     std::unique_ptr<std::thread> peer_management_thread_;
-    std::vector<NetworkPeer> connected_peers_;
+    std::set<std::string> connected_peers_;  // Track connected peer endpoints
     mutable std::mutex connected_peers_mutex_;
 };
 

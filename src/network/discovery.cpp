@@ -397,10 +397,22 @@ void EnhancedGossipProtocol::stop() {
 }
 
 void EnhancedGossipProtocol::broadcast_message(const std::vector<uint8_t>& message) {
+    if (!discovery_) {
+        std::cerr << "Network discovery not initialized" << std::endl;
+        return;
+    }
+    
+    // Get current peers from discovery
+    auto peers = discovery_->get_peers();
+    
     std::lock_guard<std::mutex> lock(connected_peers_mutex_);
     
-    for (const auto& peer : connected_peers_) {
-        send_message_to_peer(peer, message);
+    for (const auto& peer : peers) {
+        std::string peer_endpoint = peer.address + ":" + std::to_string(peer.port);
+        // Only send to connected peers
+        if (connected_peers_.find(peer_endpoint) != connected_peers_.end()) {
+            send_message_to_peer(peer, message);
+        }
     }
 }
 
@@ -471,14 +483,12 @@ void EnhancedGossipProtocol::peer_management_loop() {
                 for (const auto& peer : discovered_peers) {
                     {
                         std::lock_guard<std::mutex> lock(connected_peers_mutex_);
-                        auto it = std::find_if(connected_peers_.begin(), connected_peers_.end(),
-                            [&peer](const NetworkPeer& p) {
-                                return p.address == peer.address && p.port == peer.port;
-                            });
+                        std::string peer_endpoint = peer.address + ":" + std::to_string(peer.port);
                         
-                        if (it == connected_peers_.end() && connected_peers_.size() < config_.max_connections) {
+                        if (connected_peers_.find(peer_endpoint) == connected_peers_.end() && 
+                            connected_peers_.size() < config_.max_connections) {
                             if (connect_to_peer(peer)) {
-                                connected_peers_.push_back(peer);
+                                connected_peers_.insert(peer_endpoint);
                             }
                         }
                     }

@@ -127,6 +127,13 @@ private:
     void record_reward_distribution(const PublicKey& stake_account, Lamports amount) const;
     bool validate_stake_account(const StakeAccount& stake_account) const;
     
+    // Helper method for reward distribution
+    bool distribute_rewards_to_account(
+        const StakeAccount& stake_account,
+        Lamports delegator_rewards,
+        Lamports validator_rewards,
+        Epoch epoch) const;
+    
     class Impl;
     std::unique_ptr<Impl> impl_;
 };

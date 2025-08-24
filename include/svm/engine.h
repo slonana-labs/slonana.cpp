@@ -16,6 +16,7 @@ using namespace slonana::common;
  * Program account data and executable information
  */
 struct ProgramAccount {
+    PublicKey pubkey;        // Account's public key address
     PublicKey program_id;
     std::vector<uint8_t> data;
     Lamports lamports;
@@ -180,6 +181,8 @@ public:
     
     // Account queries
     std::vector<ProgramAccount> get_program_accounts(const PublicKey& program_id) const;
+    std::vector<ProgramAccount> get_accounts_by_owner(const PublicKey& owner) const;
+    std::vector<ProgramAccount> get_all_accounts() const;
     bool account_exists(const PublicKey& pubkey) const;
     Lamports get_account_balance(const PublicKey& pubkey) const;
     

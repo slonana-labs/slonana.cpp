@@ -108,6 +108,7 @@ public:
     // Getter methods for RPC server
     PublicKey get_validator_identity() const { return validator_identity_; }
     Result<std::vector<uint8_t>> get_genesis_block() const;
+    std::string get_slot_leader(Slot slot) const;
 
 private:
     std::shared_ptr<ledger::LedgerManager> ledger_;

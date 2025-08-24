@@ -55,6 +55,10 @@ public:
 private:
     class Impl;
     std::unique_ptr<Impl> impl_;
+    
+    // Helper methods for message handling
+    std::vector<uint8_t> serialize_network_message(const NetworkMessage& message);
+    bool send_message_to_peer_socket(const PublicKey& peer_id, const std::vector<uint8_t>& serialized_message);
 };
 
 /**

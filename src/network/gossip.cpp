@@ -1,6 +1,10 @@
 #include "network/gossip.h"
 #include <iostream>
 #include <thread>
+#include <future>
+#include <mutex>
+#include <unordered_map>
+#include <chrono>
 
 namespace slonana {
 namespace network {
@@ -10,10 +14,21 @@ class GossipProtocol::Impl {
 public:
     explicit Impl(const common::ValidatorConfig& config) : config_(config) {}
     
+    struct ConnectionInfo {
+        bool is_connected = false;
+        bool is_active = false;
+        int socket_fd = -1;
+        uint64_t last_seen = 0;
+        std::chrono::steady_clock::time_point last_contact = std::chrono::steady_clock::now();
+        uint64_t bytes_sent = 0;
+    };
+    
     common::ValidatorConfig config_;
     bool running_ = false;
     std::vector<PublicKey> known_peers_;
     std::unordered_map<MessageType, MessageHandler> handlers_;
+    std::mutex peers_mutex_;
+    std::unordered_map<PublicKey, ConnectionInfo> peer_connections_;
 };
 
 GossipProtocol::GossipProtocol(const common::ValidatorConfig& config)

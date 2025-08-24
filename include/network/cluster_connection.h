@@ -11,6 +11,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <optional>
+#include <chrono>
 
 namespace slonana {
 
@@ -52,6 +53,7 @@ struct ClusterNode {
     std::string version;
     uint64_t stake_weight;
     bool is_leader;
+    bool is_active = false;  // Track if the node is currently active
 };
 
 struct ClusterMessage {
@@ -82,6 +84,16 @@ private:
     // Connection management
     std::vector<ClusterNode> known_nodes_;
     std::unordered_map<std::string, std::shared_ptr<ClusterNode>> connected_nodes_;
+    
+    // Active peer connections with connection info
+    struct ConnectionInfo {
+        bool is_connected = false;
+        int socket_fd = -1;
+        uint64_t last_ping = 0;
+        std::chrono::steady_clock::time_point last_seen = std::chrono::steady_clock::now();
+    };
+    std::unordered_map<std::string, ConnectionInfo> active_peers_;
+    
     mutable std::mutex nodes_mutex_;
     
     // Message handling
@@ -93,6 +105,13 @@ private:
     // Statistics
     ClusterStats stats_;
     mutable std::mutex stats_mutex_;
+    
+    // Connection statistics (additional detailed stats)
+    struct {
+        uint64_t active_connections = 0;
+        uint64_t messages_received = 0;
+        uint64_t failed_connections = 0;
+    } connection_stats_;
     
     // Callbacks
     std::function<void(const ClusterMessage&)> message_callback_;
@@ -107,6 +126,7 @@ private:
     
     // Message processing
     void message_handler_loop();
+    void process_cluster_message(const ClusterMessage& message);
     void process_handshake(const ClusterMessage& msg);
     void process_ping(const ClusterMessage& msg);
     void process_pong(const ClusterMessage& msg);

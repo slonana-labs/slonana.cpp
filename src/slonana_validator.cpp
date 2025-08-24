@@ -427,7 +427,7 @@ common::Result<std::vector<uint8_t>> SolanaValidator::load_validator_identity(co
     try {
         std::ifstream file(keypair_path, std::ios::binary);
         if (!file) {
-            return common::Result<std::vector<uint8_t>>::error("Failed to open keypair file");
+            return common::Result<std::vector<uint8_t>>("Failed to open keypair file");
         }
         
         // Read keypair file (32 bytes for public key, 32 bytes for private key)
@@ -435,7 +435,7 @@ common::Result<std::vector<uint8_t>> SolanaValidator::load_validator_identity(co
         file.read(reinterpret_cast<char*>(keypair_data.data()), 64);
         
         if (file.gcount() != 64) {
-            return common::Result<std::vector<uint8_t>>::error("Invalid keypair file size");
+            return common::Result<std::vector<uint8_t>>("Invalid keypair file size");
         }
         
         // Extract public key (first 32 bytes)
@@ -445,7 +445,7 @@ common::Result<std::vector<uint8_t>> SolanaValidator::load_validator_identity(co
         return common::Result<std::vector<uint8_t>>(public_key);
         
     } catch (const std::exception& e) {
-        return common::Result<std::vector<uint8_t>>::error(
+        return common::Result<std::vector<uint8_t>>(
             std::string("Failed to load keypair: ") + e.what());
     }
 }

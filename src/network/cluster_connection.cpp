@@ -558,7 +558,7 @@ namespace cluster_utils {
 
 bool ClusterConnection::validate_node_reachability(const ClusterNode& node) {
     // Validate that the cluster node is reachable
-    if (node.address.empty() || node.port == 0) {
+    if (node.ip_address.empty() || node.gossip_port == 0) {
         return false;
     }
     
@@ -811,125 +811,6 @@ bool ClusterConnection::attempt_peer_connection(const std::string& peer_id) {
         std::cerr << "Connection attempt to " << peer_id << " failed: " << e.what() << std::endl;
         return false;
     }
-}
-
-bool ClusterConnection::validate_node_reachability(const ClusterNode& node) {
-    // Production node reachability validation
-    try {
-        // Step 1: Basic IP/hostname validation
-        if (node.ip_address.empty() || node.gossip_port == 0) {
-            return false;
-        }
-        
-        // Step 2: Basic ping test (simplified - in production would use ICMP)
-        std::cout << "Validating reachability of " << node.ip_address << ":" << node.gossip_port << std::endl;
-        
-        // Simulate ping with 90% success rate for production realism
-        static std::mt19937 rng(std::chrono::steady_clock::now().time_since_epoch().count());
-        std::uniform_int_distribution<int> ping_dist(1, 100);
-        bool ping_success = ping_dist(rng) <= 90;
-        
-        if (ping_success) {
-            std::cout << "Node " << node.node_id << " is reachable" << std::endl;
-        } else {
-            std::cout << "Node " << node.node_id << " ping failed" << std::endl;
-        }
-        
-        return ping_success;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Error validating node reachability: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-bool ClusterConnection::perform_cluster_handshake(const ClusterNode& node) {
-    // Production cluster handshake protocol
-    try {
-        std::cout << "Performing cluster handshake with " << node.node_id << std::endl;
-        
-        // Step 1: Exchange protocol version
-        uint32_t protocol_version = 1;
-        std::cout << "Protocol version negotiated: " << protocol_version << std::endl;
-        
-        // Step 2: Exchange node capabilities
-        std::vector<std::string> local_capabilities = {"gossip", "rpc", "tpu", "tvu"};
-        std::cout << "Node capabilities exchanged" << std::endl;
-        
-        // Step 3: Verify node identity (would use cryptographic verification in production)
-        std::cout << "Node identity verified: " << node.node_id << std::endl;
-        
-        // Step 4: Establish communication channels
-        std::cout << "Communication channels established" << std::endl;
-        
-        // Simulate handshake with 95% success rate
-        static std::mt19937 rng(std::chrono::steady_clock::now().time_since_epoch().count());
-        std::uniform_int_distribution<int> handshake_dist(1, 100);
-        bool handshake_success = handshake_dist(rng) <= 95;
-        
-        if (handshake_success) {
-            std::cout << "Cluster handshake successful with " << node.node_id << std::endl;
-        } else {
-            std::cout << "Cluster handshake failed with " << node.node_id << std::endl;
-        }
-        
-        return handshake_success;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Error during cluster handshake: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-bool ClusterConnection::poll_network_sockets() {
-    // Production socket polling implementation
-    try {
-        // In production, this would use epoll/kqueue/select to check for data
-        // For now, simulate with reasonable activity patterns
-        static std::mt19937 rng(std::chrono::steady_clock::now().time_since_epoch().count());
-        std::uniform_int_distribution<int> activity_dist(1, 100);
-        
-        // 30% chance of network activity
-        bool has_activity = activity_dist(rng) <= 30;
-        
-        if (has_activity) {
-            std::cout << "Network activity detected on cluster sockets" << std::endl;
-        }
-        
-        return has_activity;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Error polling network sockets: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-std::vector<ClusterMessage> ClusterConnection::read_pending_messages() {
-    // Production message reading from network buffers
-    std::vector<ClusterMessage> messages;
-    
-    try {
-        // Read from all active connections
-        for (const auto& peer : active_peers_) {
-            if (!peer.second.is_connected) continue;
-            
-            // Read messages from this peer
-            std::vector<uint8_t> buffer(4096);
-            ssize_t bytes_read = read_from_peer_socket(peer.first, buffer);
-            
-            if (bytes_read > 0) {
-                ClusterMessage msg;
-                if (parse_cluster_message(buffer, bytes_read, msg)) {
-                    messages.push_back(msg);
-                }
-            }
-        }
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Error reading pending messages: " << e.what() << std::endl;
-    }
-    
-    return messages;
 }
 
 }} // namespace slonana::network

@@ -78,6 +78,10 @@ private:
     // Internal event handlers
     void on_block_received(const ledger::Block& block);
     void on_vote_received(const validator::Vote& vote);
+    
+    // Identity management helpers
+    common::Result<std::vector<uint8_t>> load_validator_identity(const std::string& keypair_path);
+    std::vector<uint8_t> generate_validator_identity();
     void on_gossip_message(const network::NetworkMessage& message);
     
     // Component initialization helpers

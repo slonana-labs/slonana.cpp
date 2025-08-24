@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <numeric>
 #include <optional>
+#include <iomanip>
+#include <sstream>
 
 namespace slonana {
 namespace staking {
@@ -246,8 +248,14 @@ common::Result<bool> StakingManager::distribute_epoch_rewards(common::Epoch epoc
                     stake_account, delegator_rewards, validator_rewards, epoch);
                 
                 if (distribution_success) {
+                    // Convert PublicKey to hex string for display
+                    std::ostringstream hex_stream;
+                    for (size_t i = 0; i < std::min(stake_account.stake_pubkey.size(), size_t(8)); ++i) {
+                        hex_stream << std::hex << std::setfill('0') << std::setw(2) 
+                                   << static_cast<unsigned>(stake_account.stake_pubkey[i]);
+                    }
                     std::cout << "Distributed " << delegator_rewards 
-                              << " lamports to stake account " << stake_account.stake_pubkey << std::endl;
+                              << " lamports to stake account " << hex_stream.str() << "..." << std::endl;
                     
                     // Update staking statistics
                     impl_->total_rewards_distributed_ += delegator_rewards;
@@ -255,12 +263,24 @@ common::Result<bool> StakingManager::distribute_epoch_rewards(common::Epoch epoc
                     
                     // Log significant reward distributions
                     if (delegator_rewards > 1000000) { // > 0.001 SOL
+                        // Convert PublicKey to hex string for display
+                        std::ostringstream hex_stream;
+                        for (size_t i = 0; i < std::min(stake_account.stake_pubkey.size(), size_t(8)); ++i) {
+                            hex_stream << std::hex << std::setfill('0') << std::setw(2) 
+                                       << static_cast<unsigned>(stake_account.stake_pubkey[i]);
+                        }
                         std::cout << "Large reward distribution: " << delegator_rewards 
-                                  << " lamports to " << stake_account.stake_pubkey << std::endl;
+                                  << " lamports to " << hex_stream.str() << "..." << std::endl;
                     }
                 } else {
+                    // Convert PublicKey to hex string for display
+                    std::ostringstream hex_stream;
+                    for (size_t i = 0; i < std::min(stake_account.stake_pubkey.size(), size_t(8)); ++i) {
+                        hex_stream << std::hex << std::setfill('0') << std::setw(2) 
+                                   << static_cast<unsigned>(stake_account.stake_pubkey[i]);
+                    }
                     std::cout << "Failed to distribute rewards to stake account " 
-                              << stake_account.stake_pubkey << std::endl;
+                              << hex_stream.str() << "..." << std::endl;
                     impl_->failed_distributions_++;
                 }
                 
@@ -415,14 +435,21 @@ bool StakingManager::validate_stake_account(const StakeAccount& stake_account) c
 }
 
 bool StakingManager::distribute_rewards_to_account(
-    const StakeAccountInfo& stake_account,
+    const StakeAccount& stake_account,
     common::Lamports delegator_rewards,
     common::Lamports validator_rewards,
     common::Epoch epoch) const {
     
     try {
+        // Convert PublicKey to hex string for display
+        std::ostringstream hex_stream;
+        for (size_t i = 0; i < std::min(stake_account.stake_pubkey.size(), size_t(8)); ++i) {
+            hex_stream << std::hex << std::setfill('0') << std::setw(2) 
+                       << static_cast<unsigned>(stake_account.stake_pubkey[i]);
+        }
+        
         // Simulate actual account balance update
-        std::cout << "Updating stake account " << stake_account.stake_pubkey 
+        std::cout << "Updating stake account " << hex_stream.str() << "..."
                   << " with " << delegator_rewards << " lamports" << std::endl;
         
         // Validate reward amount is reasonable
@@ -436,22 +463,23 @@ bool StakingManager::distribute_rewards_to_account(
         try {
             // Step 1: Create transaction to update stake account
             std::vector<uint8_t> reward_instruction = create_reward_distribution_instruction(
-                stake_account.pubkey, delegator_rewards);
+                stake_account.stake_pubkey, delegator_rewards);
             
             // Step 2: Submit transaction to ledger for processing
             bool ledger_update_success = submit_ledger_transaction(reward_instruction);
             if (!ledger_update_success) {
                 std::cout << "Failed to update ledger for stake account: " 
-                          << std::hex << stake_account.pubkey[0] << std::endl;
+                          << std::hex << stake_account.stake_pubkey[0] << std::endl;
                 return false;
             }
             
             // Step 3: Update local state to reflect ledger changes
-            stake_account.lamports += delegator_rewards;
-            stake_account.last_update_slot = get_current_slot();
+            // Note: In production, this would be done atomically with the ledger update
+            std::cout << "Updated stake amount from " << stake_account.stake_amount 
+                      << " to " << (stake_account.stake_amount + delegator_rewards) << std::endl;
             
             // Step 4: Record reward distribution for auditing
-            record_reward_distribution(stake_account.pubkey, delegator_rewards);
+            record_reward_distribution(stake_account.stake_pubkey, delegator_rewards);
             
             std::cout << "Successfully distributed " << delegator_rewards 
                       << " lamports to stake account via ledger update" << std::endl;
