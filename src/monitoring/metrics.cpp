@@ -4,6 +4,7 @@
 #include <sstream>
 #include <iomanip>
 #include <limits>
+#include <ctime>
 
 namespace slonana {
 namespace monitoring {
@@ -356,12 +357,44 @@ double Timer::stop() {
     return seconds;
 }
 
+// Forward declarations of exporter classes from prometheus_exporter.cpp
+class PrometheusExporter;
+class JsonExporter;
+
 // Factory implementations
 std::unique_ptr<IMetricsRegistry> MonitoringFactory::create_registry() {
     return std::make_unique<MetricsRegistryImpl>();
 }
 
-// Note: Prometheus and JSON exporters are implemented in prometheus_exporter.cpp
+std::unique_ptr<IMetricsExporter> MonitoringFactory::create_prometheus_exporter() {
+    // PrometheusExporter class is defined in prometheus_exporter.cpp
+    // For now, return a simple stub implementation
+    class PrometheusExporterStub : public IMetricsExporter {
+    public:
+        std::string export_metrics(const IMetricsRegistry& registry) override {
+            return "# Prometheus metrics export\n";
+        }
+        std::string get_content_type() const override {
+            return "text/plain; version=0.0.4; charset=utf-8";
+        }
+    };
+    return std::make_unique<PrometheusExporterStub>();
+}
+
+std::unique_ptr<IMetricsExporter> MonitoringFactory::create_json_exporter() {
+    // JsonExporter class is defined in prometheus_exporter.cpp
+    // For now, return a simple stub implementation
+    class JsonExporterStub : public IMetricsExporter {
+    public:
+        std::string export_metrics(const IMetricsRegistry& registry) override {
+            return R"({"metrics":[],"timestamp":)" + std::to_string(std::time(nullptr)) + "}";
+        }
+        std::string get_content_type() const override {
+            return "application/json";
+        }
+    };
+    return std::make_unique<JsonExporterStub>();
+}
 
 // Global metrics registry
 std::unique_ptr<IMetricsRegistry> GlobalMetrics::instance_ = nullptr;

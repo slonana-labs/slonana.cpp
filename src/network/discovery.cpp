@@ -258,7 +258,7 @@ std::vector<NetworkPeer> NetworkDiscovery::resolve_dns_seed(const std::string& d
                 
                 // Create peer entry with resolved IP
                 std::string peer_id = hostname + "_" + std::string(ip_str);
-                resolved_peers.push_back(NetworkPeer{std::string(ip_str), port, peer_id});
+                resolved_peers.push_back(NetworkPeer{std::string(ip_str), static_cast<uint16_t>(port), peer_id});
                 
                 // Limit to 10 resolved addresses to avoid overwhelming
                 if (resolved_peers.size() >= 10) break;
