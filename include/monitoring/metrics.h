@@ -319,45 +319,4 @@ public:
     static std::unique_ptr<IMetricsExporter> create_json_exporter();
 };
 
-/**
- * @brief Global metrics registry accessor
- */
-class GlobalMetrics {
-public:
-    /**
-     * @brief Get the global metrics registry instance
-     * @return reference to global registry
-     */
-    static IMetricsRegistry& registry();
-    
-    /**
-     * @brief Initialize the global registry
-     */
-    static void initialize();
-    
-    /**
-     * @brief Shutdown the global registry
-     */
-    static void shutdown();
-
-private:
-    static std::unique_ptr<IMetricsRegistry> instance_;
-};
-
-/**
- * @brief Convenience macros for common metric operations
- */
-#define SLONANA_COUNTER(name, help, ...) \
-    GlobalMetrics::registry().counter(name, help, ##__VA_ARGS__)
-
-#define SLONANA_GAUGE(name, help, ...) \
-    GlobalMetrics::registry().gauge(name, help, ##__VA_ARGS__)
-
-#define SLONANA_HISTOGRAM(name, help, ...) \
-    GlobalMetrics::registry().histogram(name, help, ##__VA_ARGS__)
-
-#define SLONANA_TIMER(histogram) \
-    Timer _timer(histogram.get())
-
-} // namespace monitoring
-} // namespace slonana
+}} // namespace slonana::monitoring
