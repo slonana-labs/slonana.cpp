@@ -114,6 +114,12 @@ private:
     SnapshotMetadata deserialize_metadata(const std::vector<uint8_t>& data) const;
     std::vector<uint8_t> serialize_account(const AccountSnapshot& account) const;
     AccountSnapshot deserialize_account(const std::vector<uint8_t>& data, size_t& offset) const;
+    
+    // Ledger restoration helpers
+    bool validate_account_integrity(const AccountSnapshot& account) const;
+    bool restore_account_to_ledger(const AccountSnapshot& account) const;
+    void update_ledger_metadata(size_t total_accounts, size_t restored_accounts) const;
+    void verify_ledger_consistency() const;
 };
 
 /**

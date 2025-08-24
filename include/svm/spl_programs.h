@@ -397,6 +397,16 @@ private:
     Result<MultisigTransaction> deserialize_transaction(const std::vector<uint8_t>& data) const;
     std::vector<uint8_t> serialize_transaction(const MultisigTransaction& transaction) const;
     bool is_valid_signer(const PublicKey& signer, const Multisig& multisig) const;
+    
+    // Advanced cryptographic verification methods
+    std::vector<uint8_t> compute_transaction_hash(const std::vector<uint8_t>& transaction_data);
+    bool verify_signature(const std::vector<uint8_t>& signature,
+                         const std::vector<uint8_t>& message_hash,
+                         const std::vector<uint8_t>& multisig_data);
+    bool verify_ed25519_signature(const std::vector<uint8_t>& signature,
+                                 const std::vector<uint8_t>& message,
+                                 const std::vector<uint8_t>& public_key);
+    ExecutionResult execute_underlying_transaction(const std::vector<uint8_t>& transaction_data);
 
     static const PublicKey MULTISIG_PROGRAM_ID;
     static constexpr size_t MULTISIG_SIZE = 512;

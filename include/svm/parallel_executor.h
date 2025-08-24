@@ -124,6 +124,13 @@ struct ExecutionTask {
     }
 };
 
+struct DecodedInstruction {
+    uint8_t opcode = 0;
+    uint32_t operand1 = 0;
+    uint32_t operand2 = 0;
+    bool can_parallelize = false;
+};
+
 struct ParallelExecutionStats {
     uint64_t total_tasks_executed = 0;
     uint64_t parallel_tasks_executed = 0;
@@ -292,6 +299,9 @@ public:
 private:
     std::vector<uint8_t> create_account_snapshot(const AccountInfo& account);
     bool compare_account_state(const AccountInfo& account, const std::vector<uint8_t>& snapshot);
+    bool validate_syscall_permissions(const ExecutionTask& task);
+    bool validate_memory_access(const ExecutionTask& task);
+    bool validate_account_modifications(const ExecutionTask& task);
 };
 
 // Main parallel execution engine
@@ -394,6 +404,16 @@ private:
     ExecutionResult execute_parallel(const ExecutionTask& task);
     ExecutionResult execute_speculative(const ExecutionTask& task);
     
+    // Advanced parallel execution methods
+    bool can_vectorize_operations(const std::vector<uint8_t>& bytecode);
+    ExecutionResult execute_vectorized_operations(const ExecutionTask& task);
+    bool process_account_chunk(const ExecutionTask& task, size_t start_idx, size_t end_idx);
+    ExecutionResult execute_bytecode_parallel(const ExecutionTask& task);
+    DecodedInstruction decode_instruction(const std::vector<uint8_t>& bytecode, size_t offset);
+    bool is_parallelizable_instruction(uint8_t opcode);
+    ExecutionResult execute_instruction_pipeline(const std::vector<DecodedInstruction>& instructions, const ExecutionTask& task);
+    static bool execute_single_instruction(const DecodedInstruction& instr);
+    
     std::string generate_task_id();
     void complete_task(ExecutionTask* task, const ExecutionResult& result);
 };
@@ -442,6 +462,7 @@ public:
 // Utility functions for parallel execution
 namespace parallel_utils {
     size_t get_optimal_thread_count();
+    size_t detect_l3_cache_size();
     size_t get_optimal_memory_pool_size();
     std::vector<std::string> detect_account_conflicts(const std::vector<ExecutionTask>& tasks);
     
