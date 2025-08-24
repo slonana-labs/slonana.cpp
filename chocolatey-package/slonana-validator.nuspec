@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>slonana-validator</id>
+    <version>1.0.0</version>
+    <title>Slonana Validator</title>
+    <authors>Slonana Labs</authors>
+    <projectUrl>https://github.com/slonana-labs/slonana.cpp</projectUrl>
+    <iconUrl>https://slonana.dev/icon.png</iconUrl>
+    <copyright>2025 Slonana Labs</copyright>
+    <licenseUrl>https://github.com/slonana-labs/slonana.cpp/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <tags>solana validator blockchain cpp</tags>
+    <summary>High-performance C++ Solana validator implementation</summary>
+    <description>
+Slonana.cpp is a high-performance C++ implementation of a Solana validator
+that provides full compatibility with the Solana network while delivering
+superior performance and reliability.
+
+Features:
+* Full Solana protocol compatibility
+* High-performance SVM execution engine
+* Comprehensive monitoring and metrics
+* Hardware wallet support
+* Production-ready deployment tooling
+    </description>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>

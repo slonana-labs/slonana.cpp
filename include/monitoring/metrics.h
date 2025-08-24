@@ -294,6 +294,19 @@ public:
     static std::unique_ptr<IMetricsRegistry> create_registry();
     
     /**
+     * @brief Create a Prometheus metrics exporter
+     * @return unique pointer to Prometheus exporter
+     */
+    static std::unique_ptr<IMetricsExporter> create_prometheus_exporter();
+    
+    /**
+     * @brief Create a JSON metrics exporter
+     * @return unique pointer to JSON exporter
+     */
+    static std::unique_ptr<IMetricsExporter> create_json_exporter();
+};
+    
+    /**
      * @brief Create a Prometheus format exporter
      * @return unique pointer to Prometheus exporter
      */

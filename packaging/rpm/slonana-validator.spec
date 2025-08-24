@@ -148,7 +148,7 @@ chown -R slonana:slonana %{_localstatedir}/log/slonana
 %attr(755,slonana,slonana) %dir %{_localstatedir}/log/slonana
 
 %changelog
-* Thu Jan 01 2025 Slonana Labs <contact@slonana.dev> - 1.0.0-1
+* Mon Aug 24 2024 Slonana Labs <contact@slonana.dev> - 1.0.0-1
 - Initial RPM package release
 - Full Solana validator implementation
 - Hardware wallet support
