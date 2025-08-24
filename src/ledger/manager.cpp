@@ -8,6 +8,9 @@
 namespace slonana {
 namespace ledger {
 
+// Forward declarations
+std::vector<uint8_t> compute_transaction_hash(const std::vector<uint8_t>& message);
+
 // Transaction implementation
 Transaction::Transaction(const std::vector<uint8_t>& raw_data) {
     if (raw_data.size() >= 8) { // At least 4 bytes for sig count + 4 bytes for msg length

@@ -37,6 +37,7 @@ struct ValidatorStakeInfo {
     uint32_t commission_rate; // basis points (0-10000)
     Epoch last_vote_epoch;
     uint64_t vote_credits;
+    double uptime_percentage = 1.0; // 0.0 to 1.0
     
     double calculate_apr() const;
 };
@@ -64,6 +65,11 @@ public:
     // Inflation and reward parameters
     void set_inflation_rate(double annual_rate);
     double get_current_inflation_rate() const;
+    
+    // Production reward calculation methods
+    double calculate_performance_multiplier(const ValidatorStakeInfo& validator_info, Epoch epoch) const;
+    double calculate_stake_weight(Lamports total_stake) const;
+    double calculate_uptime_bonus(double uptime_percentage) const;
 
 private:
     class Impl;
@@ -112,6 +118,14 @@ public:
 
 private:
     std::unique_ptr<RewardsCalculator> rewards_calculator_;
+    
+    // Production ledger integration methods
+    std::vector<uint8_t> create_reward_distribution_instruction(
+        const PublicKey& stake_account, Lamports reward_amount) const;
+    bool submit_ledger_transaction(const std::vector<uint8_t>& instruction) const;
+    uint64_t get_current_slot() const;
+    void record_reward_distribution(const PublicKey& stake_account, Lamports amount) const;
+    bool validate_stake_account(const StakeAccount& stake_account) const;
     
     class Impl;
     std::unique_ptr<Impl> impl_;

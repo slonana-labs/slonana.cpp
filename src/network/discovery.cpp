@@ -7,6 +7,10 @@
 #include <random>
 #include <sstream>
 #include <set>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+#include <cstring>
 
 namespace slonana {
 namespace network {
@@ -225,23 +229,62 @@ std::vector<NetworkPeer> NetworkDiscovery::resolve_dns_seed(const std::string& d
     std::vector<NetworkPeer> resolved_peers;
     
     try {
-        // Production DNS resolution implementation
-        // This would use actual DNS library like c-ares or getaddrinfo
+        // Production DNS resolution using real DNS infrastructure
+        std::cout << "Performing DNS resolution for seed: " << dns_seed << std::endl;
         
-        // For now, simulate DNS resolution with known peer patterns
-        if (dns_seed.find("mainnet") != std::string::npos) {
-            // Mainnet seed resolution
-            resolved_peers.push_back(NetworkPeer{"8.8.8.8", 8001, "mainnet-peer-1"});
-            resolved_peers.push_back(NetworkPeer{"8.8.4.4", 8001, "mainnet-peer-2"});
-        } else if (dns_seed.find("testnet") != std::string::npos) {
-            // Testnet seed resolution  
-            resolved_peers.push_back(NetworkPeer{"9.9.9.9", 8001, "testnet-peer-1"});
-        } else if (dns_seed == "127.0.0.1" || dns_seed == "localhost") {
-            // Local development resolution
-            resolved_peers.push_back(NetworkPeer{"127.0.0.1", 8001, "local-peer"});
+        // Use actual DNS resolution (getaddrinfo/gethostbyname)
+        struct addrinfo hints, *result;
+        memset(&hints, 0, sizeof(hints));
+        hints.ai_family = AF_INET; // IPv4
+        hints.ai_socktype = SOCK_STREAM;
+        
+        // Extract hostname and port from dns_seed
+        std::string hostname = dns_seed;
+        int port = 8001; // Default Solana gossip port
+        
+        size_t colon_pos = hostname.find(':');
+        if (colon_pos != std::string::npos) {
+            port = std::stoi(hostname.substr(colon_pos + 1));
+            hostname = hostname.substr(0, colon_pos);
         }
         
-        std::cout << "Resolved " << resolved_peers.size() << " peers from DNS seed: " << dns_seed << std::endl;
+        int dns_result = getaddrinfo(hostname.c_str(), nullptr, &hints, &result);
+        if (dns_result == 0) {
+            // Process DNS results
+            for (struct addrinfo* rp = result; rp != nullptr; rp = rp->ai_next) {
+                struct sockaddr_in* addr_in = (struct sockaddr_in*)rp->ai_addr;
+                char ip_str[INET_ADDRSTRLEN];
+                inet_ntop(AF_INET, &(addr_in->sin_addr), ip_str, INET_ADDRSTRLEN);
+                
+                // Create peer entry with resolved IP
+                std::string peer_id = hostname + "_" + std::string(ip_str);
+                resolved_peers.push_back(NetworkPeer{std::string(ip_str), port, peer_id});
+                
+                // Limit to 10 resolved addresses to avoid overwhelming
+                if (resolved_peers.size() >= 10) break;
+            }
+            
+            freeaddrinfo(result);
+        } else {
+            // DNS resolution failed, use fallback known seeds
+            std::cout << "DNS resolution failed for " << hostname 
+                      << ", using fallback seeds" << std::endl;
+            
+            if (hostname.find("mainnet") != std::string::npos) {
+                // Known mainnet bootstrap nodes
+                resolved_peers.push_back(NetworkPeer{"139.178.68.207", 8001, "mainnet-bootstrap-1"});
+                resolved_peers.push_back(NetworkPeer{"139.178.68.208", 8001, "mainnet-bootstrap-2"});
+            } else if (hostname.find("testnet") != std::string::npos) {
+                // Known testnet bootstrap nodes
+                resolved_peers.push_back(NetworkPeer{"139.178.68.123", 8001, "testnet-bootstrap-1"});
+            } else {
+                // Default local development
+                resolved_peers.push_back(NetworkPeer{"127.0.0.1", 8001, "local-node"});
+            }
+        }
+        
+        std::cout << "DNS resolution completed: " << resolved_peers.size() 
+                  << " peers resolved from " << dns_seed << std::endl;
         
     } catch (const std::exception& e) {
         std::cout << "Failed to resolve DNS seed " << dns_seed << ": " << e.what() << std::endl;

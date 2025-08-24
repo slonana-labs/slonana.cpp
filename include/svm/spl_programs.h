@@ -268,6 +268,14 @@ private:
         AddValidatorToPool = 4,
         RemoveValidatorFromPool = 5
     };
+    
+    enum class PoolEventType : uint8_t {
+        DEPOSIT = 0,
+        WITHDRAW = 1,
+        VALIDATOR_ADDED = 2,
+        VALIDATOR_REMOVED = 3,
+        POOL_UPDATED = 4
+    };
 
     struct StakePool {
         PublicKey pool_mint;
@@ -318,6 +326,13 @@ private:
     std::vector<uint8_t> serialize_stake_pool(const StakePool& pool) const;
     uint64_t calculate_pool_tokens_for_deposit(uint64_t lamports, const StakePool& pool) const;
     uint64_t calculate_lamports_for_pool_tokens(uint64_t pool_tokens, const StakePool& pool) const;
+    
+    // Pool management utilities
+    void update_pool_state_persistent(const StakePool& pool) const;
+    void emit_pool_event(PoolEventType event_type, uint64_t amount, uint64_t pool_tokens) const;
+    
+    // Thread safety
+    mutable std::mutex pool_mutex_;
 
     static const PublicKey STAKE_POOL_PROGRAM_ID;
     static constexpr size_t STAKE_POOL_SIZE = 256;
@@ -397,6 +412,7 @@ private:
     Result<MultisigTransaction> deserialize_transaction(const std::vector<uint8_t>& data) const;
     std::vector<uint8_t> serialize_transaction(const MultisigTransaction& transaction) const;
     bool is_valid_signer(const PublicKey& signer, const Multisig& multisig) const;
+    bool parse_multisig_account(const std::vector<uint8_t>& data, Multisig& multisig) const;
     
     // Advanced cryptographic verification methods
     std::vector<uint8_t> compute_transaction_hash(const std::vector<uint8_t>& transaction_data);

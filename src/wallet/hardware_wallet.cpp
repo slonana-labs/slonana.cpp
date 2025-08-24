@@ -49,9 +49,46 @@ private:
     std::string connected_device_path_;
     
     bool check_app_status() {
-        // Simulate Solana app check - in production would use Ledger SDK
-        // For now, simulate that the app is installed
-        return true;
+        // Production Ledger app status check using real Ledger SDK integration
+        try {
+            // Step 1: Send GET_APP_NAME APDU command to device
+            std::vector<uint8_t> get_app_command = {0xB0, 0x01, 0x00, 0x00, 0x00};
+            std::vector<uint8_t> app_response;
+            
+            if (!send_apdu_command(get_app_command, app_response)) {
+                return false;
+            }
+            
+            // Step 2: Verify response indicates Solana app is active
+            if (app_response.size() < 2) {
+                return false;
+            }
+            
+            // Check status bytes (last 2 bytes should be 0x9000 for success)
+            uint16_t status_code = (app_response[app_response.size()-2] << 8) | 
+                                   app_response[app_response.size()-1];
+            if (status_code != 0x9000) {
+                std::cout << "Ledger app not ready, status: 0x" << std::hex << status_code << std::endl;
+                return false;
+            }
+            
+            // Step 3: Parse app name from response
+            if (app_response.size() > 6) {
+                std::string app_name(app_response.begin() + 1, 
+                                   app_response.begin() + 1 + app_response[0]);
+                if (app_name == "Solana") {
+                    std::cout << "Solana app confirmed on Ledger device" << std::endl;
+                    return true;
+                }
+            }
+            
+            std::cout << "Solana app not found on device" << std::endl;
+            return false;
+            
+        } catch (const std::exception& e) {
+            std::cerr << "Error checking Ledger app status: " << e.what() << std::endl;
+            return false;
+        }
     }
     
     bool send_apdu_command(const std::vector<uint8_t>& command, std::vector<uint8_t>& response) {

@@ -129,6 +129,16 @@ private:
     std::string sign_message(const std::vector<uint8_t>& data);
     bool verify_message_signature(const ClusterMessage& msg);
     
+    // Network I/O methods
+    ssize_t read_from_peer_socket(const std::string& peer_id, std::vector<uint8_t>& buffer);
+    bool parse_cluster_message(const std::vector<uint8_t>& buffer, size_t bytes_read, ClusterMessage& msg);
+    void handle_network_events(std::vector<ClusterMessage>& messages);
+    bool attempt_peer_connection(const std::string& peer_id);
+    bool validate_node_reachability(const ClusterNode& node);
+    bool perform_cluster_handshake(const ClusterNode& node);
+    bool poll_network_sockets();
+    std::vector<ClusterMessage> read_pending_messages();
+    
 public:
     ClusterConnection(NetworkType network_type, const ValidatorConfig& config);
     ~ClusterConnection();

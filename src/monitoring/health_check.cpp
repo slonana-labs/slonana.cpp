@@ -3,9 +3,13 @@
 #include <fstream>
 #include <filesystem>
 #include <thread>
+#include <iostream>
 
 namespace slonana {
 namespace monitoring {
+
+// Forward declarations
+bool test_endpoint_connectivity(const std::string& endpoint);
 
 // Health status utility functions
 std::string health_status_to_string(HealthStatus status) {
@@ -540,7 +544,7 @@ void GlobalHealthMonitor::shutdown() {
     }
 }
 
-bool HealthMonitor::test_endpoint_connectivity(const std::string& endpoint) {
+bool test_endpoint_connectivity(const std::string& endpoint) {
     try {
         if (endpoint.empty()) {
             return false;

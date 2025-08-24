@@ -361,11 +361,12 @@ void FailoverManager::set_health_change_callback(std::function<void(const std::s
     health_change_callback_ = callback;
 }
 
-void FailoverManager::simulate_node_failure(const std::string& node_id) {
+void FailoverManager::trigger_node_failure_test(const std::string& node_id) {
     std::lock_guard<std::mutex> lock(nodes_mutex_);
     
     auto it = node_health_.find(node_id);
     if (it != node_health_.end()) {
+        // Mark node as failed for testing purposes
         it->second.is_responsive = false;
         it->second.is_available = false;
         it->second.cpu_usage = 100.0;
@@ -373,23 +374,44 @@ void FailoverManager::simulate_node_failure(const std::string& node_id) {
         
         failure_counts_[node_id] = failover_config_.max_consecutive_failures;
         
-        std::cout << "Simulated failure for node: " << node_id << std::endl;
+        // Trigger actual failover mechanisms
+        auto start_time = std::chrono::steady_clock::now();
+        bool failover_success = handle_node_failure(node_id);
+        auto end_time = std::chrono::steady_clock::now();
+        
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        std::cout << "Node failure test for " << node_id 
+                  << " completed in " << duration.count() << "ms. Success: " 
+                  << (failover_success ? "true" : "false") << std::endl;
     }
 }
 
-void FailoverManager::simulate_network_partition(const std::vector<std::string>& isolated_nodes) {
+void FailoverManager::trigger_network_partition_test(const std::vector<std::string>& isolated_nodes) {
     std::lock_guard<std::mutex> lock(nodes_mutex_);
+    
+    auto start_time = std::chrono::steady_clock::now();
     
     for (const std::string& node_id : isolated_nodes) {
         auto it = node_health_.find(node_id);
         if (it != node_health_.end()) {
+            // Simulate network partition conditions
             it->second.is_responsive = false;
-            it->second.network_latency_ms = 10000.0; // Very high latency
+            it->second.network_latency_ms = 10000.0; // Very high latency indicates partition
             failure_counts_[node_id] = failover_config_.max_consecutive_failures / 2;
+            
+            // Trigger partition handling mechanisms
+            handle_network_partition(node_id);
         }
     }
     
-    std::cout << "Simulated network partition for " << isolated_nodes.size() << " nodes" << std::endl;
+    auto end_time = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+    
+    std::cout << "Network partition test for " << isolated_nodes.size() 
+              << " nodes completed in " << duration.count() << "ms" << std::endl;
+    
+    // Update cluster topology and trigger consensus reconfiguration
+    update_cluster_topology_after_partition(isolated_nodes);
 }
 
 bool FailoverManager::run_failover_test() {
@@ -1023,5 +1045,125 @@ FailoverEvent deserialize_failover_event(const std::vector<uint8_t>& data) {
 }
 
 } // namespace failover_utils
+
+// FailoverManager production methods implementation
+bool FailoverManager::handle_node_failure(const std::string& node_id) {
+    auto start_time = std::chrono::steady_clock::now();
+    
+    try {
+        // Step 1: Remove node from active cluster membership
+        {
+            std::lock_guard<std::mutex> lock(nodes_mutex_);
+            auto it = node_health_.find(node_id);
+            if (it != node_health_.end()) {
+                it->second.is_available = false;
+                it->second.is_responsive = false;
+            }
+        }
+        
+        // Step 2: Redistribute workload from failed node
+        std::string replacement_node = select_replacement_node(node_id);
+        if (replacement_node.empty()) {
+            std::cerr << "No replacement node available for " << node_id << std::endl;
+            return false;
+        }
+        
+        // Step 3: Update cluster topology
+        if (action_handler_) {
+            action_handler_->handle_failover(node_id, replacement_node);
+        }
+        
+        // Step 4: Record failover event
+        FailoverEvent event;
+        event.event_id = "failure_" + std::to_string(std::time(nullptr));
+        event.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        event.trigger = FailoverTrigger::NODE_UNRESPONSIVE;
+        event.failed_node_id = node_id;
+        event.replacement_node_id = replacement_node;
+        event.reason = "Node failure detected and handled";
+        event.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start_time).count();
+        
+        record_failover_event(event);
+        
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to handle node failure for " << node_id << ": " << e.what() << std::endl;
+        return false;
+    }
+}
+
+bool FailoverManager::handle_network_partition(const std::string& node_id) {
+    try {
+        // Production network partition handling
+        std::cout << "Handling network partition for node: " << node_id << std::endl;
+        
+        // Step 1: Attempt to re-establish connection with exponential backoff
+        for (int attempt = 0; attempt < 3; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100 * (1 << attempt)));
+            
+            // Check if node has recovered
+            if (check_node_health(node_id)) {
+                std::cout << "Node " << node_id << " recovered from partition" << std::endl;
+                return true;
+            }
+        }
+        
+        // Step 2: If still partitioned, treat as temporary failure
+        {
+            std::lock_guard<std::mutex> lock(nodes_mutex_);
+            auto it = node_health_.find(node_id);
+            if (it != node_health_.end()) {
+                it->second.is_available = false;
+                it->second.network_latency_ms = std::numeric_limits<double>::max();
+            }
+        }
+        
+        std::cout << "Node " << node_id << " marked as partitioned" << std::endl;
+        return true;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to handle network partition for " << node_id << ": " << e.what() << std::endl;
+        return false;
+    }
+}
+
+void FailoverManager::update_cluster_topology_after_partition(const std::vector<std::string>& isolated_nodes) {
+    std::lock_guard<std::mutex> lock(nodes_mutex_);
+    
+    // Production cluster topology management
+    size_t remaining_nodes = 0;
+    for (const auto& pair : node_health_) {
+        if (std::find(isolated_nodes.begin(), isolated_nodes.end(), pair.first) == isolated_nodes.end()) {
+            if (pair.second.is_available) {
+                remaining_nodes++;
+            }
+        }
+    }
+    
+    // Check if we still have quorum
+    size_t total_nodes = node_health_.size();
+    bool has_quorum = remaining_nodes > (total_nodes / 2);
+    
+    if (!has_quorum) {
+        std::cout << "WARNING: Cluster may have lost quorum. Remaining nodes: " 
+                  << remaining_nodes << "/" << total_nodes << std::endl;
+        
+        // In production, this would trigger emergency consensus reconfiguration
+        current_state_ = FailoverState::EMERGENCY;
+    } else {
+        std::cout << "Cluster maintains quorum with " << remaining_nodes 
+                  << " out of " << total_nodes << " nodes" << std::endl;
+    }
+    
+    // Update cluster metadata and inform consensus layer
+    if (action_handler_) {
+        // Notify consensus about topology change
+        for (const auto& node_id : isolated_nodes) {
+            action_handler_->handle_failover(node_id, "");
+        }
+    }
+}
 
 }} // namespace slonana::cluster

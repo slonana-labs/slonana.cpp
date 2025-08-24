@@ -30,7 +30,8 @@ enum class FailoverState {
     ELECTING_REPLACEMENT,
     SWITCHING_TRAFFIC,
     RECOVERY_IN_PROGRESS,
-    FAILED_OVER
+    FAILED_OVER,
+    EMERGENCY
 };
 
 struct NodeHealth {
@@ -90,6 +91,7 @@ public:
     virtual bool isolate_failed_node(const std::string& node_id) = 0;
     virtual bool restore_node_to_cluster(const std::string& node_id) = 0;
     virtual NodeHealth get_node_health(const std::string& node_id) = 0;
+    virtual bool handle_failover(const std::string& failed_node, const std::string& replacement_node) = 0;
 };
 
 // Automatic failover and recovery manager
@@ -143,6 +145,9 @@ private:
     void record_failover_event(const FailoverEvent& event);
     void cleanup_old_events();
     bool validate_cluster_state();
+    bool handle_node_failure(const std::string& node_id);
+    bool handle_network_partition(const std::string& node_id);
+    void update_cluster_topology_after_partition(const std::vector<std::string>& isolated_nodes);
 
 public:
     FailoverManager(const std::string& node_id, const ValidatorConfig& config);
@@ -193,8 +198,8 @@ public:
     void set_health_change_callback(std::function<void(const std::string&, NodeHealth)> callback);
     
     // Testing and diagnostics
-    void simulate_node_failure(const std::string& node_id);
-    void simulate_network_partition(const std::vector<std::string>& isolated_nodes);
+    void trigger_node_failure_test(const std::string& node_id);
+    void trigger_network_partition_test(const std::vector<std::string>& isolated_nodes);
     bool run_failover_test();
 };
 

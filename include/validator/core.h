@@ -104,6 +104,10 @@ public:
     bool is_running() const;
     Slot get_current_slot() const;
     Hash get_current_head() const;
+    
+    // Getter methods for RPC server
+    PublicKey get_validator_identity() const { return validator_identity_; }
+    Result<std::vector<uint8_t>> get_genesis_block() const;
 
 private:
     std::shared_ptr<ledger::LedgerManager> ledger_;

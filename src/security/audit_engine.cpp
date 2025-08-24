@@ -222,8 +222,8 @@ AuditReport SecurityAuditEngine::get_report() {
     
     // Count failed rules based on critical and high severity findings
     for (const auto& finding : findings_) {
-        if (finding.severity == SeverityLevel::CRITICAL || 
-            finding.severity == SeverityLevel::HIGH) {
+        if (finding.severity == AuditLevel::CRITICAL ||
+            finding.severity == AuditLevel::HIGH) {
             rules_failed++;
         }
     }
@@ -231,8 +231,8 @@ AuditReport SecurityAuditEngine::get_report() {
     // Count rules with medium/low findings as warnings (still passed but with notes)
     size_t rules_with_warnings = 0;
     for (const auto& finding : findings_) {
-        if (finding.severity == SeverityLevel::MEDIUM || 
-            finding.severity == SeverityLevel::LOW) {
+        if (finding.severity == AuditLevel::MEDIUM ||
+            finding.severity == AuditLevel::LOW) {
             rules_with_warnings++;
         }
     }
