@@ -38,6 +38,7 @@ struct ValidatorStakeInfo {
     Epoch last_vote_epoch;
     uint64_t vote_credits;
     double uptime_percentage = 1.0; // 0.0 to 1.0
+    double skip_rate = 0.0; // 0.0 to 100.0 (percentage of slots skipped)
     
     double calculate_apr() const;
 };

@@ -1331,7 +1331,7 @@ ExecutionResult ParallelExecutor::execute_bytecode_parallel(const ExecutionTask&
     
     for (size_t i = 0; i < task.bytecode.size(); i += 8) {
         if (i + 7 < task.bytecode.size()) {
-            auto future = thread_pool_->enqueue([&task, i]() -> DecodedInstruction {
+            auto future = thread_pool_->enqueue([this, &task, i]() -> DecodedInstruction {
                 return decode_instruction(task.bytecode, i);
             });
             decode_futures.push_back(std::move(future));

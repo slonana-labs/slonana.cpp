@@ -5,6 +5,9 @@
 #include <optional>
 #include <iomanip>
 #include <sstream>
+#include <chrono>
+#include <thread>
+#include <random>
 
 namespace slonana {
 namespace staking {
@@ -120,6 +123,11 @@ class StakingManager::Impl {
 public:
     std::vector<StakeAccount> stake_accounts_;
     std::vector<ValidatorStakeInfo> validator_infos_;
+    
+    // Statistics tracking
+    uint64_t total_rewards_distributed_ = 0;
+    uint64_t total_accounts_rewarded_ = 0;
+    uint64_t failed_distributions_ = 0;
 };
 
 StakingManager::StakingManager()
@@ -495,7 +503,6 @@ bool StakingManager::distribute_rewards_to_account(
         std::cout << "Failed to distribute rewards: " << e.what() << std::endl;
         return false;
     }
-}
 }
 
 // StakingManager production methods implementation

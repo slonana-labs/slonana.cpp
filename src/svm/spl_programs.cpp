@@ -5,6 +5,8 @@
 #include <random>
 #include <iomanip>
 #include <sstream>
+#include <iomanip>
+#include <sstream>
 #include <iostream>
 #include <cstring>
 #include <unordered_map>
@@ -611,20 +613,34 @@ ExecutionResult NameServiceProgram::delete_name_registry(const std::vector<uint8
         return spl_utils::create_program_error("Name owner must be signer");
     }
     
-    // Verify ownership before deletion
-    if (!verify_name_ownership(name_account.pubkey, name_owner.pubkey)) {
+    // Helper function to convert PublicKey to short hex string
+    auto pubkey_to_short_hex = [](const slonana::common::PublicKey& pubkey) -> std::string {
+        std::ostringstream hex_stream;
+        for (size_t i = 0; i < std::min(pubkey.size(), size_t(8)); ++i) {
+            hex_stream << std::hex << std::setfill('0') << std::setw(2) 
+                       << static_cast<unsigned>(pubkey[i]);
+        }
+        return hex_stream.str() + "...";
+    };
+    
+    // Verify ownership before deletion - convert PublicKey to hex strings
+    auto name_hex = pubkey_to_short_hex(name_account.pubkey);
+    auto owner_hex = pubkey_to_short_hex(name_owner.pubkey);
+    
+    if (!verify_name_ownership(name_hex, owner_hex)) {
         return spl_utils::create_program_error("Invalid name owner");
     }
     
     // Transfer remaining lamports to destination account
     uint64_t account_lamports = name_account.lamports;
     if (account_lamports > 0) {
+        auto dest_hex = pubkey_to_short_hex(destination_account.pubkey);
         std::cout << "Name Service: Transferring " << account_lamports 
-                  << " lamports to " << destination_account.pubkey << std::endl;
+                  << " lamports to " << dest_hex << std::endl;
     }
     
     // Clear the account data (mark as deleted)
-    std::cout << "Name Service: Deleted name registry " << name_account.pubkey << std::endl;
+    std::cout << "Name Service: Deleted name registry " << name_hex << std::endl;
     return spl_utils::create_success_result();
 }
 
@@ -692,6 +708,16 @@ std::string NameServiceProgram::derive_name_account_key(
 }
 
 ExecutionResult NameServiceProgram::create_name_registry(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts) {
+    // Helper function to convert PublicKey to short hex string
+    auto pubkey_to_short_hex = [](const slonana::common::PublicKey& pubkey) -> std::string {
+        std::ostringstream hex_stream;
+        for (size_t i = 0; i < std::min(pubkey.size(), size_t(8)); ++i) {
+            hex_stream << std::hex << std::setfill('0') << std::setw(2) 
+                       << static_cast<unsigned>(pubkey[i]);
+        }
+        return hex_stream.str() + "...";
+    };
+    
     if (accounts.size() < 3) {
         return spl_utils::create_program_error("Insufficient accounts");
     }
@@ -717,7 +743,7 @@ ExecutionResult NameServiceProgram::create_name_registry(const std::vector<uint8
     
     NameRegistryState registry_state;
     registry_state.parent_name = "";
-    registry_state.owner = name_owner.pubkey;
+    registry_state.owner = pubkey_to_short_hex(name_owner.pubkey);
     registry_state.class_hash = "";
     registry_state.data = std::vector<uint8_t>(data.begin() + 33, data.end());
     
@@ -726,6 +752,16 @@ ExecutionResult NameServiceProgram::create_name_registry(const std::vector<uint8
 }
 
 ExecutionResult NameServiceProgram::update_name_registry(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts) {
+    // Helper function to convert PublicKey to short hex string
+    auto pubkey_to_short_hex = [](const slonana::common::PublicKey& pubkey) -> std::string {
+        std::ostringstream hex_stream;
+        for (size_t i = 0; i < std::min(pubkey.size(), size_t(8)); ++i) {
+            hex_stream << std::hex << std::setfill('0') << std::setw(2) 
+                       << static_cast<unsigned>(pubkey[i]);
+        }
+        return hex_stream.str() + "...";
+    };
+    
     if (accounts.size() < 2) {
         return spl_utils::create_program_error("Insufficient accounts");
     }
@@ -742,11 +778,22 @@ ExecutionResult NameServiceProgram::update_name_registry(const std::vector<uint8
     }
     
     // Update name registry data
-    std::cout << "Name Service: Updated name registry " << name_account.pubkey << std::endl;
+    auto name_hex = pubkey_to_short_hex(name_account.pubkey);
+    std::cout << "Name Service: Updated name registry " << name_hex << std::endl;
     return spl_utils::create_success_result();
 }
 
 ExecutionResult NameServiceProgram::transfer_ownership(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts) {
+    // Helper function to convert PublicKey to short hex string
+    auto pubkey_to_short_hex = [](const slonana::common::PublicKey& pubkey) -> std::string {
+        std::ostringstream hex_stream;
+        for (size_t i = 0; i < std::min(pubkey.size(), size_t(8)); ++i) {
+            hex_stream << std::hex << std::setfill('0') << std::setw(2) 
+                       << static_cast<unsigned>(pubkey[i]);
+        }
+        return hex_stream.str() + "...";
+    };
+    
     if (accounts.size() < 3) {
         return spl_utils::create_program_error("Insufficient accounts");
     }
@@ -763,8 +810,10 @@ ExecutionResult NameServiceProgram::transfer_ownership(const std::vector<uint8_t
         return spl_utils::create_program_error("Current owner must be signer");
     }
     
-    std::cout << "Name Service: Transferred ownership of " << name_account.pubkey 
-              << " to " << new_owner.pubkey << std::endl;
+    auto name_hex = pubkey_to_short_hex(name_account.pubkey);
+    auto owner_hex = pubkey_to_short_hex(new_owner.pubkey);
+    std::cout << "Name Service: Transferred ownership of " << name_hex 
+              << " to " << owner_hex << std::endl;
     return spl_utils::create_success_result();
 }
 
@@ -798,6 +847,16 @@ ExecutionResult MetadataProgram::execute_instruction(
 }
 
 ExecutionResult MetadataProgram::create_metadata_account(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts) {
+    // Helper function to convert PublicKey to short hex string
+    auto pubkey_to_short_hex = [](const slonana::common::PublicKey& pubkey) -> std::string {
+        std::ostringstream hex_stream;
+        for (size_t i = 0; i < std::min(pubkey.size(), size_t(8)); ++i) {
+            hex_stream << std::hex << std::setfill('0') << std::setw(2) 
+                       << static_cast<unsigned>(pubkey[i]);
+        }
+        return hex_stream.str() + "...";
+    };
+    
     if (accounts.size() < 7) {
         return spl_utils::create_program_error("Insufficient accounts");
     }
@@ -817,8 +876,10 @@ ExecutionResult MetadataProgram::create_metadata_account(const std::vector<uint8
     }
     
     // Verify metadata account is derived correctly
-    std::string expected_metadata = derive_metadata_account(mint_account.pubkey);
-    if (metadata_account.pubkey != expected_metadata) {
+    auto mint_hex = pubkey_to_short_hex(mint_account.pubkey);
+    std::string expected_metadata = spl_utils::derive_metadata_account(mint_hex);
+    auto metadata_hex = pubkey_to_short_hex(metadata_account.pubkey);
+    if (metadata_hex != expected_metadata) {
         return spl_utils::create_program_error("Invalid metadata account address");
     }
     
@@ -828,8 +889,8 @@ ExecutionResult MetadataProgram::create_metadata_account(const std::vector<uint8
     }
     
     Metadata metadata;
-    metadata.update_authority = update_authority.pubkey;
-    metadata.mint = mint_account.pubkey;
+    metadata.update_authority = pubkey_to_short_hex(update_authority.pubkey);
+    metadata.mint = pubkey_to_short_hex(mint_account.pubkey);
     metadata.name = spl_utils::unpack_string(data, 1, 32);
     metadata.symbol = spl_utils::unpack_string(data, 33, 10);
     metadata.uri = spl_utils::unpack_string(data, 43, 200);
@@ -861,7 +922,7 @@ ExecutionResult MetadataProgram::update_metadata_account(const std::vector<uint8
         return spl_utils::create_program_error("Update authority must be signer");
     }
     
-    std::cout << "Metadata: Updated metadata account " << metadata_account.pubkey << std::endl;
+    std::cout << "Metadata: Updated metadata account [" << metadata_account.pubkey.size() << " bytes]" << std::endl;
     return spl_utils::create_success_result();
 }
 
@@ -888,12 +949,12 @@ ExecutionResult MetadataProgram::create_master_edition(const std::vector<uint8_t
     }
     
     // Verify edition account is derived correctly
-    std::string expected_edition = derive_master_edition_account(mint_account.pubkey);
-    if (edition_account.pubkey != expected_edition) {
+    std::string expected_edition = spl_utils::derive_master_edition_account(pubkey_to_string(mint_account.pubkey));
+    if (pubkey_to_string(edition_account.pubkey) != expected_edition) {
         return spl_utils::create_program_error("Invalid master edition account address");
     }
     
-    std::cout << "Metadata: Created master edition for mint " << mint_account.pubkey << std::endl;
+    std::cout << "Metadata: Created master edition for mint [" << mint_account.pubkey.size() << " bytes]" << std::endl;
     return spl_utils::create_success_result();
 }
 
@@ -914,7 +975,7 @@ ExecutionResult MetadataProgram::verify_collection(const std::vector<uint8_t>& d
         return spl_utils::create_program_error("Collection authority must be signer");
     }
     
-    std::cout << "Metadata: Verified collection for metadata " << metadata_account.pubkey << std::endl;
+    std::cout << "Metadata: Verified collection for metadata [" << metadata_account.pubkey.size() << " bytes]" << std::endl;
     return spl_utils::create_success_result();
 }
 
@@ -2805,6 +2866,15 @@ slonana::svm::ExecutionResult create_success_result() {
 
 slonana::svm::ExecutionResult create_success_result(const std::vector<uint8_t>& return_data) {
     return slonana::svm::ExecutionResult::SUCCESS;
+}
+
+std::string pubkey_to_hex_string(const slonana::common::PublicKey& pubkey) {
+    std::ostringstream hex_stream;
+    for (size_t i = 0; i < std::min(pubkey.size(), size_t(16)); ++i) {
+        hex_stream << std::hex << std::setfill('0') << std::setw(2) 
+                   << static_cast<unsigned>(pubkey[i]);
+    }
+    return hex_stream.str();
 }
 
 } // namespace spl_utils
