@@ -170,7 +170,10 @@ void BytecodeOptimizer::perform_constant_folding(std::vector<JITBasicBlock>& blo
                 if (instr.opcode == 0x04) { // ADD immediate
                     // Convert to MOV immediate with computed value
                     instr.opcode = 0x18; // MOV immediate
-                    // Value computation would go here
+                    // Compute the constant value: src_reg + immediate
+                    int64_t computed_value = static_cast<int64_t>(instr.src_reg) + instr.immediate;
+                    instr.immediate = static_cast<int32_t>(computed_value);
+                    instr.src_reg = 0; // Clear source register since we have immediate value
                 }
             }
         }

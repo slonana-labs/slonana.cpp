@@ -98,6 +98,10 @@ private:
         const std::vector<AccountInfo>& accounts,
         bool idempotent = false
     );
+    
+    static ExecutionResult recover_nested_account(
+        const std::vector<AccountInfo>& accounts
+    );
 };
 
 // Memo Program Implementation
@@ -160,6 +164,9 @@ private:
     static ExecutionResult create_name_registry(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts);
     static ExecutionResult update_name_registry(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts);
     static ExecutionResult transfer_ownership(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts);
+    static ExecutionResult delete_name_registry(const std::vector<uint8_t>& data, const std::vector<AccountInfo>& accounts);
+    
+    static bool verify_name_ownership(const std::string& name_account, const std::string& owner);
 };
 
 // Metadata Program (for NFTs)

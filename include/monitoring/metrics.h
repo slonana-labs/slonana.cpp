@@ -316,6 +316,7 @@ private:
 public:
     static IMetricsRegistry& registry();
     static void initialize();
+    static void shutdown();
 };
 
 }} // namespace slonana::monitoring

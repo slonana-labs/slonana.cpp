@@ -9,6 +9,9 @@
 #include <thread>
 #include <atomic>
 #include <mutex>
+#include <queue>
+#include <condition_variable>
+#include <chrono>
 
 namespace slonana {
 namespace svm {
