@@ -15,6 +15,19 @@ namespace validator {
 
 namespace fs = std::filesystem;
 
+// Helper function to convert PublicKey to string for logging
+static std::string pubkey_to_string(const common::PublicKey& pubkey) {
+    if (pubkey.empty()) return "[empty]";
+    std::ostringstream oss;
+    for (size_t i = 0; i < std::min(pubkey.size(), size_t(8)); ++i) {
+        oss << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(pubkey[i]);
+    }
+    if (pubkey.size() > 8) {
+        oss << "...";
+    }
+    return oss.str();
+}
+
 // SnapshotManager Implementation
 
 SnapshotManager::SnapshotManager(const std::string& snapshot_dir)
@@ -286,7 +299,7 @@ bool SnapshotManager::restore_from_snapshot(const std::string& snapshot_path, co
                 // Validate account data integrity
                 if (!validate_account_integrity(account)) {
                     std::cerr << "Snapshot Manager: Account integrity validation failed for " 
-                              << account.pubkey << std::endl;
+                              << pubkey_to_string(account.pubkey) << std::endl;
                     failed_restorations++;
                     continue;
                 }
@@ -296,7 +309,7 @@ bool SnapshotManager::restore_from_snapshot(const std::string& snapshot_path, co
                     restored_accounts++;
                 } else {
                     std::cerr << "Snapshot Manager: Failed to restore account " 
-                              << account.pubkey << std::endl;
+                              << pubkey_to_string(account.pubkey) << std::endl;
                     failed_restorations++;
                 }
             }
@@ -725,7 +738,7 @@ bool SnapshotManager::validate_account_integrity(const AccountSnapshot& account)
 bool SnapshotManager::restore_account_to_ledger(const AccountSnapshot& account) const {
     try {
         // Production ledger account restoration
-        std::cout << "Restoring account " << account.pubkey 
+        std::cout << "Restoring account " << pubkey_to_string(account.pubkey) 
                   << " with " << account.lamports << " lamports" << std::endl;
         
         // Simulate ledger account creation/update
@@ -766,7 +779,6 @@ void SnapshotManager::verify_ledger_consistency() const {
     // Check account balances, ownership chains, program data consistency
     
     std::cout << "Ledger consistency verification completed successfully" << std::endl;
-}
 }
 
 // AutoSnapshotService Implementation
@@ -960,8 +972,8 @@ bool SnapshotStreamingService::start_snapshot_stream(const std::string& snapshot
     }
 }
 
-std::vector<SnapshotChunk> SnapshotStreamingService::get_snapshot_chunks(const std::string& snapshot_path, size_t chunk_size) const {
-    std::vector<SnapshotChunk> chunks;
+std::vector<slonana::validator::SnapshotChunk> SnapshotStreamingService::get_snapshot_chunks(const std::string& snapshot_path, size_t chunk_size) const {
+    std::vector<slonana::validator::SnapshotChunk> chunks;
     
     try {
         auto snapshot_data = load_snapshot_data(snapshot_path);
@@ -972,7 +984,7 @@ std::vector<SnapshotChunk> SnapshotStreamingService::get_snapshot_chunks(const s
         size_t total_chunks = (snapshot_data.size() + chunk_size - 1) / chunk_size;
         
         for (size_t i = 0; i < total_chunks; ++i) {
-            SnapshotChunk chunk;
+            slonana::validator::SnapshotChunk chunk;
             chunk.chunk_index = i;
             chunk.total_chunks = total_chunks;
             
@@ -996,7 +1008,7 @@ std::vector<SnapshotChunk> SnapshotStreamingService::get_snapshot_chunks(const s
     return chunks;
 }
 
-bool SnapshotStreamingService::receive_snapshot_chunk(const SnapshotChunk& chunk, const std::string& output_path) {
+bool SnapshotStreamingService::receive_snapshot_chunk(const slonana::validator::SnapshotChunk& chunk, const std::string& output_path) {
     try {
         std::ofstream file(output_path + ".part" + std::to_string(chunk.chunk_index), 
                           std::ios::binary | std::ios::app);
