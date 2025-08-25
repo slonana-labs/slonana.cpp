@@ -1,14 +1,14 @@
 Slonana C++ Validator Performance Benchmark Report
 ==================================================
-Generated: 2025-08-23 19:35:59
-Duration: 5s
+Generated: 2025-08-25 14:01:27
+Duration: 10s
 Test Environment: Linux pkrvmqc4gcfdwos 6.11.0-1018-azure #18~24.04.1-Ubuntu SMP Sat Jun 28 04:46:03 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 SVM Performance Metrics:
 ========================
-Parallel execution time: 483 microseconds
-Basic engine time: 426 microseconds
-Enhanced engine time: 843 microseconds
+Parallel execution time: 452 microseconds
+Basic engine time: 547 microseconds
+Enhanced engine time: 1057 microseconds
 Tests passed: 100%
 
 System Information:

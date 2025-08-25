@@ -10,6 +10,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -Wall -Wextra")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 
+# Configuration options
+option(ENABLE_E2E_TESTING "Enable end-to-end testing features" OFF)
+option(ENABLE_PERFORMANCE_MONITORING "Enable performance monitoring features" OFF)
+
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
@@ -37,6 +41,17 @@ file(GLOB_RECURSE CORE_SOURCES
 # Create core library
 add_library(slonana_core STATIC ${CORE_SOURCES})
 target_include_directories(slonana_core PUBLIC ${INCLUDE_DIR})
+
+# Apply configuration-based compile definitions
+if(ENABLE_E2E_TESTING)
+    target_compile_definitions(slonana_core PUBLIC ENABLE_E2E_TESTING)
+    message(STATUS "E2E testing features enabled")
+endif()
+
+if(ENABLE_PERFORMANCE_MONITORING)
+    target_compile_definitions(slonana_core PUBLIC ENABLE_PERFORMANCE_MONITORING)
+    message(STATUS "Performance monitoring features enabled")
+endif()
 
 # Main executable
 add_executable(slonana_validator ${SRC_DIR}/main.cpp)

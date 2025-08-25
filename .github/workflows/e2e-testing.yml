@@ -85,7 +85,7 @@ jobs:
         {
           "validator": {
             "identity": "test-validator-e2e",
-            "rpc_port": 8899,
+            "rpc_bind_address": "127.0.0.1:8899",
             "enable_consensus": true,
             "enable_proof_of_history": true
           },

@@ -186,7 +186,13 @@ public:
         
         if (bind(server_socket_, (struct sockaddr*)&address, sizeof(address)) < 0) {
             std::cerr << "Failed to bind to port " << port << ": " << strerror(errno) << std::endl;
+            if (errno == EADDRINUSE) {
+                std::cerr << "Port " << port << " is already in use. Please ensure no other service is using this port." << std::endl;
+            } else if (errno == EACCES) {
+                std::cerr << "Permission denied binding to port " << port << ". Try using a port > 1024 or run with elevated privileges." << std::endl;
+            }
             close(server_socket_);
+            server_socket_ = -1;
             return;
         }
         
