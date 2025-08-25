@@ -210,13 +210,14 @@ void test_svm_execution() {
     
     // Test account creation
     slonana::svm::ProgramAccount test_account;
-    test_account.program_id.resize(32, 0x01);
+    test_account.pubkey.resize(32, 0x01);     // Set the account's public key
+    test_account.program_id.resize(32, 0x00); // System program owns this account
     test_account.lamports = 1000000;
     test_account.executable = false;
     
     auto create_result = account_manager->create_account(test_account);
     ASSERT_TRUE(create_result.is_ok());
-    ASSERT_TRUE(account_manager->account_exists(test_account.program_id));
+    ASSERT_TRUE(account_manager->account_exists(test_account.pubkey));
     
     auto commit_result = account_manager->commit_changes();
     ASSERT_TRUE(commit_result.is_ok());
@@ -226,7 +227,30 @@ void test_svm_execution() {
     instruction.program_id.resize(32, 0x00); // System program
     instruction.data = {0}; // Transfer instruction
     
+    // Set up source and destination accounts for transfer
+    instruction.accounts.resize(2);
+    instruction.accounts[0].resize(32, 0x01); // Source account (same as test_account)
+    instruction.accounts[1].resize(32, 0x02); // Destination account
+    
+    // Create destination account
+    slonana::svm::ProgramAccount dest_account;
+    dest_account.pubkey.resize(32, 0x02);
+    dest_account.program_id.resize(32, 0x00); // System program owns this account
+    dest_account.lamports = 500000;
+    dest_account.executable = false;
+    
+    auto dest_create_result = account_manager->create_account(dest_account);
+    ASSERT_TRUE(dest_create_result.is_ok());
+    ASSERT_TRUE(account_manager->account_exists(dest_account.pubkey));
+    
+    auto dest_commit_result = account_manager->commit_changes();
+    ASSERT_TRUE(dest_commit_result.is_ok());
+    
+    // Set up accounts map for execution engine (note: using different type)
     std::unordered_map<slonana::PublicKey, slonana::svm::ProgramAccount> accounts;
+    accounts[test_account.pubkey] = test_account;
+    accounts[dest_account.pubkey] = dest_account;
+    
     auto outcome = execution_engine->execute_transaction({instruction}, accounts);
     ASSERT_TRUE(outcome.is_success());
 }
