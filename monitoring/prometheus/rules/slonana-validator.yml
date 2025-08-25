@@ -1,0 +1,92 @@
+groups:
+  - name: slonana-validator-alerts
+    rules:
+      # Validator is down
+      - alert: ValidatorDown
+        expr: up{job="slonana-validator"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Slonana validator is down"
+          description: "Validator {{ $labels.instance }} has been down for more than 1 minute"
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: (slonana_memory_usage_bytes / slonana_memory_total_bytes) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on validator"
+          description: "Memory usage is above 85% for more than 5 minutes: {{ $value }}%"
+
+      # High CPU usage
+      - alert: HighCPUUsage
+        expr: slonana_cpu_usage_percent > 90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on validator"
+          description: "CPU usage is above 90% for more than 10 minutes: {{ $value }}%"
+
+      # Validator behind in slots
+      - alert: ValidatorBehind
+        expr: slonana_validator_slot_distance > 50
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Validator is behind in slots"
+          description: "Validator is {{ $value }} slots behind the cluster"
+
+      # Low vote success rate
+      - alert: LowVoteSuccessRate
+        expr: (slonana_validator_votes_successful / slonana_validator_votes_total) * 100 < 95
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low vote success rate"
+          description: "Vote success rate is below 95%: {{ $value }}%"
+
+      # Transaction processing errors
+      - alert: HighTransactionErrors
+        expr: rate(slonana_transaction_errors_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High transaction error rate"
+          description: "Transaction error rate is {{ $value }} errors/second"
+
+      # Network connectivity issues
+      - alert: LowPeerCount
+        expr: slonana_network_peers_connected < 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low peer count"
+          description: "Only {{ $value }} peers connected (minimum recommended: 10)"
+
+      # Disk space running low
+      - alert: LowDiskSpace
+        expr: (slonana_disk_free_bytes / slonana_disk_total_bytes) * 100 < 20
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk space"
+          description: "Disk space is below 20%: {{ $value }}% remaining"
+
+      # Disk space critically low
+      - alert: CriticalDiskSpace
+        expr: (slonana_disk_free_bytes / slonana_disk_total_bytes) * 100 < 10
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical disk space"
+          description: "Disk space is critically low: {{ $value }}% remaining"

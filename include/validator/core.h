@@ -43,6 +43,8 @@ public:
     // Fork management
     std::vector<Hash> get_forks() const;
     uint64_t get_fork_weight(const Hash& fork_head) const;
+    uint64_t get_validator_stake(const Hash& validator_pubkey) const;
+    uint64_t get_confirmation_depth(const Hash& fork_head) const;
 
 private:
     class Impl;
@@ -104,6 +106,11 @@ public:
     bool is_running() const;
     Slot get_current_slot() const;
     Hash get_current_head() const;
+    
+    // Getter methods for RPC server
+    PublicKey get_validator_identity() const { return validator_identity_; }
+    Result<std::vector<uint8_t>> get_genesis_block() const;
+    std::string get_slot_leader(Slot slot) const;
 
 private:
     std::shared_ptr<ledger::LedgerManager> ledger_;

@@ -294,57 +294,29 @@ public:
     static std::unique_ptr<IMetricsRegistry> create_registry();
     
     /**
-     * @brief Create a Prometheus format exporter
+     * @brief Create a Prometheus metrics exporter
      * @return unique pointer to Prometheus exporter
      */
     static std::unique_ptr<IMetricsExporter> create_prometheus_exporter();
     
     /**
-     * @brief Create a JSON format exporter
+     * @brief Create a JSON metrics exporter
      * @return unique pointer to JSON exporter
      */
     static std::unique_ptr<IMetricsExporter> create_json_exporter();
 };
 
 /**
- * @brief Global metrics registry accessor
+ * @brief Global metrics registry singleton
  */
 class GlobalMetrics {
-public:
-    /**
-     * @brief Get the global metrics registry instance
-     * @return reference to global registry
-     */
-    static IMetricsRegistry& registry();
-    
-    /**
-     * @brief Initialize the global registry
-     */
-    static void initialize();
-    
-    /**
-     * @brief Shutdown the global registry
-     */
-    static void shutdown();
-
 private:
     static std::unique_ptr<IMetricsRegistry> instance_;
+    
+public:
+    static IMetricsRegistry& registry();
+    static void initialize();
+    static void shutdown();
 };
 
-/**
- * @brief Convenience macros for common metric operations
- */
-#define SLONANA_COUNTER(name, help, ...) \
-    GlobalMetrics::registry().counter(name, help, ##__VA_ARGS__)
-
-#define SLONANA_GAUGE(name, help, ...) \
-    GlobalMetrics::registry().gauge(name, help, ##__VA_ARGS__)
-
-#define SLONANA_HISTOGRAM(name, help, ...) \
-    GlobalMetrics::registry().histogram(name, help, ##__VA_ARGS__)
-
-#define SLONANA_TIMER(histogram) \
-    Timer _timer(histogram.get())
-
-} // namespace monitoring
-} // namespace slonana
+}} // namespace slonana::monitoring

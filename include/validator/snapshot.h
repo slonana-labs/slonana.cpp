@@ -114,6 +114,12 @@ private:
     SnapshotMetadata deserialize_metadata(const std::vector<uint8_t>& data) const;
     std::vector<uint8_t> serialize_account(const AccountSnapshot& account) const;
     AccountSnapshot deserialize_account(const std::vector<uint8_t>& data, size_t& offset) const;
+    
+    // Ledger restoration helpers
+    bool validate_account_integrity(const AccountSnapshot& account) const;
+    bool restore_account_to_ledger(const AccountSnapshot& account) const;
+    void update_ledger_metadata(size_t total_accounts, size_t restored_accounts) const;
+    void verify_ledger_consistency() const;
 };
 
 /**
@@ -178,12 +184,12 @@ public:
 
     // Streaming operations
     bool start_snapshot_stream(const std::string& snapshot_path, const std::string& peer_address, size_t chunk_size = 1024 * 1024);
-    std::vector<SnapshotChunk> get_snapshot_chunks(const std::string& snapshot_path, size_t chunk_size = 1024 * 1024) const;
-    bool receive_snapshot_chunk(const SnapshotChunk& chunk, const std::string& output_path);
+    std::vector<slonana::validator::SnapshotChunk> get_snapshot_chunks(const std::string& snapshot_path, size_t chunk_size = 1024 * 1024) const;
+    bool receive_snapshot_chunk(const slonana::validator::SnapshotChunk& chunk, const std::string& output_path);
     
     // Verification
-    bool verify_stream_integrity(const std::vector<SnapshotChunk>& chunks) const;
-    std::string calculate_stream_hash(const std::vector<SnapshotChunk>& chunks) const;
+    bool verify_stream_integrity(const std::vector<slonana::validator::SnapshotChunk>& chunks) const;
+    std::string calculate_stream_hash(const std::vector<slonana::validator::SnapshotChunk>& chunks) const;
     
     // Statistics
     struct StreamingStats {

@@ -183,18 +183,23 @@ void test_validator_svm_integration() {
     slonana::svm::Instruction instruction;
     instruction.program_id.resize(32, 0x00); // System program
     instruction.data = {0}; // Transfer instruction
+    instruction.accounts.resize(2);
+    instruction.accounts[0] = std::vector<uint8_t>(32, 0x01); // Source account
+    instruction.accounts[1] = std::vector<uint8_t>(32, 0x02); // Destination account
     
     std::unordered_map<slonana::PublicKey, slonana::svm::ProgramAccount> accounts;
     
     // Create test accounts
     slonana::svm::ProgramAccount account1, account2;
-    account1.program_id.resize(32, 0x01);
+    account1.pubkey.resize(32, 0x01);     // Account's public key address
+    account1.program_id.resize(32, 0x00); // System program owns this account
     account1.lamports = 1000000;
-    account2.program_id.resize(32, 0x02);
+    account2.pubkey.resize(32, 0x02);     // Account's public key address  
+    account2.program_id.resize(32, 0x00); // System program owns this account
     account2.lamports = 500000;
     
-    accounts[account1.program_id] = account1;
-    accounts[account2.program_id] = account2;
+    accounts[account1.pubkey] = account1;
+    accounts[account2.pubkey] = account2;
     
     auto outcome = execution_engine->execute_transaction({instruction}, accounts);
     ASSERT_TRUE(outcome.is_success());
@@ -253,8 +258,24 @@ void test_validator_multi_component_interaction() {
     slonana::svm::Instruction instruction;
     instruction.program_id.resize(32, 0x00);
     instruction.data = {0};
+    instruction.accounts.resize(2);
+    instruction.accounts[0] = std::vector<uint8_t>(32, 0x01); // Source account
+    instruction.accounts[1] = std::vector<uint8_t>(32, 0x02); // Destination account
     
     std::unordered_map<slonana::PublicKey, slonana::svm::ProgramAccount> accounts;
+    
+    // Create test accounts for the transaction
+    slonana::svm::ProgramAccount account1, account2;
+    account1.pubkey.resize(32, 0x01);
+    account1.program_id.resize(32, 0x00);
+    account1.lamports = 1000000;
+    account2.pubkey.resize(32, 0x02);
+    account2.program_id.resize(32, 0x00);
+    account2.lamports = 500000;
+    
+    accounts[account1.pubkey] = account1;
+    accounts[account2.pubkey] = account2;
+    
     auto outcome = svm->execute_transaction({instruction}, accounts);
     ASSERT_TRUE(outcome.is_success());
     

@@ -143,6 +143,14 @@ private:
     std::string get_current_context() const;
     std::string format_account_info(const PublicKey& address, const svm::ProgramAccount& account) const;
     
+    // Production utility methods
+    std::string calculate_genesis_hash() const;
+    std::string get_validator_identity() const;
+    std::string process_transaction_submission(const RpcRequest& request) const;
+    std::string compute_block_hash(const std::vector<uint8_t>& block_data) const;
+    std::string encode_base58(const std::vector<uint8_t>& data) const;
+    std::string compute_signature_hash(const std::vector<uint8_t>& signature_base) const;
+    
 private:
     class Impl;
     std::unique_ptr<Impl> impl_;

@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <optional>
 
 namespace slonana {
@@ -15,6 +16,7 @@ using namespace slonana::common;
  * Program account data and executable information
  */
 struct ProgramAccount {
+    PublicKey pubkey;        // Account's public key address
     PublicKey program_id;
     std::vector<uint8_t> data;
     Lamports lamports;
@@ -52,6 +54,29 @@ struct ExecutionContext {
     uint64_t consumed_compute_units = 0;
     bool transaction_succeeded = true;
     std::string error_message;
+    
+    // Track modified accounts during execution
+    std::unordered_set<PublicKey> modified_accounts;
+};
+
+/**
+ * Account information for program execution
+ */
+struct AccountInfo {
+    PublicKey pubkey;
+    bool is_signer;
+    bool is_writable;
+    Lamports lamports;
+    std::vector<uint8_t> data;
+    PublicKey owner;
+    bool executable;
+    Slot rent_epoch;
+    
+    AccountInfo() = default;
+    AccountInfo(const AccountInfo&) = default;
+    AccountInfo(AccountInfo&&) = default;
+    AccountInfo& operator=(const AccountInfo&) = default;
+    AccountInfo& operator=(AccountInfo&&) = default;
 };
 
 /**
@@ -63,7 +88,11 @@ enum class ExecutionResult {
     PROGRAM_ERROR,
     ACCOUNT_NOT_FOUND,
     INSUFFICIENT_FUNDS,
-    INVALID_INSTRUCTION
+    INVALID_INSTRUCTION,
+    FAILED,  // Added for backward compatibility
+    INVALID_ACCOUNT_ACCESS,
+    MEMORY_ACCESS_VIOLATION,
+    EXECUTION_ERROR
 };
 
 struct ExecutionOutcome {
@@ -106,6 +135,30 @@ public:
 private:
     class Impl;
     std::unique_ptr<Impl> impl_;
+    
+    // System instruction handlers
+    ExecutionResult handle_create_account_instruction(const Instruction& instruction, 
+        std::unordered_map<PublicKey, ProgramAccount>& accounts) const;
+    ExecutionResult handle_assign_instruction(const Instruction& instruction,
+        std::unordered_map<PublicKey, ProgramAccount>& accounts) const;
+    ExecutionResult handle_transfer_instruction(const Instruction& instruction,
+        std::unordered_map<PublicKey, ProgramAccount>& accounts) const;
+    ExecutionResult handle_create_account_with_seed_instruction(const Instruction& instruction,
+        std::unordered_map<PublicKey, ProgramAccount>& accounts) const;
+    ExecutionResult handle_advance_nonce_instruction(const Instruction& instruction,
+        std::unordered_map<PublicKey, ProgramAccount>& accounts) const;
+    ExecutionResult handle_withdraw_nonce_instruction(const Instruction& instruction,
+        std::unordered_map<PublicKey, ProgramAccount>& accounts) const;
+    ExecutionResult handle_initialize_nonce_instruction(const Instruction& instruction,
+        std::unordered_map<PublicKey, ProgramAccount>& accounts) const;
+    ExecutionResult handle_authorize_nonce_instruction(const Instruction& instruction,
+        std::unordered_map<PublicKey, ProgramAccount>& accounts) const;
+    ExecutionResult handle_allocate_instruction(const Instruction& instruction,
+        std::unordered_map<PublicKey, ProgramAccount>& accounts) const;
+    ExecutionResult handle_allocate_with_seed_instruction(const Instruction& instruction,
+        std::unordered_map<PublicKey, ProgramAccount>& accounts) const;
+    ExecutionResult handle_assign_with_seed_instruction(const Instruction& instruction,
+        std::unordered_map<PublicKey, ProgramAccount>& accounts) const;
 };
 
 /**
@@ -138,6 +191,30 @@ public:
 private:
     class Impl;
     std::unique_ptr<Impl> impl_;
+    
+    // System instruction handlers (used internally)
+    ExecutionResult handle_create_account_instruction(const Instruction& instruction, 
+        std::unordered_map<PublicKey, ProgramAccount>& accounts);
+    ExecutionResult handle_assign_instruction(const Instruction& instruction,
+        std::unordered_map<PublicKey, ProgramAccount>& accounts);
+    ExecutionResult handle_transfer_instruction(const Instruction& instruction,
+        std::unordered_map<PublicKey, ProgramAccount>& accounts);
+    ExecutionResult handle_create_account_with_seed_instruction(const Instruction& instruction,
+        std::unordered_map<PublicKey, ProgramAccount>& accounts);
+    ExecutionResult handle_advance_nonce_instruction(const Instruction& instruction,
+        std::unordered_map<PublicKey, ProgramAccount>& accounts);
+    ExecutionResult handle_withdraw_nonce_instruction(const Instruction& instruction,
+        std::unordered_map<PublicKey, ProgramAccount>& accounts);
+    ExecutionResult handle_initialize_nonce_instruction(const Instruction& instruction,
+        std::unordered_map<PublicKey, ProgramAccount>& accounts);
+    ExecutionResult handle_authorize_nonce_instruction(const Instruction& instruction,
+        std::unordered_map<PublicKey, ProgramAccount>& accounts);
+    ExecutionResult handle_allocate_instruction(const Instruction& instruction,
+        std::unordered_map<PublicKey, ProgramAccount>& accounts);
+    ExecutionResult handle_allocate_with_seed_instruction(const Instruction& instruction,
+        std::unordered_map<PublicKey, ProgramAccount>& accounts);
+    ExecutionResult handle_assign_with_seed_instruction(const Instruction& instruction,
+        std::unordered_map<PublicKey, ProgramAccount>& accounts);
 };
 
 /**
@@ -155,6 +232,8 @@ public:
     
     // Account queries
     std::vector<ProgramAccount> get_program_accounts(const PublicKey& program_id) const;
+    std::vector<ProgramAccount> get_accounts_by_owner(const PublicKey& owner) const;
+    std::vector<ProgramAccount> get_all_accounts() const;
     bool account_exists(const PublicKey& pubkey) const;
     Lamports get_account_balance(const PublicKey& pubkey) const;
     

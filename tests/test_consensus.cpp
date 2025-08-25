@@ -138,14 +138,15 @@ void test_program_account_creation() {
     auto account_manager = std::make_unique<slonana::svm::AccountManager>();
     
     slonana::svm::ProgramAccount test_account;
-    test_account.program_id.resize(32, 0x01);
+    test_account.pubkey.resize(32, 0x01);     // Account's public key address
+    test_account.program_id.resize(32, 0x00); // System program owns this account
     test_account.lamports = 1000000;
     test_account.executable = false;
     test_account.owner.resize(32, 0x00); // System program
     
     auto create_result = account_manager->create_account(test_account);
     ASSERT_TRUE(create_result.is_ok());
-    ASSERT_TRUE(account_manager->account_exists(test_account.program_id));
+    ASSERT_TRUE(account_manager->account_exists(test_account.pubkey));
 }
 
 void test_multiple_account_creation() {
@@ -153,14 +154,15 @@ void test_multiple_account_creation() {
     
     for (int i = 1; i <= 10; ++i) {
         slonana::svm::ProgramAccount account;
-        account.program_id.resize(32, static_cast<uint8_t>(i));
+        account.pubkey.resize(32, static_cast<uint8_t>(i));     // Account's public key address
+        account.program_id.resize(32, 0x00); // System program owns this account
         account.lamports = 1000000 * i;
         account.executable = (i % 2 == 0); // Every other account is executable
         account.owner.resize(32, 0x00);
         
         auto create_result = account_manager->create_account(account);
         ASSERT_TRUE(create_result.is_ok());
-        ASSERT_TRUE(account_manager->account_exists(account.program_id));
+        ASSERT_TRUE(account_manager->account_exists(account.pubkey));
     }
 }
 
@@ -168,7 +170,8 @@ void test_account_balance_operations() {
     auto account_manager = std::make_unique<slonana::svm::AccountManager>();
     
     slonana::svm::ProgramAccount account;
-    account.program_id.resize(32, 0x01);
+    account.pubkey.resize(32, 0x01);     // Account's public key address
+    account.program_id.resize(32, 0x00); // System program owns this account
     account.lamports = 2000000;
     account.executable = false;
     account.owner.resize(32, 0x00);
@@ -176,7 +179,7 @@ void test_account_balance_operations() {
     account_manager->create_account(account);
     
     // Test balance retrieval
-    auto balance = account_manager->get_account_balance(account.program_id);
+    auto balance = account_manager->get_account_balance(account.pubkey);
     ASSERT_EQ(2000000, balance);
     
     // Test balance update - update the account's lamports and save it back
@@ -184,7 +187,7 @@ void test_account_balance_operations() {
     auto update_result = account_manager->update_account(account);
     ASSERT_TRUE(update_result.is_ok());
     
-    auto new_balance = account_manager->get_account_balance(account.program_id);
+    auto new_balance = account_manager->get_account_balance(account.pubkey);
     ASSERT_EQ(3000000, new_balance);
 }
 
@@ -192,7 +195,8 @@ void test_account_data_operations() {
     auto account_manager = std::make_unique<slonana::svm::AccountManager>();
     
     slonana::svm::ProgramAccount account;
-    account.program_id.resize(32, 0x01);
+    account.pubkey.resize(32, 0x01);     // Account's public key address
+    account.program_id.resize(32, 0x00); // System program owns this account
     account.lamports = 1000000;
     account.data = {0x01, 0x02, 0x03, 0x04};
     account.executable = false;
@@ -201,7 +205,7 @@ void test_account_data_operations() {
     account_manager->create_account(account);
     
     // Test data retrieval
-    auto retrieved_account = account_manager->get_account(account.program_id);
+    auto retrieved_account = account_manager->get_account(account.pubkey);
     ASSERT_TRUE(retrieved_account.has_value());
     ASSERT_EQ(account.data, retrieved_account->data);
     
@@ -211,7 +215,7 @@ void test_account_data_operations() {
     auto update_result = account_manager->update_account(account);
     ASSERT_TRUE(update_result.is_ok());
     
-    auto updated_account = account_manager->get_account(account.program_id);
+    auto updated_account = account_manager->get_account(account.pubkey);
     ASSERT_TRUE(updated_account.has_value());
     ASSERT_EQ(new_data, updated_account->data);
 }
@@ -254,7 +258,8 @@ void test_account_changes_commit() {
     auto account_manager = std::make_unique<slonana::svm::AccountManager>();
     
     slonana::svm::ProgramAccount account;
-    account.program_id.resize(32, 0x01);
+    account.pubkey.resize(32, 0x01);     // Account's public key address
+    account.program_id.resize(32, 0x00); // System program owns this account
     account.lamports = 1000000;
     account.executable = false;
     account.owner.resize(32, 0x00);
@@ -265,7 +270,7 @@ void test_account_changes_commit() {
     ASSERT_TRUE(commit_result.is_ok());
     
     // Account should still exist after commit
-    ASSERT_TRUE(account_manager->account_exists(account.program_id));
+    ASSERT_TRUE(account_manager->account_exists(account.pubkey));
 }
 
 void run_consensus_tests(TestRunner& runner) {

@@ -1,0 +1,21 @@
+Package: slonana-validator
+Version: 1.0.0
+Section: net
+Priority: optional
+Architecture: amd64
+Depends: libc6 (>= 2.17), libssl3 (>= 3.0.0), libstdc++6 (>= 11.0.0)
+Maintainer: Slonana Labs <contact@slonana.dev>
+Description: High-performance C++ Solana validator implementation
+ Slonana.cpp is a high-performance C++ implementation of a Solana validator
+ that provides full compatibility with the Solana network while delivering
+ superior performance and reliability.
+ .
+ Features:
+  * Full Solana protocol compatibility
+  * High-performance SVM execution engine
+  * Comprehensive monitoring and metrics
+  * Hardware wallet support
+  * Production-ready deployment tooling
+ .
+ This package includes the validator binary, configuration files, and
+ deployment scripts for running a Solana validator node.
