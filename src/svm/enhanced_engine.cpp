@@ -308,9 +308,9 @@ EnhancedExecutionEngine::ThreadPool::~ThreadPool() {
 
 template<typename F>
 auto EnhancedExecutionEngine::ThreadPool::enqueue(F&& f) 
-    -> std::future<typename std::result_of<F()>::type> {
+    -> std::future<typename std::invoke_result_t<F>> {
     
-    using return_type = typename std::result_of<F()>::type;
+    using return_type = typename std::invoke_result_t<F>;
     
     auto task = std::make_shared<std::packaged_task<return_type()>>(
         std::forward<F>(f)

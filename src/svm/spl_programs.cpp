@@ -300,7 +300,7 @@ ExecutionOutcome ExtendedSystemProgram::handle_initialize_nonce(
     ProgramAccount& nonce_account = context.accounts[nonce_account_key];
     nonce_account.program_id = EXTENDED_SYSTEM_PROGRAM_ID;
     nonce_account.executable = false;
-    nonce_account.lamports = std::max(nonce_account.lamports, 1447680UL); // Rent-exempt
+    nonce_account.lamports = std::max(nonce_account.lamports, static_cast<Lamports>(1447680UL)); // Rent-exempt
     nonce_account.rent_epoch = context.current_epoch;
     
     // Initialize nonce account data
