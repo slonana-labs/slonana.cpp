@@ -84,7 +84,7 @@ void test_spl_token_program() {
     // Test initialize mint instruction
     slonana::svm::Instruction init_mint_instruction;
     init_mint_instruction.program_id = program_id;
-    init_mint_instruction.data = {0}; // InitializeMint instruction
+    init_mint_instruction.data = {0, 6, 0}; // InitializeMint instruction with 6 decimals + padding
     init_mint_instruction.accounts.resize(3);
     for (auto& account : init_mint_instruction.accounts) {
         account.resize(32, 0x01);
