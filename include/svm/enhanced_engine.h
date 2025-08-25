@@ -67,7 +67,7 @@ private:
         ~ThreadPool();
         
         template<typename F>
-        auto enqueue(F&& f) -> std::future<typename std::result_of<F()>::type>;
+        auto enqueue(F&& f) -> std::future<typename std::invoke_result_t<F>>;
         
         void shutdown();
         
