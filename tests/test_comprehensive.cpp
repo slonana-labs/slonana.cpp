@@ -16,6 +16,8 @@ void run_monitoring_tests();
 void run_transaction_processing_tests(TestRunner& runner);
 void run_enhanced_consensus_tests(TestRunner& runner);
 void run_performance_stress_tests(TestRunner& runner);
+void run_bpf_runtime_tests(TestRunner& runner);
+void run_consensus_mechanism_tests(TestRunner& runner);
 
 int main() {
     std::cout << "=== Slonana C++ Validator Comprehensive Test Suite ===" << std::endl;
@@ -51,6 +53,12 @@ int main() {
     
     std::cout << "\n=== Performance and Stress Tests ===" << std::endl;
     run_performance_stress_tests(runner);
+    
+    std::cout << "\n=== BPF Runtime and SVM Tests ===" << std::endl;
+    run_bpf_runtime_tests(runner);
+    
+    std::cout << "\n=== Consensus Mechanism Tests ===" << std::endl;
+    run_consensus_mechanism_tests(runner);
 #else
     std::cout << "\n=== Comprehensive Testing Disabled ===" << std::endl;
     std::cout << "Enable with -DENABLE_COMPREHENSIVE_TESTING=ON for full test coverage" << std::endl;
@@ -78,6 +86,8 @@ int main() {
     std::cout << "- Transaction Processing: 10 comprehensive tests" << std::endl;
     std::cout << "- Enhanced Consensus: 9 comprehensive tests" << std::endl;
     std::cout << "- Performance & Stress: 6 comprehensive tests" << std::endl;
+    std::cout << "- BPF Runtime & SVM: 10 comprehensive tests" << std::endl;
+    std::cout << "- Consensus Mechanisms: 10 comprehensive tests" << std::endl;
 #endif
     
     std::cout << "Total: " << runner.get_tests_run() << " core tests + Phase 2 tests executed" << std::endl;

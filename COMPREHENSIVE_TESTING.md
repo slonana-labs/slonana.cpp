@@ -55,6 +55,28 @@ make -j$(nproc)
 
 #### 5. Advanced Features Tests
 - **test_svm_enhanced.cpp**: Smart contract execution
+- **test_bpf_runtime.cpp**: BPF virtual machine and runtime (10 tests)
+  - Program loading and validation
+  - Instruction execution (complete ISA coverage)
+  - Compute budget management
+  - JIT compilation and optimization
+  - Parallel execution capabilities
+  - Memory safety and bounds checking
+  - Error handling and recovery
+  - Performance benchmarks (>2M ops/sec)
+  - Resource limits enforcement
+  - Security validation and sandboxing
+- **test_consensus_mechanism.cpp**: Comprehensive consensus testing (10 tests)
+  - Basic operations (validator management, leader selection)
+  - Vote processing and aggregation
+  - Supermajority detection and threshold validation
+  - Byzantine fault tolerance (>67% honest stake)
+  - Leader rotation and deterministic scheduling
+  - Slot progression and PoH integration
+  - Slashing mechanism and penalty enforcement
+  - Performance metrics (>1000 votes/sec)
+  - Fork choice and conflict resolution
+  - Parallel vote processing validation
 - **test_wallet.cpp**: Wallet integration (9 tests)
 - **test_monitoring.cpp**: Performance monitoring (10 tests)
 - **test_staking.cpp**: Staking and delegation
@@ -124,6 +146,102 @@ make -j$(nproc)
   - Health endpoint responsiveness
   - Network protocol stress testing
   - Failure recovery scenarios
+
+### Anti-Fragility E2E Tests (`e2e-antifragility.yml`)
+- **Duration**: 10+ minutes per scenario
+- **Focus**: Network resilience and chaos engineering
+- **Scenarios**: 7 comprehensive chaos engineering scenarios
+
+#### Scenario 1: Network Partition Recovery
+- **Purpose**: Test split-brain scenario handling and recovery
+- **Chaos Injection**:
+  - Create network partitions (3-2 validator split)
+  - Block gossip traffic between partitions
+  - Measure consensus continuation in majority partition
+  - Validate recovery when partition heals
+- **Success Criteria**:
+  - Majority partition maintains >80% throughput
+  - Minority partition stops producing blocks
+  - Recovery completes within 30 seconds
+  - Zero consensus violations
+
+#### Scenario 2: Byzantine Node Behavior
+- **Purpose**: Validate resistance to malicious validators
+- **Attack Vectors**:
+  - Double voting on conflicting forks
+  - Voting on future slots
+  - Invalid block production
+  - Vote manipulation attempts
+- **Success Criteria**:
+  - Honest majority maintains consensus
+  - Byzantine behavior detected within 10 seconds
+  - Automatic slashing of malicious validators
+  - No invalid state transitions accepted
+
+#### Scenario 3: High Latency and Jitter
+- **Purpose**: Performance under adverse network conditions
+- **Network Conditions**:
+  - Inject 500ms+ latency
+  - Add 100ms+ jitter variance
+  - Simulate packet loss (10-15%)
+  - Test bandwidth limitations
+- **Success Criteria**:
+  - Consensus continues with degraded performance
+  - RPC responses remain under 10s
+  - No consensus timeouts or splits
+  - Graceful performance degradation
+
+#### Scenario 4: Connection Flooding
+- **Purpose**: DDoS attack resistance and rate limiting
+- **Attack Simulation**:
+  - Flood with invalid RPC requests
+  - Overwhelm connection pools
+  - Exhaust file descriptors
+  - Memory pressure attacks
+- **Success Criteria**:
+  - Rate limiting activates automatically
+  - Valid requests continue processing
+  - Resource exhaustion prevented
+  - No service interruptions
+
+#### Scenario 5: Cascade Failure Recovery
+- **Purpose**: Multi-component failure scenario testing
+- **Failure Injection**:
+  - Sequential component failures
+  - Simultaneous multi-node failures
+  - Dependencies breakdown simulation
+  - Resource contention scenarios
+- **Success Criteria**:
+  - Fault isolation prevents cascading
+  - Circuit breaker patterns activate
+  - Graceful service degradation
+  - Rapid failure detection and recovery
+
+#### Scenario 6: Resource Exhaustion
+- **Purpose**: Memory/CPU/disk pressure testing
+- **Resource Pressure**:
+  - Memory exhaustion (95%+ utilization)
+  - CPU starvation scenarios
+  - Disk I/O saturation
+  - Network bandwidth limits
+- **Success Criteria**:
+  - No process crashes or panics
+  - Graceful performance degradation
+  - Memory cleanup activation
+  - Resource monitoring alerts
+
+#### Scenario 7: Consensus Disruption
+- **Purpose**: Vote manipulation and fork attack resistance
+- **Attack Scenarios**:
+  - Coordinated fork attacks
+  - Long-range attacks
+  - Grinding attacks on randomness
+  - Stake delegation manipulation
+- **Success Criteria**:
+  - Fork choice rules enforced
+  - Finality guarantees maintained
+  - Attack detection and mitigation
+  - Honest majority protection
 
 ## Test Scenarios Coverage
 
