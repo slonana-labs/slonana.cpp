@@ -416,18 +416,15 @@ bool ValidatorCore::is_running() const {
 }
 
 common::Slot ValidatorCore::get_current_slot() const {
-    // For validator state, prioritize the blockchain state (fork choice) over time-based PoH
-    // This ensures get_current_slot() reflects the actual blockchain progression
-    common::Slot fork_choice_slot = fork_choice_->get_head_slot();
-    
-    // If we have processed blocks, return the highest processed block slot
-    if (fork_choice_slot > 0) {
-        return fork_choice_slot;
-    }
-    
-    // If no blocks processed yet, return 0 to indicate initial state
-    // (PoH slot advancement without blocks doesn't change validator's blockchain state)
-    return 0;
+    // Return the PoH-driven current slot for RPC queries
+    // This represents the current time-based slot progression, not the blockchain state
+    auto& poh = consensus::GlobalProofOfHistory::instance();
+    return poh.get_current_slot();
+}
+
+common::Slot ValidatorCore::get_blockchain_head_slot() const {
+    // Return the highest processed block slot (blockchain state)
+    return fork_choice_->get_head_slot();
 }
 
 Hash ValidatorCore::get_current_head() const {
