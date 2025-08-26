@@ -77,6 +77,9 @@ set(COMPREHENSIVE_TEST_SOURCES
     "${CMAKE_SOURCE_DIR}/tests/test_integration.cpp"
     "${CMAKE_SOURCE_DIR}/tests/test_wallet.cpp"
     "${CMAKE_SOURCE_DIR}/tests/test_monitoring.cpp"
+    "${CMAKE_SOURCE_DIR}/tests/test_transaction_processing.cpp"
+    "${CMAKE_SOURCE_DIR}/tests/test_enhanced_consensus.cpp"
+    "${CMAKE_SOURCE_DIR}/tests/test_performance_stress.cpp"
 )
 
 # Original simple test suite (for backwards compatibility)
