@@ -699,40 +699,106 @@ jobs:
         cd build
         mkdir -p ../antifragility-test/ledger-data
         
+        # Validate configuration file exists and is readable
+        CONFIG_FILE="../antifragility-test/chaos-configs/validator_${{ matrix.scenario.type }}.json"
+        if [ ! -f "$CONFIG_FILE" ]; then
+          echo "❌ Configuration file not found: $CONFIG_FILE"
+          exit 1
+        fi
+        
+        echo "Validating JSON configuration..."
+        if ! python3 -m json.tool "$CONFIG_FILE" > /dev/null 2>&1; then
+          echo "❌ Invalid JSON configuration"
+          cat "$CONFIG_FILE"
+          exit 1
+        fi
+        echo "✅ Configuration file is valid JSON"
+        
+        # Check if validator executable exists
+        if [ ! -f "./slonana_validator" ]; then
+          echo "❌ Validator executable not found"
+          ls -la ./slonana*
+          exit 1
+        fi
+        echo "✅ Validator executable found"
+        
         echo "Starting validator for ${{ matrix.scenario.name }}..."
         ./slonana_validator \
-          --config ../antifragility-test/chaos-configs/validator_${{ matrix.scenario.type }}.json \
+          --config "$CONFIG_FILE" \
           --log-level debug \
+          --ledger-path ../antifragility-test/ledger-data \
           > ../antifragility-test/chaos-logs/validator_${{ matrix.scenario.type }}.log 2>&1 &
         
         VALIDATOR_PID=$!
         echo "Validator started with PID: $VALIDATOR_PID"
         echo $VALIDATOR_PID > ../antifragility-test/validator.pid
         
-        # Wait for initialization
-        echo "Waiting for validator initialization (45s)..."
-        sleep 45
+        # Create absolute path PID file for scripts
+        echo $VALIDATOR_PID > ../validator.pid
         
-        # Verify validator is running
+        # Wait for initialization with progress monitoring
+        echo "Waiting for validator initialization..."
+        for i in {1..30}; do
+          if ! kill -0 $VALIDATOR_PID 2>/dev/null; then
+            echo "❌ Validator process died during initialization (attempt $i)"
+            echo "=== Validator Log Output ==="
+            cat ../antifragility-test/chaos-logs/validator_${{ matrix.scenario.type }}.log
+            echo "=== End Log Output ==="
+            exit 1
+          fi
+          echo "  Validator process running (${i}s)..."
+          sleep 3
+        done
+        
+        # Verify validator is still running after initialization
         if kill -0 $VALIDATOR_PID 2>/dev/null; then
-          echo "✅ Validator is running"
+          echo "✅ Validator is running after initialization"
         else
-          echo "❌ Validator failed to start"
+          echo "❌ Validator failed to start or crashed during initialization"
+          echo "=== Final Validator Log Output ==="
           cat ../antifragility-test/chaos-logs/validator_${{ matrix.scenario.type }}.log
+          echo "=== End Log Output ==="
           exit 1
         fi
         
-        # Wait for RPC readiness
+        # Wait for RPC readiness with better error handling
         echo "Waiting for RPC readiness..."
+        RPC_READY=false
         for i in {1..60}; do
-          if curl -s -X POST -H "Content-Type: application/json" \
+          if ! kill -0 $VALIDATOR_PID 2>/dev/null; then
+            echo "❌ Validator process died while waiting for RPC (attempt $i)"
+            cat ../antifragility-test/chaos-logs/validator_${{ matrix.scenario.type }}.log
+            exit 1
+          fi
+          
+          # Test RPC with timeout and better error handling
+          if timeout 5 curl -s -X POST -H "Content-Type: application/json" \
              -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' \
-             http://localhost:8899/ > /dev/null 2>&1; then
-            echo "✅ RPC is ready after ${i} attempts"
-            break
+             http://localhost:8899/ > /tmp/rpc_test_$i.json 2>&1; then
+            if grep -q '"jsonrpc"' /tmp/rpc_test_$i.json 2>/dev/null; then
+              echo "✅ RPC is ready after ${i} attempts"
+              RPC_READY=true
+              break
+            else
+              echo "  RPC test ${i}: Invalid response"
+              cat /tmp/rpc_test_$i.json
+            fi
+          else
+            echo "  RPC test ${i}: Connection failed"
           fi
           sleep 2
         done
+        
+        if [ "$RPC_READY" != "true" ]; then
+          echo "❌ RPC failed to become ready after 60 attempts"
+          echo "=== Validator Status ==="
+          kill -0 $VALIDATOR_PID 2>/dev/null && echo "Validator process: RUNNING" || echo "Validator process: DEAD"
+          echo "=== Network Status ==="
+          ss -tuln | grep :8899 || echo "Port 8899 not listening"
+          echo "=== Validator Log ==="
+          tail -50 ../antifragility-test/chaos-logs/validator_${{ matrix.scenario.type }}.log
+          exit 1
+        fi
 
     - name: Execute Anti-Fragility Test - ${{ matrix.scenario.name }}
       timeout-minutes: 12
@@ -813,9 +879,16 @@ jobs:
           curl -s http://localhost:9090/metrics > chaos-metrics/prometheus_${SAMPLE_COUNT}.txt 2>/dev/null || echo "metrics_unavailable" > chaos-metrics/prometheus_${SAMPLE_COUNT}.txt
           
           # Check validator health
-          VALIDATOR_PID=$(cat ../validator.pid)
-          if ! kill -0 $VALIDATOR_PID 2>/dev/null; then
-            echo "❌ Validator died during chaos test at ${ELAPSED}s"
+          if [ -f ../antifragility-test/validator.pid ]; then
+            VALIDATOR_PID=$(cat ../antifragility-test/validator.pid)
+            if ! kill -0 $VALIDATOR_PID 2>/dev/null; then
+              echo "❌ Validator died during chaos test at ${ELAPSED}s"
+              echo "=== Validator Log Tail ==="
+              tail -20 ../antifragility-test/chaos-logs/validator_${{ matrix.scenario.type }}.log
+              exit 1
+            fi
+          else
+            echo "❌ Validator PID file not found during chaos test"
             exit 1
           fi
           
@@ -865,12 +938,15 @@ jobs:
       if: always()
       run: |
         # Stop all monitoring processes
-        for pid_file in antifragility-test/sar.pid antifragility-test/tcpdump.pid antifragility-test/validator.pid; do
+        for pid_file in antifragility-test/sar.pid antifragility-test/tcpdump.pid antifragility-test/validator.pid validator.pid; do
           if [ -f "$pid_file" ]; then
-            PID=$(cat "$pid_file")
-            kill -TERM "$PID" 2>/dev/null || true
-            sleep 2
-            kill -KILL "$PID" 2>/dev/null || true
+            PID=$(cat "$pid_file" 2>/dev/null)
+            if [ ! -z "$PID" ]; then
+              echo "Stopping process with PID: $PID (from $pid_file)"
+              kill -TERM "$PID" 2>/dev/null || true
+              sleep 2
+              kill -KILL "$PID" 2>/dev/null || true
+            fi
           fi
         done
         
@@ -882,6 +958,9 @@ jobs:
         # Clean up any iptables rules (in case cleanup failed)
         sudo iptables -F OUTPUT 2>/dev/null || true
         sudo tc qdisc del dev lo root 2>/dev/null || true
+        
+        # Clean up PID files
+        rm -f antifragility-test/validator.pid validator.pid 2>/dev/null || true
 
     - name: Analyze anti-fragility test results
       if: always()
