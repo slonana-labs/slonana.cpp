@@ -9,6 +9,7 @@
 #include "network/rpc_server.h"
 #include "ledger/manager.h"
 #include "validator/core.h"
+#include "consensus/proof_of_history.h"
 #include "staking/manager.h"
 #include "svm/engine.h"
 #include "slonana_validator.h"
@@ -150,6 +151,13 @@ void test_validator_core() {
     auto ledger = std::make_shared<slonana::ledger::LedgerManager>("/tmp/test_validator_ledger");
     slonana::PublicKey validator_identity(32, 0x01);
     
+    // Initialize GlobalProofOfHistory for the test
+    slonana::consensus::PohConfig poh_config;
+    poh_config.target_tick_duration = std::chrono::microseconds(400);
+    poh_config.ticks_per_slot = 64;
+    bool poh_init_result = slonana::consensus::GlobalProofOfHistory::initialize(poh_config);
+    ASSERT_TRUE(poh_init_result);
+    
     // First store a genesis block to satisfy chain continuity
     slonana::ledger::Block genesis_block;
     genesis_block.slot = 0;
@@ -180,6 +188,9 @@ void test_validator_core() {
     
     validator_core->stop();
     ASSERT_FALSE(validator_core->is_running());
+    
+    // Cleanup GlobalProofOfHistory for the test
+    slonana::consensus::GlobalProofOfHistory::shutdown();
 }
 
 void test_staking_manager() {
