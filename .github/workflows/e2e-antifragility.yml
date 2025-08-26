@@ -86,18 +86,7 @@ jobs:
           hping3 \
           jq \
           curl \
-          python3 \
-          python3-pip \
           netcat-openbsd
-        
-        # Install chaos testing libraries
-        pip3 install \
-          requests \
-          websocket-client \
-          numpy \
-          matplotlib \
-          psutil \
-          netifaces
 
     - name: Setup chaos testing environment
       run: |

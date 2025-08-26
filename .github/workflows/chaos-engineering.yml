@@ -68,13 +68,7 @@ jobs:
           libssl-dev libboost-all-dev \
           iproute2 iptables tcpdump \
           stress-ng iperf3 nmap hping3 \
-          python3 python3-pip \
           jq curl netcat-openbsd
-        
-        pip3 install \
-          requests websocket-client \
-          numpy psutil netifaces \
-          scapy chaos-engineering
 
     - name: Setup chaos testing environment
       run: |
