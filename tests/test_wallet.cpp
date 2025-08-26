@@ -67,11 +67,12 @@ void test_wallet_manager_configuration() {
 void test_device_discovery() {
     HardwareWalletManager::Config config;
     config.enable_auto_discovery = false;
+    config.enable_mock_devices = false; // Disable mock devices for this test
     
     HardwareWalletManager manager(config);
     manager.initialize();
     
-    // Test manual discovery (should return empty list since no real devices)
+    // Test manual discovery (should return empty list since no real devices and mock disabled)
     auto devices = manager.discover_devices();
     ASSERT_EQ(static_cast<size_t>(0), devices.size());
     

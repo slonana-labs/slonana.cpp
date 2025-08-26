@@ -78,11 +78,33 @@ void HardwareWalletManager::stop_discovery() {
 std::vector<DeviceInfo> HardwareWalletManager::discover_devices() {
     std::vector<DeviceInfo> discovered_devices;
     
+    // Skip device discovery if mock devices are disabled and real SDKs are not available
+    if (!config_.enable_mock_devices) {
+        #ifndef USE_LEDGER_SDK
+        #ifndef USE_TREZOR_SDK
+        // No real SDKs available and mock devices disabled - return empty list
+        return discovered_devices;
+        #endif
+        #endif
+    }
+    
     // Discover Ledger devices
     try {
         auto ledger = create_hardware_wallet(DeviceType::LEDGER_NANO_X);
         if (ledger && ledger->initialize()) {
             auto ledger_devices = ledger->discover_devices();
+            
+            // Filter out mock devices if they're disabled
+            if (!config_.enable_mock_devices) {
+                ledger_devices.erase(
+                    std::remove_if(ledger_devices.begin(), ledger_devices.end(),
+                        [](const DeviceInfo& device) {
+                            return device.device_id.find("mock") != std::string::npos;
+                        }),
+                    ledger_devices.end()
+                );
+            }
+            
             discovered_devices.insert(discovered_devices.end(), ledger_devices.begin(), ledger_devices.end());
             ledger->shutdown();
         }
@@ -98,6 +120,18 @@ std::vector<DeviceInfo> HardwareWalletManager::discover_devices() {
         auto trezor = create_hardware_wallet(DeviceType::TREZOR_MODEL_T);
         if (trezor && trezor->initialize()) {
             auto trezor_devices = trezor->discover_devices();
+            
+            // Filter out mock devices if they're disabled
+            if (!config_.enable_mock_devices) {
+                trezor_devices.erase(
+                    std::remove_if(trezor_devices.begin(), trezor_devices.end(),
+                        [](const DeviceInfo& device) {
+                            return device.device_id.find("mock") != std::string::npos;
+                        }),
+                    trezor_devices.end()
+                );
+            }
+            
             discovered_devices.insert(discovered_devices.end(), trezor_devices.begin(), trezor_devices.end());
             trezor->shutdown();
         }
