@@ -117,6 +117,15 @@ jobs:
       run: |
         cd build
         make -j$(nproc)
+        
+        # Verify the validator executable was built successfully
+        if [ ! -f "slonana_validator" ]; then
+          echo "❌ Build failed: slonana_validator executable not found after build"
+          echo "Build directory contents:"
+          ls -la slonana*
+          exit 1
+        fi
+        echo "✅ Build successful: slonana_validator executable created"
 
     - name: Create chaos testing configuration
       run: |
@@ -710,11 +719,15 @@ jobs:
         
         # Check if validator executable exists
         if [ ! -f "./slonana_validator" ]; then
-          echo "❌ Validator executable not found"
-          ls -la ./slonana*
+          echo "❌ Validator executable not found in build directory"
+          echo "Current working directory: $(pwd)"
+          echo "Contents of current directory:"
+          ls -la ./slonana* || echo "No slonana* files found"
+          echo "Full directory contents:"
+          ls -la .
           exit 1
         fi
-        echo "✅ Validator executable found"
+        echo "✅ Validator executable found at $(pwd)/slonana_validator"
         
         echo "Starting validator for ${{ matrix.scenario.name }}..."
         ./slonana_validator \
