@@ -107,6 +107,96 @@ bool extract_json_bool(const std::string& json, const std::string& key, bool def
     return default_value;
 }
 
+// Enhanced JSON value extraction for configuration parsing with support for nested objects
+std::string extract_json_string_nested(const std::string& json, const std::string& section, const std::string& key, const std::string& default_value = "") {
+    // First try to find the section
+    std::string search_section = "\"" + section + "\"";
+    size_t section_pos = json.find(search_section);
+    if (section_pos == std::string::npos) {
+        // Try direct key lookup if no section found
+        return extract_json_string(json, key, default_value);
+    }
+    
+    // Find the opening brace for the section
+    size_t brace_pos = json.find("{", section_pos);
+    if (brace_pos == std::string::npos) {
+        return default_value;
+    }
+    
+    // Find the matching closing brace
+    int brace_count = 1;
+    size_t pos = brace_pos + 1;
+    while (pos < json.length() && brace_count > 0) {
+        if (json[pos] == '{') brace_count++;
+        else if (json[pos] == '}') brace_count--;
+        pos++;
+    }
+    
+    if (brace_count != 0) {
+        return default_value;
+    }
+    
+    // Extract the section content
+    std::string section_content = json.substr(brace_pos, pos - brace_pos);
+    return extract_json_string(section_content, key, default_value);
+}
+
+int extract_json_int_nested(const std::string& json, const std::string& section, const std::string& key, int default_value = 0) {
+    std::string search_section = "\"" + section + "\"";
+    size_t section_pos = json.find(search_section);
+    if (section_pos == std::string::npos) {
+        return extract_json_int(json, key, default_value);
+    }
+    
+    size_t brace_pos = json.find("{", section_pos);
+    if (brace_pos == std::string::npos) {
+        return default_value;
+    }
+    
+    int brace_count = 1;
+    size_t pos = brace_pos + 1;
+    while (pos < json.length() && brace_count > 0) {
+        if (json[pos] == '{') brace_count++;
+        else if (json[pos] == '}') brace_count--;
+        pos++;
+    }
+    
+    if (brace_count != 0) {
+        return default_value;
+    }
+    
+    std::string section_content = json.substr(brace_pos, pos - brace_pos);
+    return extract_json_int(section_content, key, default_value);
+}
+
+bool extract_json_bool_nested(const std::string& json, const std::string& section, const std::string& key, bool default_value = false) {
+    std::string search_section = "\"" + section + "\"";
+    size_t section_pos = json.find(search_section);
+    if (section_pos == std::string::npos) {
+        return extract_json_bool(json, key, default_value);
+    }
+    
+    size_t brace_pos = json.find("{", section_pos);
+    if (brace_pos == std::string::npos) {
+        return default_value;
+    }
+    
+    int brace_count = 1;
+    size_t pos = brace_pos + 1;
+    while (pos < json.length() && brace_count > 0) {
+        if (json[pos] == '{') brace_count++;
+        else if (json[pos] == '}') brace_count--;
+        pos++;
+    }
+    
+    if (brace_count != 0) {
+        return default_value;
+    }
+    
+    std::string section_content = json.substr(brace_pos, pos - brace_pos);
+    return extract_json_bool(section_content, key, default_value);
+}
+
 slonana::common::ValidatorConfig load_config_from_json(const std::string& config_path) {
     slonana::common::ValidatorConfig config;
     
@@ -123,27 +213,27 @@ slonana::common::ValidatorConfig load_config_from_json(const std::string& config
     std::cout << "Loading configuration from " << config_path << std::endl;
     
     // Parse validator section
-    config.rpc_bind_address = extract_json_string(json_content, "rpc_bind_address", config.rpc_bind_address);
-    config.enable_consensus = extract_json_bool(json_content, "enable_consensus", config.enable_consensus);
-    config.enable_proof_of_history = extract_json_bool(json_content, "enable_proof_of_history", config.enable_proof_of_history);
+    config.rpc_bind_address = extract_json_string_nested(json_content, "validator", "rpc_bind_address", config.rpc_bind_address);
+    config.enable_consensus = extract_json_bool_nested(json_content, "validator", "enable_consensus", config.enable_consensus);
+    config.enable_proof_of_history = extract_json_bool_nested(json_content, "validator", "enable_proof_of_history", config.enable_proof_of_history);
     
     // Parse PoH section
-    config.poh_target_tick_duration_us = extract_json_int(json_content, "target_tick_duration_us", config.poh_target_tick_duration_us);
-    config.poh_ticks_per_slot = extract_json_int(json_content, "ticks_per_slot", config.poh_ticks_per_slot);
-    config.poh_enable_batch_processing = extract_json_bool(json_content, "enable_batch_processing", config.poh_enable_batch_processing);
-    config.poh_enable_simd_acceleration = extract_json_bool(json_content, "enable_simd_acceleration", config.poh_enable_simd_acceleration);
-    config.poh_hashing_threads = extract_json_int(json_content, "hashing_threads", config.poh_hashing_threads);
-    config.poh_batch_size = extract_json_int(json_content, "batch_size", config.poh_batch_size);
+    config.poh_target_tick_duration_us = extract_json_int_nested(json_content, "proof_of_history", "target_tick_duration_us", config.poh_target_tick_duration_us);
+    config.poh_ticks_per_slot = extract_json_int_nested(json_content, "proof_of_history", "ticks_per_slot", config.poh_ticks_per_slot);
+    config.poh_enable_batch_processing = extract_json_bool_nested(json_content, "proof_of_history", "enable_batch_processing", config.poh_enable_batch_processing);
+    config.poh_enable_simd_acceleration = extract_json_bool_nested(json_content, "proof_of_history", "enable_simd_acceleration", config.poh_enable_simd_acceleration);
+    config.poh_hashing_threads = extract_json_int_nested(json_content, "proof_of_history", "hashing_threads", config.poh_hashing_threads);
+    config.poh_batch_size = extract_json_int_nested(json_content, "proof_of_history", "batch_size", config.poh_batch_size);
     
     // Parse monitoring section
-    config.enable_prometheus = extract_json_bool(json_content, "enable_prometheus", config.enable_prometheus);
-    config.prometheus_port = extract_json_int(json_content, "prometheus_port", config.prometheus_port);
-    config.enable_health_checks = extract_json_bool(json_content, "enable_health_checks", config.enable_health_checks);
-    config.metrics_export_interval_ms = extract_json_int(json_content, "metrics_export_interval_ms", config.metrics_export_interval_ms);
+    config.enable_prometheus = extract_json_bool_nested(json_content, "monitoring", "enable_prometheus", config.enable_prometheus);
+    config.prometheus_port = extract_json_int_nested(json_content, "monitoring", "prometheus_port", config.prometheus_port);
+    config.enable_health_checks = extract_json_bool_nested(json_content, "monitoring", "enable_health_checks", config.enable_health_checks);
+    config.metrics_export_interval_ms = extract_json_int_nested(json_content, "monitoring", "metrics_export_interval_ms", config.metrics_export_interval_ms);
     
     // Parse consensus section
-    config.consensus_enable_timing_metrics = extract_json_bool(json_content, "enable_timing_metrics", config.consensus_enable_timing_metrics);
-    config.consensus_performance_target_validation = extract_json_bool(json_content, "performance_target_validation", config.consensus_performance_target_validation);
+    config.consensus_enable_timing_metrics = extract_json_bool_nested(json_content, "consensus", "enable_timing_metrics", config.consensus_enable_timing_metrics);
+    config.consensus_performance_target_validation = extract_json_bool_nested(json_content, "consensus", "performance_target_validation", config.consensus_performance_target_validation);
     
     std::cout << "Configuration loaded successfully" << std::endl;
     std::cout << "  PoH tick duration: " << config.poh_target_tick_duration_us << "μs" << std::endl;
@@ -316,19 +406,24 @@ int main(int argc, char* argv[]) {
     
     try {
         // Create and initialize the validator
+        std::cout << "Creating validator instance..." << std::endl;
         slonana::SolanaValidator validator(config);
         
+        std::cout << "Initializing validator..." << std::endl;
         auto init_result = validator.initialize();
         if (!init_result.is_ok()) {
             std::cerr << "Failed to initialize validator: " << init_result.error() << std::endl;
             return 1;
         }
+        std::cout << "Validator initialized successfully" << std::endl;
         
+        std::cout << "Starting validator services..." << std::endl;
         auto start_result = validator.start();
         if (!start_result.is_ok()) {
             std::cerr << "Failed to start validator: " << start_result.error() << std::endl;
             return 1;
         }
+        std::cout << "All validator services started" << std::endl;
         
         std::cout << "\nValidator started successfully!" << std::endl;
         std::cout << "Log level: " << config.log_level << std::endl;
