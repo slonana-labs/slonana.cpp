@@ -17,7 +17,7 @@ public:
     void update_stats() {
         auto now = std::chrono::steady_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - start_time_);
-        stats_.uptime_seconds = duration.count();
+        stats_.uptime_seconds = static_cast<uint64_t>(std::max(0L, duration.count()));
     }
 };
 
@@ -472,8 +472,8 @@ void SolanaValidator::on_block_received(const ledger::Block& block) {
         message.type = network::MessageType::BLOCK_NOTIFICATION;
         message.sender = validator_identity_;
         message.payload = block.serialize();
-        message.timestamp = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
+        message.timestamp = static_cast<uint64_t>(std::max(0L, std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count()));
         
         gossip_protocol_->broadcast_message(message);
     }
@@ -490,8 +490,8 @@ void SolanaValidator::on_vote_received(const validator::Vote& vote) {
         message.type = network::MessageType::VOTE_NOTIFICATION;
         message.sender = validator_identity_;
         message.payload = vote.serialize();
-        message.timestamp = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
+        message.timestamp = static_cast<uint64_t>(std::max(0L, std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count()));
         
         gossip_protocol_->broadcast_message(message);
     }
