@@ -82,6 +82,9 @@ set(COMPREHENSIVE_TEST_SOURCES
     "${CMAKE_SOURCE_DIR}/tests/test_performance_stress.cpp"
     "${CMAKE_SOURCE_DIR}/tests/test_bpf_runtime.cpp"
     "${CMAKE_SOURCE_DIR}/tests/test_consensus_mechanism.cpp"
+    # New comprehensive test suites
+    "${CMAKE_SOURCE_DIR}/tests/test_bpf_runtime_comprehensive.cpp"
+    "${CMAKE_SOURCE_DIR}/tests/test_consensus_mechanism_comprehensive.cpp"
 )
 
 # Original simple test suite (for backwards compatibility)

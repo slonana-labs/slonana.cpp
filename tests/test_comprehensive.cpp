@@ -19,6 +19,10 @@ void run_performance_stress_tests(TestRunner& runner);
 void run_bpf_runtime_tests(TestRunner& runner);
 void run_consensus_mechanism_tests(TestRunner& runner);
 
+// Comprehensive test modules (latest)
+void run_bpf_runtime_comprehensive_tests(TestRunner& runner);
+void run_consensus_mechanism_comprehensive_tests(TestRunner& runner);
+
 int main() {
     std::cout << "=== Slonana C++ Validator Comprehensive Test Suite ===" << std::endl;
     std::cout << "Running extensive tests across all components and integrations..." << std::endl;
@@ -59,6 +63,12 @@ int main() {
     
     std::cout << "\n=== Consensus Mechanism Tests ===" << std::endl;
     run_consensus_mechanism_tests(runner);
+    
+    std::cout << "\n=== Comprehensive BPF Runtime Tests ===" << std::endl;
+    run_bpf_runtime_comprehensive_tests(runner);
+    
+    std::cout << "\n=== Comprehensive Consensus Mechanism Tests ===" << std::endl;
+    run_consensus_mechanism_comprehensive_tests(runner);
 #else
     std::cout << "\n=== Comprehensive Testing Disabled ===" << std::endl;
     std::cout << "Enable with -DENABLE_COMPREHENSIVE_TESTING=ON for full test coverage" << std::endl;

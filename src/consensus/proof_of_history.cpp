@@ -479,6 +479,7 @@ void ProofOfHistory::process_tick() {
     }
     
     // Add to history
+    Slot current_slot = current_slot_.load();
     {
         std::lock_guard<std::mutex> lock(history_mutex_);
         entry_history_.push_back(new_entry);
@@ -489,8 +490,15 @@ void ProofOfHistory::process_tick() {
         }
         
         // Add to current slot
-        Slot current_slot = current_slot_.load();
         slot_entries_[current_slot].push_back(new_entry);
+    }
+    
+    // Enhanced tick logging every 10 ticks
+    if (new_entry.sequence_number % 10 == 0) {
+        uint64_t ticks_in_slot = new_entry.sequence_number % config_.ticks_per_slot;
+        std::cout << "⏱️  PoH tick " << new_entry.sequence_number 
+                  << " (slot " << current_slot << ", tick " << ticks_in_slot 
+                  << "/" << config_.ticks_per_slot << ")" << std::endl;
     }
     
     // Call tick callback
@@ -543,7 +551,13 @@ void ProofOfHistory::check_slot_completion() {
     if (ticks_in_current_slot == 0 && sequence > 0) {
         // Slot completed
         Slot completed_slot = current_slot_.load();
-        current_slot_.store(completed_slot + 1);
+        Slot new_slot = completed_slot + 1;
+        current_slot_.store(new_slot);
+        
+        // Enhanced slot progression logging
+        std::cout << "🎯 Slot " << completed_slot << " completed with " 
+                  << config_.ticks_per_slot << " ticks, advancing to slot " 
+                  << new_slot << " (sequence: " << sequence << ")" << std::endl;
         
         // Get slot entries
         std::vector<PohEntry> slot_entries;
