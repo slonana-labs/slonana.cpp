@@ -98,6 +98,11 @@ jobs:
         mkdir -p antifragility-test/network-data
         mkdir -p antifragility-test/recovery-data
 
+    - name: Install Python dependencies for chaos scripts
+      run: |
+        python3 -m pip install --upgrade pip
+        pip install psutil requests
+
     - name: Configure CMake for Anti-Fragility Testing
       run: |
         mkdir -p build

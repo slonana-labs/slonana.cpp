@@ -89,6 +89,11 @@ jobs:
         mkdir -p build
         mkdir -p e2e-expanded/{logs,metrics,configs,data,scripts}
 
+    - name: Install Python dependencies for test scripts
+      run: |
+        python3 -m pip install --upgrade pip
+        pip install requests
+
     - name: Configure and build with comprehensive testing
       run: |
         cd build
