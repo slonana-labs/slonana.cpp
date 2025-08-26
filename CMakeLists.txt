@@ -13,6 +13,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 # Configuration options
 option(ENABLE_E2E_TESTING "Enable end-to-end testing features" OFF)
 option(ENABLE_PERFORMANCE_MONITORING "Enable performance monitoring features" OFF)
+option(ENABLE_COMPREHENSIVE_TESTING "Enable comprehensive testing features" OFF)
 
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)
@@ -51,6 +52,11 @@ endif()
 if(ENABLE_PERFORMANCE_MONITORING)
     target_compile_definitions(slonana_core PUBLIC ENABLE_PERFORMANCE_MONITORING)
     message(STATUS "Performance monitoring features enabled")
+endif()
+
+if(ENABLE_COMPREHENSIVE_TESTING)
+    target_compile_definitions(slonana_core PUBLIC ENABLE_COMPREHENSIVE_TESTING)
+    message(STATUS "Comprehensive testing features enabled")
 endif()
 
 # Main executable
@@ -145,6 +151,45 @@ add_test(NAME wallet_tests COMMAND slonana_wallet_tests)
 add_test(NAME monitoring_tests COMMAND slonana_monitoring_tests)
 add_test(NAME consensus_timing_tests COMMAND slonana_consensus_timing_tests)
 add_test(NAME proof_of_history_tests COMMAND slonana_proof_of_history_tests)
+
+# Enhanced test suites (if comprehensive testing is enabled)
+if(ENABLE_COMPREHENSIVE_TESTING)
+    message(STATUS "Building comprehensive test suites...")
+    
+    # Transaction Processing Test Suite
+    add_executable(slonana_transaction_processing_tests 
+        "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+        "${CMAKE_SOURCE_DIR}/tests/test_transaction_processing.cpp"
+    )
+    target_link_libraries(slonana_transaction_processing_tests slonana_core)
+    target_include_directories(slonana_transaction_processing_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+    target_compile_definitions(slonana_transaction_processing_tests PRIVATE STANDALONE_TRANSACTION_TESTS)
+    
+    # Enhanced Consensus Test Suite
+    add_executable(slonana_enhanced_consensus_tests 
+        "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+        "${CMAKE_SOURCE_DIR}/tests/test_enhanced_consensus.cpp"
+    )
+    target_link_libraries(slonana_enhanced_consensus_tests slonana_core)
+    target_include_directories(slonana_enhanced_consensus_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+    target_compile_definitions(slonana_enhanced_consensus_tests PRIVATE STANDALONE_CONSENSUS_TESTS)
+    
+    # Performance and Stress Test Suite
+    add_executable(slonana_performance_stress_tests 
+        "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+        "${CMAKE_SOURCE_DIR}/tests/test_performance_stress.cpp"
+    )
+    target_link_libraries(slonana_performance_stress_tests slonana_core)
+    target_include_directories(slonana_performance_stress_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+    target_compile_definitions(slonana_performance_stress_tests PRIVATE STANDALONE_PERFORMANCE_TESTS)
+    
+    # Add comprehensive test targets
+    add_test(NAME transaction_processing_tests COMMAND slonana_transaction_processing_tests)
+    add_test(NAME enhanced_consensus_tests COMMAND slonana_enhanced_consensus_tests)
+    add_test(NAME performance_stress_tests COMMAND slonana_performance_stress_tests)
+    
+    message(STATUS "Comprehensive test suites configured")
+endif()
 
 # Genesis and mainnet tests
 add_executable(slonana_genesis_tests 
