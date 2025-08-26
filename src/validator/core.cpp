@@ -302,18 +302,8 @@ common::Result<bool> ValidatorCore::start() {
     
     std::cout << "Starting validator core" << std::endl;
     
-    // Initialize and start Proof of History
-    if (!consensus::GlobalProofOfHistory::initialize()) {
-        return common::Result<bool>("Failed to initialize Proof of History");
-    }
-    
-    // Start PoH with a genesis hash
-    Hash genesis_hash(32, 0x42); // Simple genesis hash
+    // Access the already initialized Proof of History instance
     auto& poh = consensus::GlobalProofOfHistory::instance();
-    auto start_result = poh.start(genesis_hash);
-    if (!start_result.is_ok()) {
-        return common::Result<bool>("Failed to start Proof of History: " + start_result.error());
-    }
     
     // Set up PoH callbacks for metrics
     poh.set_tick_callback([this](const consensus::PohEntry& entry) {
