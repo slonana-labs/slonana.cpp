@@ -80,7 +80,7 @@ jobs:
           iperf3 \
           tcpdump \
           iptables \
-          tc \
+          iproute2 \
           socat \
           nmap \
           hping3 \
