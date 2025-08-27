@@ -260,9 +260,49 @@ uint64_t SnapshotBootstrapManager::get_local_ledger_slot() const {
         return latest.slot;
     }
     
-    // TODO: Check ledger directory for latest slot information
-    // For now, return 0 indicating no local ledger
-    return 0;
+    // Check ledger directory for latest slot information
+    std::string ledger_path = config_.ledger_path;
+    uint64_t max_slot = 0;
+    
+    try {
+        if (fs::exists(ledger_path)) {
+            // Look for block files or slot directories
+            for (const auto& entry : fs::directory_iterator(ledger_path)) {
+                if (entry.is_directory()) {
+                    std::string dir_name = entry.path().filename().string();
+                    // Check if directory name starts with "slot_"
+                    if (dir_name.find("slot_") == 0) {
+                        try {
+                            uint64_t slot = std::stoull(dir_name.substr(5));
+                            max_slot = std::max(max_slot, slot);
+                        } catch (const std::exception&) {
+                            // Ignore invalid slot directory names
+                        }
+                    }
+                } else if (entry.is_regular_file()) {
+                    std::string file_name = entry.path().filename().string();
+                    // Check for block files like "block_123.dat"
+                    if (file_name.find("block_") == 0 && file_name.find(".dat") != std::string::npos) {
+                        try {
+                            size_t start = 6; // Length of "block_"
+                            size_t end = file_name.find(".dat");
+                            if (end != std::string::npos) {
+                                uint64_t slot = std::stoull(file_name.substr(start, end - start));
+                                max_slot = std::max(max_slot, slot);
+                            }
+                        } catch (const std::exception&) {
+                            // Ignore invalid block file names
+                        }
+                    }
+                }
+            }
+        }
+    } catch (const std::exception& e) {
+        // If we can't read the ledger directory, assume no local ledger
+        return 0;
+    }
+    
+    return max_slot;
 }
 
 std::string SnapshotBootstrapManager::build_snapshot_url(const SnapshotInfo& info) const {
