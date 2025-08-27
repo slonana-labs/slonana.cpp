@@ -70,6 +70,12 @@ common::Result<bool> SolanaValidator::initialize() {
         return components_result;
     }
     
+    // Bootstrap ledger from snapshot if needed (for RPC nodes)
+    auto bootstrap_result = bootstrap_ledger();
+    if (!bootstrap_result.is_ok()) {
+        return bootstrap_result;
+    }
+    
     // Setup event handlers
     auto handlers_result = setup_event_handlers();
     if (!handlers_result.is_ok()) {
@@ -420,6 +426,12 @@ common::Result<bool> SolanaValidator::initialize_components() {
         rpc_server_->set_execution_engine(execution_engine_);
         rpc_server_->set_account_manager(account_manager_);
         
+        // Initialize snapshot bootstrap manager for RPC mode
+        if (config_.enable_rpc && config_.network_id == "devnet") {
+            std::cout << "  📸 Initializing snapshot bootstrap manager..." << std::endl;
+            snapshot_bootstrap_ = std::make_unique<validator::SnapshotBootstrapManager>(config_);
+        }
+        
         std::cout << "All components initialized successfully" << std::endl;
         return common::Result<bool>(true);
         
@@ -572,6 +584,37 @@ std::vector<uint8_t> SolanaValidator::generate_validator_identity() {
     
     std::cout << "Generated new 32-byte validator identity" << std::endl;
     return identity;
+}
+
+common::Result<bool> SolanaValidator::bootstrap_ledger() {
+    // Only run bootstrap for devnet RPC nodes with snapshot support
+    if (!config_.enable_rpc || config_.network_id != "devnet" || !snapshot_bootstrap_) {
+        std::cout << "Skipping ledger bootstrap (not devnet RPC mode or bootstrap disabled)" << std::endl;
+        return common::Result<bool>(true);
+    }
+    
+    std::cout << "🔄 Starting ledger bootstrap from snapshot..." << std::endl;
+    
+    // Set up progress callback
+    snapshot_bootstrap_->set_progress_callback([](const std::string& phase, uint64_t current, uint64_t total) {
+        std::cout << "[Bootstrap] " << phase;
+        if (total > 0) {
+            std::cout << " (" << current << "/" << total << ")";
+        }
+        std::cout << std::endl;
+    });
+    
+    // Run the bootstrap process
+    auto result = snapshot_bootstrap_->bootstrap_from_snapshot();
+    if (!result.is_ok()) {
+        std::cout << "⚠️  Snapshot bootstrap failed: " << result.error() << std::endl;
+        std::cout << "   Continuing without snapshot bootstrap..." << std::endl;
+        // Don't fail completely - just continue without bootstrap
+        return common::Result<bool>(true);
+    }
+    
+    std::cout << "✅ Ledger bootstrap completed successfully" << std::endl;
+    return common::Result<bool>(true);
 }
 
 } // namespace slonana

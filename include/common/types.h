@@ -75,6 +75,12 @@ struct ValidatorConfig {
     uint32_t discovery_interval_ms = 30000;
     uint32_t peer_connection_timeout_ms = 10000;
     uint32_t max_peer_discovery_attempts = 3;
+    
+    // Snapshot bootstrap configuration
+    std::string snapshot_source = "auto"; // auto|mirror|none
+    std::string snapshot_mirror = "";     // URL for snapshot mirror
+    bool allow_stale_rpc = false;         // Allow RPC before caught up
+    std::string upstream_rpc_url = "";    // For auto-discovery and catch-up
 };
 
 /**

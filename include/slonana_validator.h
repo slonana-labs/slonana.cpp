@@ -5,6 +5,7 @@
 #include "network/rpc_server.h"
 #include "ledger/manager.h"
 #include "validator/core.h"
+#include "validator/snapshot_bootstrap.h"
 #include "staking/manager.h"
 #include "svm/engine.h"
 #include <memory>
@@ -68,6 +69,7 @@ private:
     std::shared_ptr<staking::StakingManager> staking_manager_;
     std::shared_ptr<svm::ExecutionEngine> execution_engine_;
     std::shared_ptr<svm::AccountManager> account_manager_;
+    std::unique_ptr<validator::SnapshotBootstrapManager> snapshot_bootstrap_;
     
     // Configuration and state
     ValidatorConfig config_;
@@ -88,6 +90,7 @@ private:
     Result<bool> initialize_identity();
     Result<bool> initialize_components();
     Result<bool> setup_event_handlers();
+    Result<bool> bootstrap_ledger();
     
     class Impl;
     std::unique_ptr<Impl> impl_;

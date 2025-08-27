@@ -31,6 +31,10 @@ void print_usage(const char* program_name) {
     std::cout << "  --network-id NETWORK       Network to connect to (mainnet, testnet, devnet)" << std::endl;
     std::cout << "  --expected-genesis-hash HASH Expected genesis hash for validation" << std::endl;
     std::cout << "  --known-validator ADDR     Add known validator entrypoint" << std::endl;
+    std::cout << "  --snapshot-source SOURCE   Snapshot source (auto|mirror|none, default: auto)" << std::endl;
+    std::cout << "  --snapshot-mirror URL      Custom snapshot mirror URL" << std::endl;
+    std::cout << "  --upstream-rpc-url URL     Upstream RPC URL for devnet bootstrap" << std::endl;
+    std::cout << "  --allow-stale-rpc          Allow RPC before fully caught up" << std::endl;
     std::cout << "  --no-rpc                   Disable RPC server" << std::endl;
     std::cout << "  --no-gossip                Disable gossip protocol" << std::endl;
     std::cout << "  --help                     Show this help message" << std::endl;
@@ -276,6 +280,14 @@ slonana::common::ValidatorConfig parse_arguments(int argc, char* argv[]) {
             config.expected_genesis_hash = argv[++i];
         } else if (arg == "--known-validator" && i + 1 < argc) {
             config.known_validators.push_back(argv[++i]);
+        } else if (arg == "--snapshot-source" && i + 1 < argc) {
+            config.snapshot_source = argv[++i];
+        } else if (arg == "--snapshot-mirror" && i + 1 < argc) {
+            config.snapshot_mirror = argv[++i];
+        } else if (arg == "--upstream-rpc-url" && i + 1 < argc) {
+            config.upstream_rpc_url = argv[++i];
+        } else if (arg == "--allow-stale-rpc") {
+            config.allow_stale_rpc = true;
         } else if (arg == "--no-rpc") {
             config.enable_rpc = false;
         } else if (arg == "--no-gossip") {
