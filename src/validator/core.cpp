@@ -302,18 +302,8 @@ common::Result<bool> ValidatorCore::start() {
     
     std::cout << "Starting validator core" << std::endl;
     
-    // Initialize and start Proof of History
-    if (!consensus::GlobalProofOfHistory::initialize()) {
-        return common::Result<bool>("Failed to initialize Proof of History");
-    }
-    
-    // Start PoH with a genesis hash
-    Hash genesis_hash(32, 0x42); // Simple genesis hash
+    // Access the already initialized Proof of History instance
     auto& poh = consensus::GlobalProofOfHistory::instance();
-    auto start_result = poh.start(genesis_hash);
-    if (!start_result.is_ok()) {
-        return common::Result<bool>("Failed to start Proof of History: " + start_result.error());
-    }
     
     // Set up PoH callbacks for metrics
     poh.set_tick_callback([this](const consensus::PohEntry& entry) {
@@ -426,18 +416,15 @@ bool ValidatorCore::is_running() const {
 }
 
 common::Slot ValidatorCore::get_current_slot() const {
-    // For validator state, prioritize the blockchain state (fork choice) over time-based PoH
-    // This ensures get_current_slot() reflects the actual blockchain progression
-    common::Slot fork_choice_slot = fork_choice_->get_head_slot();
-    
-    // If we have processed blocks, return the highest processed block slot
-    if (fork_choice_slot > 0) {
-        return fork_choice_slot;
-    }
-    
-    // If no blocks processed yet, return 0 to indicate initial state
-    // (PoH slot advancement without blocks doesn't change validator's blockchain state)
-    return 0;
+    // Return the PoH-driven current slot for RPC queries
+    // This represents the current time-based slot progression, not the blockchain state
+    auto& poh = consensus::GlobalProofOfHistory::instance();
+    return poh.get_current_slot();
+}
+
+common::Slot ValidatorCore::get_blockchain_head_slot() const {
+    // Return the highest processed block slot (blockchain state)
+    return fork_choice_->get_head_slot();
 }
 
 Hash ValidatorCore::get_current_head() const {

@@ -104,7 +104,8 @@ public:
     
     // Validator status
     bool is_running() const;
-    Slot get_current_slot() const;
+    Slot get_current_slot() const;          // Returns PoH-driven current slot
+    Slot get_blockchain_head_slot() const;  // Returns highest processed block slot
     Hash get_current_head() const;
     
     // Getter methods for RPC server

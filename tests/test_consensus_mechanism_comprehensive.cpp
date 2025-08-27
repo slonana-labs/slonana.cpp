@@ -1,8 +1,8 @@
 #include "test_framework.h"
 #include "consensus/proof_of_history.h"
 #include "validator/core.h"
-#include "staking/staking_manager.h"
-#include "network/gossip_protocol.h"
+#include "staking/manager.h"
+#include "network/gossip.h"
 #include <chrono>
 #include <random>
 #include <algorithm>

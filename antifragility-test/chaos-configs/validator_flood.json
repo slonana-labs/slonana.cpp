@@ -1,0 +1,53 @@
+{
+  "validator": {
+    "identity": "validator-flood-test",
+    "rpc_bind_address": "127.0.0.1:8899",
+    "ws_bind_address": "127.0.0.1:8900",
+    "enable_consensus": true,
+    "enable_proof_of_history": true,
+    "enable_transaction_processing": true,
+    "enable_ledger_persistence": true,
+    "enable_gossip": true,
+    "enable_rpc": true
+  },
+  "proof_of_history": {
+    "target_tick_duration_us": 400,
+    "ticks_per_slot": 64,
+    "enable_batch_processing": true,
+    "enable_simd_acceleration": false,
+    "hashing_threads": 2,
+    "batch_size": 4
+  },
+  "ledger": {
+    "data_dir": "./chaos-test/data/ledger",
+    "enable_snapshots": true,
+    "snapshot_interval_slots": 50,
+    "enable_compression": true
+  },
+  "consensus": {
+    "enable_timing_metrics": true,
+    "performance_target_validation": true,
+    "vote_threshold": 0.67,
+    "timeout_ms": 15000
+  },
+  "network": {
+    "gossip_port": 8001,
+    "max_connections": 100,
+    "connection_timeout_ms": 10000,
+    "enable_discovery": true,
+    "heartbeat_interval_ms": 5000
+  },
+  "monitoring": {
+    "enable_prometheus": true,
+    "prometheus_port": 9090,
+    "enable_health_checks": true,
+    "metrics_export_interval_ms": 2000,
+    "enable_detailed_metrics": true,
+    "enable_chaos_metrics": true
+  },
+  "poh_tick_duration_us": 400,
+  "poh_ticks_per_slot": 64,
+  "poh_enable_batch_processing": true,
+  "poh_batch_size": 4,
+  "poh_hashing_threads": 2
+}

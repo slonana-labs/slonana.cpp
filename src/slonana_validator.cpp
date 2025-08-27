@@ -1,4 +1,5 @@
 #include "slonana_validator.h"
+#include "consensus/proof_of_history.h"
 #include <iostream>
 #include <chrono>
 #include <fstream>
@@ -16,7 +17,7 @@ public:
     void update_stats() {
         auto now = std::chrono::steady_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - start_time_);
-        stats_.uptime_seconds = duration.count();
+        stats_.uptime_seconds = static_cast<uint64_t>(std::max(0L, duration.count()));
     }
 };
 
@@ -98,9 +99,25 @@ common::Result<bool> SolanaValidator::start() {
     
     // Start Proof of History first (critical for slot progression)
     std::cout << "  ⏰ Starting Proof of History..." << std::endl;
+    
+    // Initialize and configure Proof of History
+    auto poh_config = consensus::PohConfig{};
+    poh_config.target_tick_duration = std::chrono::microseconds(config_.poh_target_tick_duration_us);
+    poh_config.ticks_per_slot = config_.poh_ticks_per_slot;
+    poh_config.enable_batch_processing = config_.poh_enable_batch_processing;
+    poh_config.batch_size = config_.poh_batch_size;
+    poh_config.hashing_threads = config_.poh_hashing_threads;
+    
+    if (!consensus::GlobalProofOfHistory::initialize(poh_config)) {
+        return common::Result<bool>("Failed to initialize Proof of History");
+    }
+    
+    // Start PoH with a genesis hash
+    Hash genesis_hash(32, 0x42); // Simple genesis hash
     auto& global_poh = consensus::GlobalProofOfHistory::instance();
-    if (!global_poh.start()) {
-        return common::Result<bool>("Failed to start Proof of History");
+    auto poh_start_result = global_poh.start(genesis_hash);
+    if (!poh_start_result.is_ok()) {
+        return common::Result<bool>("Failed to start Proof of History: " + poh_start_result.error());
     }
     std::cout << "  ✅ Proof of History started successfully" << std::endl;
     
@@ -142,7 +159,7 @@ common::Result<bool> SolanaValidator::start() {
     }
     std::cout << "..." << std::dec << std::endl;
     std::cout << "    RPC endpoint: http://" << config_.rpc_bind_address << std::endl;
-    std::cout << "    PoH ticking every " << config_.poh_tick_duration_us << "μs" << std::endl;
+    std::cout << "    PoH ticking every " << config_.poh_target_tick_duration_us << "μs" << std::endl;
     std::cout << "    Slot progression: " << config_.poh_ticks_per_slot << " ticks per slot" << std::endl;
     
     return common::Result<bool>(true);
@@ -384,19 +401,9 @@ common::Result<bool> SolanaValidator::initialize_components() {
         
         // Initialize and configure Proof of History
         std::cout << "  ⏰ Initializing Proof of History..." << std::endl;
-        auto poh_config = consensus::PohConfig{};
-        poh_config.target_tick_duration = std::chrono::microseconds(config_.poh_tick_duration_us);
-        poh_config.ticks_per_slot = config_.poh_ticks_per_slot;
-        poh_config.enable_batch_processing = config_.poh_enable_batch_processing;
-        poh_config.batch_size = config_.poh_batch_size;
-        poh_config.hashing_threads = config_.poh_hashing_threads;
-        
-        // Get global PoH instance and configure it
-        auto& global_poh = consensus::GlobalProofOfHistory::instance();
-        global_poh.configure(poh_config);
         
         std::cout << "    PoH configuration: " << std::endl;
-        std::cout << "      Tick duration: " << config_.poh_tick_duration_us << "μs" << std::endl;
+        std::cout << "      Tick duration: " << config_.poh_target_tick_duration_us << "μs" << std::endl;
         std::cout << "      Ticks per slot: " << config_.poh_ticks_per_slot << std::endl;
         std::cout << "      Batch processing: " << (config_.poh_enable_batch_processing ? "enabled" : "disabled") << std::endl;
         std::cout << "      Hashing threads: " << config_.poh_hashing_threads << std::endl;
@@ -465,8 +472,8 @@ void SolanaValidator::on_block_received(const ledger::Block& block) {
         message.type = network::MessageType::BLOCK_NOTIFICATION;
         message.sender = validator_identity_;
         message.payload = block.serialize();
-        message.timestamp = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
+        message.timestamp = static_cast<uint64_t>(std::max(0L, std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count()));
         
         gossip_protocol_->broadcast_message(message);
     }
@@ -483,8 +490,8 @@ void SolanaValidator::on_vote_received(const validator::Vote& vote) {
         message.type = network::MessageType::VOTE_NOTIFICATION;
         message.sender = validator_identity_;
         message.payload = vote.serialize();
-        message.timestamp = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
+        message.timestamp = static_cast<uint64_t>(std::max(0L, std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count()));
         
         gossip_protocol_->broadcast_message(message);
     }

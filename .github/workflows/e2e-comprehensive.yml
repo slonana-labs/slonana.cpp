@@ -63,12 +63,7 @@ jobs:
           sysstat \
           jq \
           curl \
-          python3 \
-          python3-pip \
           netcat-openbsd
-        
-        # Install additional testing tools
-        pip3 install requests websocket-client
 
     - name: Create build directory
       run: mkdir -p build
@@ -101,6 +96,11 @@ jobs:
         mkdir -p e2e-comprehensive/metrics
         mkdir -p e2e-comprehensive/scripts
         mkdir -p e2e-comprehensive/data
+
+    - name: Install Python dependencies for test scripts
+      run: |
+        python3 -m pip install --upgrade pip
+        pip install requests
 
     - name: Create test configuration - ${{ matrix.test_scenario.name }}
       run: |

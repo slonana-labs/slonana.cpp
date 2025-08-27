@@ -14,6 +14,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 option(ENABLE_E2E_TESTING "Enable end-to-end testing features" OFF)
 option(ENABLE_PERFORMANCE_MONITORING "Enable performance monitoring features" OFF)
 option(ENABLE_COMPREHENSIVE_TESTING "Enable comprehensive testing features" OFF)
+option(ENABLE_CHAOS_TESTING "Enable chaos testing features" OFF)
 
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)
@@ -57,6 +58,11 @@ endif()
 if(ENABLE_COMPREHENSIVE_TESTING)
     target_compile_definitions(slonana_core PUBLIC ENABLE_COMPREHENSIVE_TESTING)
     message(STATUS "Comprehensive testing features enabled")
+endif()
+
+if(ENABLE_CHAOS_TESTING)
+    target_compile_definitions(slonana_core PUBLIC ENABLE_CHAOS_TESTING)
+    message(STATUS "Chaos testing features enabled")
 endif()
 
 # Main executable

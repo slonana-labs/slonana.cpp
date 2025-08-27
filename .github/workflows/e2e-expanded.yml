@@ -82,15 +82,17 @@ jobs:
           libssl-dev libboost-all-dev \
           valgrind gdb htop iotop sysstat \
           jq curl netcat-openbsd \
-          python3 python3-pip \
           stress-ng iperf3 tcpdump
-        
-        pip3 install requests websocket-client numpy psutil
 
     - name: Create build environment
       run: |
         mkdir -p build
         mkdir -p e2e-expanded/{logs,metrics,configs,data,scripts}
+
+    - name: Install Python dependencies for test scripts
+      run: |
+        python3 -m pip install --upgrade pip
+        pip install requests
 
     - name: Configure and build with comprehensive testing
       run: |
