@@ -4,6 +4,9 @@
 #include <thread>
 #include <chrono>
 
+// Forward declare resource monitor tests
+void run_resource_monitor_tests(TestRunner& runner);
+
 using namespace slonana::monitoring;
 
 void test_metrics_registry_creation() {
@@ -195,6 +198,10 @@ void run_monitoring_tests() {
     runner.run_test("same_metric_name_returns_same_instance", test_same_metric_name_returns_same_instance);
     runner.run_test("global_metrics_registry", test_global_metrics_registry);
     runner.run_test("metric_values_timestamp", test_metric_values_timestamp);
+    
+    // Run resource monitor tests
+    std::cout << "\n=== Resource Monitor Tests ===" << std::endl;
+    run_resource_monitor_tests(runner);
     
     runner.print_summary();
 }

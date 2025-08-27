@@ -134,6 +134,7 @@ target_compile_definitions(slonana_wallet_tests PRIVATE STANDALONE_WALLET_TESTS)
 add_executable(slonana_monitoring_tests 
     "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
     "${CMAKE_SOURCE_DIR}/tests/test_monitoring.cpp"
+    "${CMAKE_SOURCE_DIR}/tests/test_resource_monitor.cpp"
 )
 target_link_libraries(slonana_monitoring_tests slonana_core)
 target_include_directories(slonana_monitoring_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
