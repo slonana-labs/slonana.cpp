@@ -253,10 +253,45 @@ std::string extract_json_field(const std::string& json, const std::string& field
         return json.substr(value_start + 1, end_quote - value_start - 1);
     }
     
-    // Handle numeric values
+    // Handle object values
+    if (json[value_start] == '{') {
+        int brace_count = 1;
+        size_t value_end = value_start + 1;
+        while (value_end < json.length() && brace_count > 0) {
+            if (json[value_end] == '{') brace_count++;
+            else if (json[value_end] == '}') brace_count--;
+            value_end++;
+        }
+        if (brace_count == 0) {
+            return json.substr(value_start, value_end - value_start);
+        }
+        return "";
+    }
+    
+    // Handle array values
+    if (json[value_start] == '[') {
+        int bracket_count = 1;
+        size_t value_end = value_start + 1;
+        while (value_end < json.length() && bracket_count > 0) {
+            if (json[value_end] == '[') bracket_count++;
+            else if (json[value_end] == ']') bracket_count--;
+            value_end++;
+        }
+        if (bracket_count == 0) {
+            return json.substr(value_start, value_end - value_start);
+        }
+        return "";
+    }
+    
+    // Handle numeric and boolean values
     size_t value_end = value_start;
     while (value_end < json.length() && 
-           (std::isdigit(json[value_end]) || json[value_end] == '.' || json[value_end] == '-')) {
+           json[value_end] != ',' && 
+           json[value_end] != '}' && 
+           json[value_end] != ']' && 
+           json[value_end] != '\n' && 
+           json[value_end] != ' ' && 
+           json[value_end] != '\t') {
         value_end++;
     }
     
