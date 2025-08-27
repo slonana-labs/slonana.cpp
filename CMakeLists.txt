@@ -290,6 +290,7 @@ add_test(NAME cluster_tests COMMAND slonana_cluster_tests)
 add_executable(slonana_snapshot_tests
     "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
     "${CMAKE_SOURCE_DIR}/tests/test_snapshot.cpp"
+    "${CMAKE_SOURCE_DIR}/tests/test_snapshot_bootstrap.cpp"
 )
 target_link_libraries(slonana_snapshot_tests slonana_core)
 target_include_directories(slonana_snapshot_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")

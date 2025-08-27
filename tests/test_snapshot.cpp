@@ -4,6 +4,9 @@
 #include <thread>
 #include <filesystem>
 
+// Forward declaration for bootstrap tests
+void run_snapshot_bootstrap_tests();
+
 using namespace slonana::validator;
 using namespace slonana::common;
 
@@ -313,6 +316,9 @@ int main() {
         runner.run_test("Snapshot Streaming", test_snapshot_streaming);
         runner.run_test("Snapshot Statistics", test_snapshot_statistics);
         
+        // Run snapshot bootstrap tests
+        run_snapshot_bootstrap_tests();
+        
         runner.print_summary();
     } catch (const std::exception& e) {
         std::cerr << "Test suite failed: " << e.what() << std::endl;
@@ -330,6 +336,7 @@ int main() {
     std::cout << "- ✅ Comprehensive statistics and monitoring" << std::endl;
     std::cout << "- ✅ Snapshot integrity verification" << std::endl;
     std::cout << "- ✅ Efficient chunked data transfer" << std::endl;
+    std::cout << "- ✅ Snapshot bootstrap functionality for devnet RPC nodes" << std::endl;
     
     return 0;
 }
