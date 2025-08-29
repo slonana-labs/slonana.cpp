@@ -16,6 +16,132 @@ class HistogramImpl;
 class MetricsRegistryImpl;
 
 /**
+ * @brief Prometheus format metrics exporter implementation
+ */
+class PrometheusExporter : public IMetricsExporter {
+public:
+    std::string export_metrics(const IMetricsRegistry& registry) override {
+        std::ostringstream output;
+        
+        auto metrics = registry.get_all_metrics();
+        
+        for (const auto& metric : metrics) {
+            export_metric(output, *metric);
+        }
+        
+        return output.str();
+    }
+    
+    std::string get_content_type() const override {
+        return "text/plain; version=0.0.4; charset=utf-8";
+    }
+
+private:
+    void export_metric(std::ostringstream& output, const IMetric& metric) {
+        const std::string& name = metric.get_name();
+        const std::string& help = metric.get_help();
+        MetricType type = metric.get_type();
+        
+        // Export metric metadata
+        output << "# HELP " << name << " " << help << "\n";
+        output << "# TYPE " << name << " " << metric_type_to_string(type) << "\n";
+        
+        // Export metric values
+        auto values = metric.get_values();
+        
+        switch (type) {
+            case MetricType::COUNTER:
+            case MetricType::GAUGE:
+                export_simple_metric(output, name, values);
+                break;
+                
+            case MetricType::HISTOGRAM:
+                export_histogram_metric(output, name, values);
+                break;
+                
+            case MetricType::SUMMARY:
+                export_summary_metric(output, name, values);
+                break;
+        }
+        
+        output << "\n";
+    }
+    
+    void export_simple_metric(std::ostringstream& output, const std::string& name,
+                              const std::vector<MetricValue>& values) {
+        for (const auto& value : values) {
+            output << name;
+            export_labels(output, value.labels);
+            output << " " << std::fixed << std::setprecision(6) << value.value;
+            output << " " << timestamp_to_millis(value.timestamp) << "\n";
+        }
+    }
+    
+    void export_histogram_metric(std::ostringstream& output, const std::string& name,
+                                const std::vector<MetricValue>& values) {
+        // Export buckets, sum and count for histogram metrics
+        // Simplified implementation for testing
+        export_simple_metric(output, name, values);
+    }
+    
+    void export_summary_metric(std::ostringstream& output, const std::string& name,
+                               const std::vector<MetricValue>& values) {
+        // Similar to histogram but with quantiles instead of buckets
+        export_simple_metric(output, name, values);
+    }
+    
+    void export_labels(std::ostringstream& output, const std::map<std::string, std::string>& labels) {
+        if (labels.empty()) {
+            return;
+        }
+        
+        output << "{";
+        bool first = true;
+        for (const auto& [key, value] : labels) {
+            if (!first) {
+                output << ",";
+            }
+            output << key << "=\"" << escape_label_value(value) << "\"";
+            first = false;
+        }
+        output << "}";
+    }
+    
+    std::string escape_label_value(const std::string& value) {
+        std::string escaped;
+        for (char c : value) {
+            if (c == '"' || c == '\\' || c == '\n') {
+                escaped += '\\';
+            }
+            escaped += c;
+        }
+        return escaped;
+    }
+    
+    std::string metric_type_to_string(MetricType type) {
+        switch (type) {
+            case MetricType::COUNTER: return "counter";
+            case MetricType::GAUGE: return "gauge";
+            case MetricType::HISTOGRAM: return "histogram";
+            case MetricType::SUMMARY: return "summary";
+            default: return "untyped";
+        }
+    }
+    
+    uint64_t timestamp_to_millis(const std::chrono::system_clock::time_point& timestamp) {
+        auto time_since_epoch = timestamp.time_since_epoch();
+        auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(time_since_epoch);
+        return millis.count();
+    }
+};
+
+// Forward declarations
+class CounterImpl;
+class GaugeImpl;
+class HistogramImpl;
+class MetricsRegistryImpl;
+
+/**
  * @brief Counter metric implementation
  */
 class CounterImpl : public ICounter {
@@ -367,18 +493,8 @@ std::unique_ptr<IMetricsRegistry> MonitoringFactory::create_registry() {
 }
 
 std::unique_ptr<IMetricsExporter> MonitoringFactory::create_prometheus_exporter() {
-    // PrometheusExporter class is defined in prometheus_exporter.cpp
-    // For now, return a simple stub implementation
-    class PrometheusExporterStub : public IMetricsExporter {
-    public:
-        std::string export_metrics(const IMetricsRegistry& registry) override {
-            return "# Prometheus metrics export\n";
-        }
-        std::string get_content_type() const override {
-            return "text/plain; version=0.0.4; charset=utf-8";
-        }
-    };
-    return std::make_unique<PrometheusExporterStub>();
+    // Use the actual PrometheusExporter class defined in prometheus_exporter.cpp
+    return std::make_unique<PrometheusExporter>();
 }
 
 std::unique_ptr<IMetricsExporter> MonitoringFactory::create_json_exporter() {

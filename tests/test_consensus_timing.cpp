@@ -137,6 +137,10 @@ void test_prometheus_exporter() {
     // Export metrics
     std::string prometheus_output = exporter->export_metrics(registry);
     
+    // Debug output for investigation
+    std::cout << "Debug - Prometheus output length: " << prometheus_output.length() << std::endl;
+    std::cout << "Debug - Prometheus output: [" << prometheus_output << "]" << std::endl;
+    
     // Verify Prometheus format
     ASSERT_FALSE(prometheus_output.empty());
     ASSERT_TRUE(prometheus_output.find("# HELP") != std::string::npos);
