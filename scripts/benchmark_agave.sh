@@ -182,17 +182,38 @@ check_dependencies() {
     # Check for required binaries
     if ! command -v "$VALIDATOR_BIN" &> /dev/null; then
         log_error "Agave validator binary not found: $VALIDATOR_BIN"
-        log_error "Install with: curl --proto '=https' --tlsv1.2 -sSfL https://solana-install.solana.workers.dev | bash"
+        log_error "Expected locations to check:"
+        log_error "  - /usr/local/bin/agave-validator"
+        log_error "  - ~/.cargo/bin/agave-validator" 
+        log_error "  - /usr/bin/agave-validator"
+        log_error ""
+        log_error "Current PATH: $PATH"
+        log_error ""
+        log_error "Install with: cargo install agave-validator agave-ledger-tool --locked"
         exit 3
     fi
 
     if ! command -v solana-keygen &> /dev/null; then
         log_error "solana-keygen not found. Please install Solana CLI tools."
+        log_error "Expected locations to check:"
+        log_error "  - $HOME/.local/share/solana/install/active_release/bin/solana-keygen"
+        log_error "  - /usr/local/bin/solana-keygen"
+        log_error ""
+        log_error "Current PATH: $PATH"
+        log_error ""
+        log_error "Install with: curl --proto '=https' --tlsv1.2 -sSfL https://solana-install.solana.workers.dev | bash"
         exit 3
     fi
 
     if ! command -v solana &> /dev/null; then
         log_error "solana CLI not found. Please install Solana CLI tools."
+        log_error "Expected locations to check:"
+        log_error "  - $HOME/.local/share/solana/install/active_release/bin/solana"
+        log_error "  - /usr/local/bin/solana"
+        log_error ""
+        log_error "Current PATH: $PATH"
+        log_error ""
+        log_error "Install with: curl --proto '=https' --tlsv1.2 -sSfL https://solana-install.solana.workers.dev | bash"
         exit 3
     fi
 
@@ -200,11 +221,15 @@ check_dependencies() {
     for util in curl jq bc; do
         if ! command -v "$util" &> /dev/null; then
             log_error "Required utility not found: $util"
+            log_error "Install with: sudo apt-get install -y $util"
             exit 3
         fi
     done
 
     log_success "All dependencies available"
+    log_verbose "✅ Found: $(which $VALIDATOR_BIN)"
+    log_verbose "✅ Found: $(which solana)"
+    log_verbose "✅ Found: $(which solana-keygen)"
 }
 
 # Setup validator environment
