@@ -2,7 +2,7 @@ name: End-to-End Node Testing
 
 on:
   push:
-    branches: [ main, develop, copilot/fix-* ]
+    branches: [ main, develop ]
   pull_request:
     branches: [ main, develop ]
   workflow_dispatch:
