@@ -2,7 +2,7 @@ name: Expanded End-to-End Testing (5x Coverage)
 
 on:
   push:
-    branches: [ main, develop, copilot/fix-* ]
+    branches: [ main, develop ]
   pull_request:
     branches: [ main, develop ]
   workflow_dispatch:
