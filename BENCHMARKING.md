@@ -810,16 +810,21 @@ solana-genesis --bootstrap-validator benchmark_results/agave/test-keypair.json t
 #### "Binary not found in PATH" Errors
 ```bash
 # Problem: agave-validator not found
-# Solution 1: Install Agave binaries
+# Solution 1: Install Agave binaries via cargo
 cargo install agave-validator agave-ledger-tool --locked
 
-# Solution 2: Use bundled Solana CLI binaries
+# Solution 2: Use official Anza installer (recommended)
+sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+
+# Solution 3: Use legacy Solana installer
 curl --proto '=https' --tlsv1.2 -sSfL https://solana-install.solana.workers.dev | bash
 export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
 
 # Verify installation
 which agave-validator || echo "❌ agave-validator not found"
 which solana-keygen || echo "❌ solana-keygen not found"
+which solana || echo "❌ solana CLI not found"
 ```
 
 #### Validator Startup Failures
@@ -886,6 +891,75 @@ tail -f benchmark_results/agave/agave_validator.log
 # Check for common error patterns
 grep -i error benchmark_results/agave/agave_validator.log
 grep -i "failed\|timeout\|connection" benchmark_results/agave/agave_validator.log
+```
+
+### Debugging Specific Command Sequences
+
+#### Debugging Anza Installation + Script Run
+This section covers debugging the specific sequence many users follow:
+
+```bash
+# Step 1: Install Anza/Agave toolchain
+sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+
+# Step 2: Run benchmark script (without arguments - will fail)
+./scripts/benchmark_agave.sh
+```
+
+**Expected Error:**
+```
+[ERROR] Missing required argument: --ledger
+```
+
+**Debug Process:**
+
+1. **Verify Installation:**
+```bash
+# Check if binaries are available after installation
+which agave-validator
+which solana-keygen
+which solana
+
+# If not found, re-export PATH:
+export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+
+# Test binaries
+agave-validator --help
+solana --version
+```
+
+2. **Run with Required Arguments:**
+```bash
+# Create test directories
+mkdir -p test_ledgers/agave benchmark_results/agave
+
+# Run with minimum required arguments
+./scripts/benchmark_agave.sh \
+    --ledger test_ledgers/agave \
+    --results benchmark_results/agave \
+    --verbose
+
+# Or test setup only
+./scripts/benchmark_agave.sh \
+    --ledger test_ledgers/agave \
+    --results benchmark_results/agave \
+    --bootstrap-only \
+    --verbose
+```
+
+3. **Common Issues After Anza Installation:**
+```bash
+# Issue: PATH not persisted across terminals
+echo 'export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+
+# Issue: Permission denied on script
+chmod +x ./scripts/benchmark_agave.sh
+
+# Issue: Script not found
+ls -la ./scripts/benchmark_agave.sh
+pwd  # Make sure you're in the slonana.cpp project root
 ```
 
 ### Script Exit Codes Reference
