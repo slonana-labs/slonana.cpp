@@ -247,15 +247,19 @@ setup_validator() {
         solana-keygen new --no-bip39-passphrase --silent --outfile "$IDENTITY_FILE"
     fi
 
-    # Generate vote and stake keypairs for genesis
+    # Generate vote, stake, and faucet keypairs for genesis
     local vote_keypair="$RESULTS_DIR/vote-keypair.json"
     local stake_keypair="$RESULTS_DIR/stake-keypair.json"
+    local faucet_keypair="$RESULTS_DIR/faucet-keypair.json"
     
     log_verbose "Generating vote keypair: $vote_keypair"
     solana-keygen new --no-bip39-passphrase --silent --outfile "$vote_keypair"
     
     log_verbose "Generating stake keypair: $stake_keypair"
     solana-keygen new --no-bip39-passphrase --silent --outfile "$stake_keypair"
+    
+    log_verbose "Generating faucet keypair: $faucet_keypair"
+    solana-keygen new --no-bip39-passphrase --silent --outfile "$faucet_keypair"
     
     # Extract pubkeys for genesis
     local identity_pubkey
@@ -276,6 +280,7 @@ setup_validator() {
         --ledger "$LEDGER_DIR" \
         --bootstrap-validator "$identity_pubkey" "$vote_pubkey" "$stake_pubkey" \
         --cluster-type development \
+        --faucet-pubkey "$faucet_keypair" \
         --faucet-lamports 1000000000000 \
         --bootstrap-validator-lamports 500000000000 \
         --bootstrap-validator-stake-lamports 500000000
