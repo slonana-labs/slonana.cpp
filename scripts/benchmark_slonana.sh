@@ -74,8 +74,14 @@ OPTIONAL ARGUMENTS:
     --verbose                Enable verbose logging
     --help                   Show this help message
 
+FEATURES:
+    • Built-in snapshot system for optimal validator startup
+    • Automatic snapshot discovery and download using slonana CLI commands
+    • Fallback to bootstrap mode if snapshot system unavailable
+    • Real-time performance monitoring and metrics collection
+
 EXAMPLES:
-    # Basic benchmark
+    # Basic benchmark with built-in snapshot system
     $SCRIPT_NAME --ledger /tmp/slonana_ledger --results /tmp/slonana_results
 
     # Custom test duration and ports
@@ -256,6 +262,36 @@ setup_validator() {
         solana-keygen new --no-bip39-passphrase --silent --outfile "$IDENTITY_FILE"
     fi
 
+    # Use built-in slonana snapshot commands for faster startup
+    if [[ -n "$VALIDATOR_BIN" ]] && [[ -x "$VALIDATOR_BIN" ]]; then
+        log_info "Using built-in slonana snapshot system for optimal startup..."
+        
+        # Find and download optimal snapshot using slonana CLI
+        log_verbose "Finding optimal snapshot..."
+        if "$VALIDATOR_BIN" snapshot-find --network mainnet --max-latency 100 --json > "$RESULTS_DIR/snapshot_sources.json" 2>/dev/null; then
+            log_verbose "Snapshot sources discovered, downloading optimal snapshot..."
+            if "$VALIDATOR_BIN" snapshot-download --output-dir "$LEDGER_DIR" --verbose > "$RESULTS_DIR/snapshot_download.log" 2>&1; then
+                log_success "Snapshot downloaded successfully using built-in slonana system"
+            else
+                log_warning "Snapshot download failed, falling back to bootstrap mode"
+                setup_bootstrap_fallback
+            fi
+        else
+            log_warning "Snapshot discovery failed, falling back to bootstrap mode"
+            setup_bootstrap_fallback
+        fi
+    else
+        log_verbose "Slonana validator binary not available, using bootstrap fallback"
+        setup_bootstrap_fallback
+    fi
+
+    log_success "Validator environment setup complete"
+}
+
+# Fallback to bootstrap validator genesis (original logic)
+setup_bootstrap_fallback() {
+    log_verbose "Setting up bootstrap fallback..."
+    
     # Generate bootstrap validator genesis if we have Solana tools and identity
     if [[ -n "$IDENTITY_FILE" ]] && command -v solana-genesis &> /dev/null; then
         log_verbose "Creating genesis configuration..."
@@ -263,8 +299,6 @@ setup_validator() {
     else
         log_verbose "Skipping genesis creation (missing dependencies or running in placeholder mode)"
     fi
-
-    log_success "Validator environment setup complete"
 }
 
 # Start validator

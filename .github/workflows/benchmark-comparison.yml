@@ -68,7 +68,7 @@ jobs:
 
     - name: Install Agave validator via cargo install (optimized)
       run: |
-        cargo install --git https://github.com/anza-xyz/agave.git --tag v3.0 --locked agave-validator agave-ledger-tool
+        cargo install agave-validator agave-ledger-tool --locked
         sudo cp ~/.cargo/bin/agave-validator /usr/local/bin/agave-validator
         sudo cp ~/.cargo/bin/agave-ledger-tool /usr/local/bin/agave-ledger-tool
 
