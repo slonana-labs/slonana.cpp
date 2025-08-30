@@ -658,6 +658,11 @@ void GlobalProofOfHistory::shutdown() {
     }
 }
 
+bool GlobalProofOfHistory::is_initialized() {
+    std::lock_guard<std::mutex> lock(instance_mutex_);
+    return instance_ != nullptr;
+}
+
 uint64_t GlobalProofOfHistory::mix_transaction(const Hash& tx_hash) {
     return instance().mix_data(tx_hash);
 }
@@ -667,7 +672,11 @@ PohEntry GlobalProofOfHistory::get_current_entry() {
 }
 
 Slot GlobalProofOfHistory::get_current_slot() {
-    return instance().get_current_slot();
+    std::lock_guard<std::mutex> lock(instance_mutex_);
+    if (!instance_) {
+        return 0; // Return default slot if not initialized
+    }
+    return instance_->get_current_slot();
 }
 
 } // namespace consensus
