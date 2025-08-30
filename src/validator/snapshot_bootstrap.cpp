@@ -1,4 +1,5 @@
 #include "validator/snapshot_bootstrap.h"
+#include "validator/snapshot_finder.h"
 #include <iostream>
 #include <filesystem>
 #include <fstream>
@@ -23,13 +24,24 @@ SnapshotBootstrapManager::SnapshotBootstrapManager(const common::ValidatorConfig
     // Initialize snapshot manager
     snapshot_manager_ = std::make_unique<SnapshotManager>(snapshot_dir_);
     
+    // Initialize advanced snapshot finder with configured parameters
+    SnapshotFinderConfig finder_config;
+    finder_config.network = config_.network_id.empty() ? "mainnet-beta" : config_.network_id;
+    finder_config.threads_count = 50;  // Moderate thread count for bootstrap
+    finder_config.max_snapshot_age = 1300;  // Allow snapshots up to 1300 slots old
+    finder_config.min_download_speed = 30.0;  // Lower threshold for bootstrap
+    finder_config.max_latency = 200.0;  // More tolerant latency for bootstrap
+    snapshot_finder_ = std::make_unique<SnapshotFinder>(finder_config);
+    
     // Configure HTTP client
     http_client_->set_timeout(60); // 60 seconds for downloads
     http_client_->set_user_agent("slonana-cpp-bootstrap/1.0");
     
-    std::cout << "Snapshot Bootstrap Manager initialized" << std::endl;
+    std::cout << "📦 Snapshot Bootstrap Manager initialized with advanced finder" << std::endl;
     std::cout << "  Snapshot source: " << config_.snapshot_source << std::endl;
     std::cout << "  Snapshot directory: " << snapshot_dir_ << std::endl;
+    std::cout << "  Network: " << finder_config.network << std::endl;
+    std::cout << "  Multi-threaded discovery: " << finder_config.threads_count << " threads" << std::endl;
     if (!config_.snapshot_mirror.empty()) {
         std::cout << "  Custom mirror: " << config_.snapshot_mirror << std::endl;
     }
@@ -97,6 +109,48 @@ common::Result<bool> SnapshotBootstrapManager::bootstrap_from_snapshot() {
 }
 
 common::Result<SnapshotInfo> SnapshotBootstrapManager::discover_latest_snapshot() {
+    std::cout << "🔍 Using advanced multi-threaded snapshot discovery..." << std::endl;
+    
+    // Use the advanced snapshot finder to discover the best snapshot
+    auto best_result = snapshot_finder_->find_single_best_snapshot();
+    if (!best_result.is_ok()) {
+        std::cout << "Advanced discovery failed, falling back to simple method..." << std::endl;
+        return discover_latest_snapshot_simple();
+    }
+    
+    auto best_quality = best_result.value();
+    
+    SnapshotInfo info;
+    
+    // Extract slot number from download URL
+    std::string url = best_quality.download_url;
+    size_t slot_start = url.find("snapshot-") + 9;  // Length of "snapshot-"
+    size_t slot_end = url.find(".tar.zst", slot_start);
+    
+    if (slot_start != std::string::npos && slot_end != std::string::npos) {
+        std::string slot_str = url.substr(slot_start, slot_end - slot_start);
+        try {
+            info.slot = std::stoull(slot_str);
+        } catch (const std::exception& e) {
+            return common::Result<SnapshotInfo>("Failed to parse slot from URL: " + url);
+        }
+    } else {
+        return common::Result<SnapshotInfo>("Invalid snapshot URL format: " + url);
+    }
+    
+    info.valid = true;
+    
+    std::cout << "✅ Advanced discovery found optimal snapshot:" << std::endl;
+    std::cout << "   • Slot: " << info.slot << std::endl;
+    std::cout << "   • Source: " << best_quality.rpc_url << std::endl;
+    std::cout << "   • Quality Score: " << std::fixed << std::setprecision(3) << best_quality.quality_score << std::endl;
+    std::cout << "   • Download Speed: " << std::setprecision(1) << best_quality.download_speed_mbps << " MB/s" << std::endl;
+    std::cout << "   • Latency: " << best_quality.latency_ms << "ms" << std::endl;
+    
+    return common::Result<SnapshotInfo>(info);
+}
+
+common::Result<SnapshotInfo> SnapshotBootstrapManager::discover_latest_snapshot_simple() {
     SnapshotInfo info;
     
     // Determine RPC endpoint to use
@@ -154,6 +208,26 @@ common::Result<SnapshotInfo> SnapshotBootstrapManager::discover_latest_snapshot(
 }
 
 common::Result<bool> SnapshotBootstrapManager::download_snapshot(const SnapshotInfo& info, std::string& local_path_out) {
+    std::cout << "📥 Using advanced multi-threaded snapshot download..." << std::endl;
+    
+    // Use the advanced snapshot finder for optimized download
+    auto progress_cb = [this](const std::string& phase, uint64_t current, uint64_t total) {
+        this->report_progress(phase, current, total);
+    };
+    
+    auto download_result = snapshot_finder_->download_snapshot_from_best_source(snapshot_dir_, local_path_out, progress_cb);
+    if (!download_result.is_ok()) {
+        std::cout << "Advanced download failed, falling back to simple method..." << std::endl;
+        return download_snapshot_simple(info, local_path_out);
+    }
+    
+    std::cout << "✅ Advanced multi-threaded download completed" << std::endl;
+    std::cout << "   Path: " << local_path_out << std::endl;
+    
+    return common::Result<bool>(true);
+}
+
+common::Result<bool> SnapshotBootstrapManager::download_snapshot_simple(const SnapshotInfo& info, std::string& local_path_out) {
     std::string snapshot_url = build_snapshot_url(info);
     std::string local_filename = generate_snapshot_filename(info);
     std::string local_path = snapshot_dir_ + "/" + local_filename;
