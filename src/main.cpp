@@ -1,5 +1,6 @@
 #include "slonana_validator.h"
 #include "network/discovery.h"
+#include "monitoring/resource_monitor.h"
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -10,10 +11,25 @@
 #include <map>
 
 std::atomic<bool> g_shutdown_requested{false};
+std::atomic<bool> g_resource_exhaustion{false};
+std::unique_ptr<slonana::monitoring::ResourceMonitor> g_resource_monitor;
 
 void signal_handler(int signal) {
     if (signal == SIGINT || signal == SIGTERM) {
-        std::cout << "\nShutdown signal received..." << std::endl;
+        std::cout << "\nShutdown signal received (" << signal << ")..." << std::endl;
+        
+        // Check if this might be resource exhaustion
+        if (g_resource_monitor && g_resource_monitor->is_resource_pressure()) {
+            std::cout << "⚠️ Resource pressure detected - this may be resource exhaustion SIGTERM" << std::endl;
+            g_resource_monitor->log_resource_usage("SIGTERM received under resource pressure");
+            g_resource_exhaustion.store(true);
+        } else if (signal == SIGTERM) {
+            std::cout << "ℹ️ SIGTERM received - checking for resource exhaustion..." << std::endl;
+            if (g_resource_monitor) {
+                g_resource_monitor->log_resource_usage("SIGTERM received");
+            }
+        }
+        
         g_shutdown_requested.store(true);
     }
 }
@@ -417,6 +433,34 @@ int main(int argc, char* argv[]) {
     }
     
     try {
+        // Initialize resource monitoring
+        std::cout << "Initializing resource monitoring..." << std::endl;
+        slonana::monitoring::ResourceMonitorConfig resource_config;
+        resource_config.enable_automatic_logging = (config.log_level == "debug");
+        resource_config.memory_headroom_mb = 512; // 512MB minimum headroom
+        
+        g_resource_monitor = std::make_unique<slonana::monitoring::ResourceMonitor>(resource_config);
+        
+        // Register resource exhaustion callback
+        g_resource_monitor->register_exhaustion_callback([](const auto& usage, const std::string& message) {
+            std::cerr << "🚨 RESOURCE EXHAUSTION WARNING: " << message << std::endl;
+            std::cerr << "📊 " << slonana::monitoring::ResourceMonitor::format_resource_usage(usage) << std::endl;
+            g_resource_exhaustion.store(true);
+        });
+        
+        // Check initial resource headroom
+        if (!g_resource_monitor->ensure_memory_headroom()) {
+            std::cerr << "⚠️ WARNING: Insufficient memory headroom detected at startup" << std::endl;
+            std::cerr << "Consider increasing available memory or reducing system load" << std::endl;
+        }
+        
+        // Start resource monitoring
+        if (!g_resource_monitor->start()) {
+            std::cerr << "Failed to start resource monitoring" << std::endl;
+            return 1;
+        }
+        std::cout << "Resource monitoring started" << std::endl;
+        
         // Create and initialize the validator
         std::cout << "Creating validator instance..." << std::endl;
         slonana::SolanaValidator validator(config);
@@ -482,11 +526,22 @@ int main(int argc, char* argv[]) {
             }
             
             // Print stats every 30 seconds
-            auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - last_stats_time);
+            auto stats_duration = std::chrono::duration_cast<std::chrono::seconds>(now - last_stats_time);
             
-            if (duration.count() >= 30) {
+            if (stats_duration.count() >= 30) {
                 print_validator_stats(validator);
                 std::cout << "PoH ticks generated: " << tick_counter << std::endl;
+                
+                // Check for resource exhaustion and handle gracefully
+                if (g_resource_exhaustion.load()) {
+                    std::cerr << "🚨 Resource exhaustion detected! Initiating graceful shutdown..." << std::endl;
+                    g_resource_monitor->log_resource_usage("Graceful shutdown due to resource exhaustion");
+                    g_shutdown_requested.store(true);
+                } else if (g_resource_monitor && g_resource_monitor->is_resource_pressure()) {
+                    std::cout << "⚠️ Resource pressure detected, monitoring closely..." << std::endl;
+                    g_resource_monitor->log_resource_usage("Resource pressure in main loop");
+                }
+                
                 last_stats_time = now;
             }
         }
@@ -494,14 +549,32 @@ int main(int argc, char* argv[]) {
         std::cout << "\nShutting down validator..." << std::endl;
         validator.stop();
         
+        // Stop resource monitoring
+        if (g_resource_monitor) {
+            g_resource_monitor->stop();
+            g_resource_monitor->log_resource_usage("Validator shutdown complete");
+        }
+        
         // Print final stats
         print_validator_stats(validator);
         
-        std::cout << "Validator shutdown complete. Goodbye!" << std::endl;
-        return 0;
+        // Log shutdown reason
+        if (g_resource_exhaustion.load()) {
+            std::cout << "Validator shutdown due to resource exhaustion" << std::endl;
+        } else {
+            std::cout << "Validator shutdown complete. Goodbye!" << std::endl;
+        }
+        
+        return g_resource_exhaustion.load() ? 2 : 0; // Exit code 2 for resource exhaustion
         
     } catch (const std::exception& e) {
         std::cerr << "Fatal error: " << e.what() << std::endl;
+        
+        // Stop resource monitoring on error
+        if (g_resource_monitor) {
+            g_resource_monitor->stop();
+        }
+        
         return 1;
     }
 }
