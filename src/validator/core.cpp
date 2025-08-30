@@ -324,9 +324,7 @@ void ValidatorCore::stop() {
     if (impl_->running_) {
         std::cout << "Stopping validator core" << std::endl;
         
-        // Stop Proof of History
-        consensus::GlobalProofOfHistory::shutdown();
-        
+        // Just stop the running flag - PoH will be shut down by the main validator
         impl_->running_ = false;
     }
 }
