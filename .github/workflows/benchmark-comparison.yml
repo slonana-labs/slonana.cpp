@@ -40,7 +40,6 @@ jobs:
           wget \
           git \
           htop \
-          psutil \
           time \
           jq
 
