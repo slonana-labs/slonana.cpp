@@ -177,30 +177,95 @@ common::Result<bool> SnapshotBootstrapManager::download_snapshot(const SnapshotI
     // In a real implementation, this would download from snapshot mirrors
     std::ofstream mock_file(local_path, std::ios::binary);
     if (mock_file.is_open()) {
-        // Simulate a 2GB snapshot file
-        const size_t snapshot_size = 2ULL * 1024 * 1024 * 1024; // 2GB
-        std::vector<char> buffer(1024 * 1024, 0); // 1MB buffer
-        
-        std::cout << "📁 Simulating snapshot download (2.0 GB)" << std::endl;
-        
         auto now = std::chrono::system_clock::now();
         std::time_t t = std::chrono::system_clock::to_time_t(now);
         
-        for (size_t written = 0; written < snapshot_size; written += buffer.size()) {
-            size_t chunk_size = std::min(buffer.size(), snapshot_size - written);
+        std::cout << "📁 Simulating snapshot download (2.0 GB)" << std::endl;
+        
+        // Create valid mock snapshot metadata 
+        std::vector<uint8_t> mock_metadata;
+        
+        // Write slot
+        uint64_t slot = info.slot;
+        mock_metadata.insert(mock_metadata.end(), 
+                           reinterpret_cast<const uint8_t*>(&slot),
+                           reinterpret_cast<const uint8_t*>(&slot) + sizeof(slot));
+        
+        // Write block hash
+        std::string block_hash = "mockblockhash12345678901234567890";
+        uint32_t hash_len = static_cast<uint32_t>(block_hash.length());
+        mock_metadata.insert(mock_metadata.end(),
+                           reinterpret_cast<const uint8_t*>(&hash_len),
+                           reinterpret_cast<const uint8_t*>(&hash_len) + sizeof(hash_len));
+        mock_metadata.insert(mock_metadata.end(), block_hash.begin(), block_hash.end());
+        
+        // Write timestamp
+        uint64_t timestamp = static_cast<uint64_t>(t);
+        mock_metadata.insert(mock_metadata.end(),
+                           reinterpret_cast<const uint8_t*>(&timestamp),
+                           reinterpret_cast<const uint8_t*>(&timestamp) + sizeof(timestamp));
+        
+        // Write lamports_total 
+        uint64_t lamports_total = 1000000000000ULL; // 1 trillion lamports
+        mock_metadata.insert(mock_metadata.end(),
+                           reinterpret_cast<const uint8_t*>(&lamports_total),
+                           reinterpret_cast<const uint8_t*>(&lamports_total) + sizeof(lamports_total));
+        
+        // Write account_count
+        uint64_t account_count = 1000000ULL; // 1 million accounts
+        mock_metadata.insert(mock_metadata.end(),
+                           reinterpret_cast<const uint8_t*>(&account_count),
+                           reinterpret_cast<const uint8_t*>(&account_count) + sizeof(account_count));
+        
+        // Write version
+        std::string version = "1.18.0";
+        uint32_t version_len = static_cast<uint32_t>(version.length());
+        mock_metadata.insert(mock_metadata.end(),
+                           reinterpret_cast<const uint8_t*>(&version_len),
+                           reinterpret_cast<const uint8_t*>(&version_len) + sizeof(version_len));
+        mock_metadata.insert(mock_metadata.end(), version.begin(), version.end());
+        
+        // Write is_incremental
+        uint8_t is_incremental = 0; // Full snapshot
+        mock_metadata.push_back(is_incremental);
+        
+        // Write base_slot
+        uint64_t base_slot = 0;
+        mock_metadata.insert(mock_metadata.end(),
+                           reinterpret_cast<const uint8_t*>(&base_slot),
+                           reinterpret_cast<const uint8_t*>(&base_slot) + sizeof(base_slot));
+        
+        // Write metadata to file
+        uint32_t metadata_size = static_cast<uint32_t>(mock_metadata.size());
+        mock_file.write(reinterpret_cast<const char*>(&metadata_size), sizeof(metadata_size));
+        mock_file.write(reinterpret_cast<const char*>(mock_metadata.data()), mock_metadata.size());
+        
+        // Write mock account count
+        uint32_t mock_account_count = 1000;
+        mock_file.write(reinterpret_cast<const char*>(&mock_account_count), sizeof(mock_account_count));
+        
+        // Simulate a large snapshot file by writing padding
+        const size_t target_size = 2ULL * 1024 * 1024 * 1024; // 2GB
+        const size_t written_so_far = sizeof(metadata_size) + mock_metadata.size() + sizeof(mock_account_count);
+        const size_t padding_needed = target_size - written_so_far;
+        
+        std::vector<char> buffer(1024 * 1024, 0); // 1MB buffer
+        
+        for (size_t written = 0; written < padding_needed; written += buffer.size()) {
+            size_t chunk_size = std::min(buffer.size(), padding_needed - written);
             mock_file.write(buffer.data(), chunk_size);
             
             // Report progress every 100MB
             if (written % (100 * 1024 * 1024) == 0) { 
-                progress_cb(written, snapshot_size);
+                progress_cb(written_so_far + written, target_size);
             }
         }
         mock_file.close();
         
         // Final progress report
-        progress_cb(snapshot_size, snapshot_size);
+        progress_cb(target_size, target_size);
         
-        std::cout << "✅ Mock snapshot download completed: " << (snapshot_size / (1024*1024*1024)) << " GB" << std::endl;
+        std::cout << "✅ Mock snapshot download completed: " << (target_size / (1024*1024*1024)) << " GB" << std::endl;
         std::cout << "📍 Snapshot details:" << std::endl;
         std::cout << "   • Slot: " << info.slot << std::endl;
         std::cout << "   • Size: 2.0 GB" << std::endl;

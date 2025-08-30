@@ -171,10 +171,46 @@ private:
                             return true;
                         }
                         
+                    case 0x04: // Get public key (different format for derivation path)
+                        {
+                            response.clear();
+                            response.push_back(0x04); // Format indicator
+                            response.push_back(0x20); // Public key length (32 bytes)
+                            
+                            // Generate deterministic public key based on derivation path components
+                            std::hash<std::string> hasher;
+                            std::string seed = "ledger_pubkey_";
+                            if (command.size() > 5) {
+                                for (size_t i = 5; i < command.size(); ++i) {
+                                    seed += std::to_string(command[i]);
+                                }
+                            }
+                            size_t hash_value = hasher(seed);
+                            
+                            for (int i = 0; i < 32; ++i) {
+                                response.push_back(static_cast<uint8_t>((hash_value >> (i % 8)) ^ (i * 19)));
+                            }
+                            
+                            response.push_back(0x90); // Success status high byte
+                            response.push_back(0x00); // Success status low byte
+                            return true;
+                        }
+                        
                     default:
                         response = {0x6D, 0x00}; // INS not supported
                         return false;
                 }
+            }
+            
+            // Handle GET_APP_NAME command used by check_app_status()
+            if (cla == 0xB0 && ins == 0x01) {
+                // Return mock "Solana" app name
+                response = {
+                    0x06, // App name length
+                    'S', 'o', 'l', 'a', 'n', 'a', // App name "Solana"
+                    0x90, 0x00 // Success status
+                };
+                return true;
             }
             
             // Unknown command class
@@ -291,9 +327,14 @@ public:
             }
             #else
             // Mock connection for testing
-            if (device_id.empty() || device_id != "ledger_mock_001") {
+            if (device_id.empty()) {
                 status_ = ConnectionStatus::ERROR;
-                last_error_ = "Device not found: " + device_id;
+                last_error_ = "Device ID is empty";
+                return false;
+            }
+            if (device_id != "ledger_mock_001") {
+                status_ = ConnectionStatus::ERROR;
+                last_error_ = "Device not found: " + device_id + " (expected: ledger_mock_001)";
                 return false;
             }
             #endif
