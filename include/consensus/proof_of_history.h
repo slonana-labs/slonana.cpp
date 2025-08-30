@@ -259,6 +259,7 @@ public:
     static ProofOfHistory& instance();
     static bool initialize(const PohConfig& config = {});
     static void shutdown();
+    static bool is_initialized();
     
     // Convenience methods
     static uint64_t mix_transaction(const Hash& tx_hash);

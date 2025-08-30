@@ -658,15 +658,34 @@ void GlobalProofOfHistory::shutdown() {
     }
 }
 
+bool GlobalProofOfHistory::is_initialized() {
+    std::lock_guard<std::mutex> lock(instance_mutex_);
+    return instance_ != nullptr;
+}
+
 uint64_t GlobalProofOfHistory::mix_transaction(const Hash& tx_hash) {
+    if (!is_initialized()) {
+        return 0; // Return default value when uninitialized
+    }
     return instance().mix_data(tx_hash);
 }
 
 PohEntry GlobalProofOfHistory::get_current_entry() {
+    if (!is_initialized()) {
+        // Return default entry when uninitialized
+        PohEntry default_entry;
+        default_entry.hash = Hash(32, 0); // Empty hash
+        default_entry.sequence_number = 0;
+        default_entry.timestamp = std::chrono::system_clock::now();
+        return default_entry;
+    }
     return instance().get_current_entry();
 }
 
 Slot GlobalProofOfHistory::get_current_slot() {
+    if (!is_initialized()) {
+        return 0; // Return slot 0 when uninitialized
+    }
     return instance().get_current_slot();
 }
 
