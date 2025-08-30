@@ -12,7 +12,7 @@ on:
 jobs:
   benchmark-comparison:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 320
 
     steps:
     - name: Checkout repository
@@ -217,20 +217,6 @@ jobs:
         
         echo "✅ All dependencies validated successfully - ready for benchmarking!"
 
-    - name: Run Agave validator benchmark
-      run: |
-        echo "🔍 Running Agave validator benchmark..."
-        
-        # Ensure PATH includes Solana CLI (which includes Agave binaries)
-        export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
-        
-        ./scripts/benchmark_agave.sh \
-          --ledger test_ledgers/agave \
-          --results benchmark_results/agave \
-          --validator-bin agave-validator \
-          --test-duration 60 \
-          --verbose
-
     - name: Run Slonana validator benchmark
       run: |
         echo "🔍 Running Slonana validator benchmark..."
@@ -255,6 +241,20 @@ jobs:
             --verbose
         fi
 
+    - name: Run Agave validator benchmark
+      run: |
+        echo "🔍 Running Agave validator benchmark..."
+        
+        # Ensure PATH includes Solana CLI (which includes Agave binaries)
+        export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+        
+        ./scripts/benchmark_agave.sh \
+          --ledger test_ledgers/agave \
+          --results benchmark_results/agave \
+          --validator-bin agave-validator \
+          --test-duration 60 \
+          --verbose
+          
     - name: Generate comparison report
       run: |
         echo "📊 Generating benchmark comparison report..."
