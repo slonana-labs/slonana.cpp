@@ -268,7 +268,7 @@ setup_validator() {
         
         # Find and download optimal snapshot using slonana CLI
         log_verbose "Finding optimal snapshot..."
-        if "$VALIDATOR_BIN" snapshot-find --network mainnet --max-latency 100 --json > "$RESULTS_DIR/snapshot_sources.json" 2>/dev/null; then
+        if "$VALIDATOR_BIN" snapshot-find --network devnet --max-latency 100 --json > "$RESULTS_DIR/snapshot_sources.json" 2>/dev/null; then
             log_verbose "Snapshot sources discovered, downloading optimal snapshot..."
             if "$VALIDATOR_BIN" snapshot-download --output-dir "$LEDGER_DIR" --verbose > "$RESULTS_DIR/snapshot_download.log" 2>&1; then
                 log_success "Snapshot downloaded successfully using built-in slonana system"
