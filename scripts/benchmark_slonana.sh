@@ -295,7 +295,40 @@ setup_bootstrap_fallback() {
     # Generate bootstrap validator genesis if we have Solana tools and identity
     if [[ -n "$IDENTITY_FILE" ]] && command -v solana-genesis &> /dev/null; then
         log_verbose "Creating genesis configuration..."
-        solana-genesis --bootstrap-validator "$IDENTITY_FILE" "$LEDGER_DIR" 2>/dev/null
+        
+        # Generate additional required keypairs
+        local vote_keypair="$RESULTS_DIR/vote-keypair.json"
+        local stake_keypair="$RESULTS_DIR/stake-keypair.json" 
+        local faucet_keypair="$RESULTS_DIR/faucet-keypair.json"
+        
+        log_verbose "Generating vote keypair: $vote_keypair"
+        solana-keygen new --no-bip39-passphrase --silent --outfile "$vote_keypair"
+        
+        log_verbose "Generating stake keypair: $stake_keypair"
+        solana-keygen new --no-bip39-passphrase --silent --outfile "$stake_keypair"
+        
+        log_verbose "Generating faucet keypair: $faucet_keypair"
+        solana-keygen new --no-bip39-passphrase --silent --outfile "$faucet_keypair"
+        
+        # Extract pubkeys
+        local identity_pubkey vote_pubkey stake_pubkey
+        identity_pubkey=$(solana-keygen pubkey "$IDENTITY_FILE")
+        vote_pubkey=$(solana-keygen pubkey "$vote_keypair")
+        stake_pubkey=$(solana-keygen pubkey "$stake_keypair")
+        
+        log_verbose "Identity: $identity_pubkey"
+        log_verbose "Vote: $vote_pubkey"
+        log_verbose "Stake: $stake_pubkey"
+        
+        # Create genesis with correct parameters
+        solana-genesis \
+            --ledger "$LEDGER_DIR" \
+            --bootstrap-validator "$identity_pubkey" "$vote_pubkey" "$stake_pubkey" \
+            --cluster-type development \
+            --faucet-pubkey "$faucet_keypair" \
+            --faucet-lamports 1000000000000 \
+            --bootstrap-validator-lamports 500000000000 \
+            --bootstrap-validator-stake-lamports 500000000
     else
         log_verbose "Skipping genesis creation (missing dependencies or running in placeholder mode)"
     fi

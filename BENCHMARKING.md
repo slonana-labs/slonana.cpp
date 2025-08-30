@@ -493,6 +493,59 @@ This manual setup provides complete control over the benchmarking environment an
   --use-placeholder
 ```
 
+### Slonana Benchmark Script Debugging
+
+The slonana benchmark script includes comprehensive genesis creation and validator setup. Here's how to debug common issues:
+
+**Debug genesis creation specifically:**
+```bash
+# Install Solana CLI first
+sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+
+# Test genesis creation with verbose output
+./scripts/benchmark_slonana.sh \
+  --ledger test_ledgers/slonana \
+  --results benchmark_results/slonana \
+  --test-duration 60 \
+  --use-placeholder \
+  --verbose
+```
+
+**Common genesis issues and solutions:**
+
+1. **"Invalid value for '--faucet-pubkey'" error** - Fixed in script, now generates all required keypairs:
+   - validator-keypair.json (identity)
+   - vote-keypair.json 
+   - stake-keypair.json
+   - faucet-keypair.json
+
+2. **Missing keypairs** - Script auto-generates all required keypairs when Solana CLI is available
+
+3. **Ledger directory issues** - Script creates directories automatically with proper permissions
+
+**Verify successful genesis creation:**
+```bash
+# Check generated files
+ls -la benchmark_results/slonana/
+# Should show: validator-keypair.json, vote-keypair.json, stake-keypair.json, faucet-keypair.json
+
+ls -la test_ledgers/slonana/
+# Should show: genesis.bin, genesis.tar.bz2, rocksdb/
+```
+
+**Bootstrap-only testing (fastest debug):**
+```bash
+./scripts/benchmark_slonana.sh \
+  --ledger test_ledgers/slonana \
+  --results benchmark_results/slonana \
+  --bootstrap-only \
+  --use-placeholder \
+  --verbose
+```
+
+This tests the complete setup process without running performance benchmarks, allowing rapid validation of genesis creation and environment setup.
+
 **Custom ports and binary paths:**
 ```bash
 ./scripts/benchmark_agave.sh \
