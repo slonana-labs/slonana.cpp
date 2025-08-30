@@ -6,7 +6,6 @@ on:
   pull_request:
     branches: [ main ]
   schedule:
-    # Run weekly on Sundays at 6 AM UTC
     - cron: '0 6 * * 0'
   workflow_dispatch:
 
@@ -14,13 +13,13 @@ jobs:
   benchmark-comparison:
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-        
+
     - name: Set up dependencies
       run: |
         sudo apt-get update
@@ -52,18 +51,14 @@ jobs:
 
     - name: Setup Solana CLI and Agave validator
       run: |
-        # Install Solana CLI
-        sh -c "$(curl -sSfL https://release.solana.com/stable/install)"
+        curl --proto '=https' --tlsv1.2 -sSfL https://solana-install.solana.workers.dev | bash
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
         echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
-        
-        # Clone and build Agave validator
+
         git clone https://github.com/anza-xyz/agave.git agave-validator
         cd agave-validator
-        git checkout v3.0  # Use latest stable
-        cargo build --release --bin agave-validator --bin agave-ledger-tool
-        
-        # Move binaries to PATH
+        git checkout v3.0
+        cargo build --release --locked --bin agave-validator --bin agave-ledger-tool
         sudo cp target/release/agave-validator /usr/local/bin/agave-validator
         sudo cp target/release/agave-ledger-tool /usr/local/bin/agave-ledger-tool
         cd ..
@@ -74,18 +69,13 @@ jobs:
         cd build
         cmake -DCMAKE_BUILD_TYPE=Release -GNinja ..
         ninja -j$(nproc)
-        
-        # Copy to standard location for benchmarking
         sudo cp slonana_validator /usr/local/bin/slonana-validator || true
         sudo cp slonana_benchmarks /usr/local/bin/slonana-benchmarks || true
 
     - name: Prepare benchmark environment
       run: |
-        # Create benchmark directories
         mkdir -p benchmark_results/{agave,slonana}
         mkdir -p test_ledgers/{agave,slonana}
-        
-        # Generate test configuration
         cat > benchmark_config.json << EOF
         {
           "test_duration_seconds": 300,
@@ -100,162 +90,150 @@ jobs:
       run: |
         cat > run_validator_benchmark.sh << 'EOF'
         #!/bin/bash
-        
+        set -e
+
         VALIDATOR_TYPE=$1
         VALIDATOR_BIN=$2
         LEDGER_DIR=$3
         RESULTS_DIR=$4
-        
-        echo "Starting $VALIDATOR_TYPE validator benchmark..."
-        
-        # Initialize ledger
-        if [ "$VALIDATOR_TYPE" = "agave" ]; then
-          solana-keygen new --no-bip39-passphrase --silent --outfile validator-keypair.json
-          solana-genesis --bootstrap-validator validator-keypair.json $LEDGER_DIR
-        else
-          # Initialize slonana ledger
-          mkdir -p $LEDGER_DIR
-        fi
-        
-        # Start validator in background
-        if [ "$VALIDATOR_TYPE" = "agave" ]; then
-          $VALIDATOR_BIN \
-            --identity validator-keypair.json \
-            --ledger $LEDGER_DIR \
-            --rpc-port 8899 \
-            --gossip-port 8001 \
-            --dynamic-port-range 8002-8020 \
-            --enable-rpc-transaction-history \
-            --log /tmp/${VALIDATOR_TYPE}_validator.log &
-        else
-          $VALIDATOR_BIN \
-            --ledger-path $LEDGER_DIR \
-            --rpc-port 8899 \
-            --log-level info &
-        fi
-        
+
+        echo "Starting \$VALIDATOR_TYPE validator benchmark..."
+
+        solana-keygen new --no-bip39-passphrase --silent --outfile validator-keypair.json
+        solana-genesis --bootstrap-validator validator-keypair.json \$LEDGER_DIR
+
+        \$VALIDATOR_BIN \
+          --identity validator-keypair.json \
+          --ledger \$LEDGER_DIR \
+          --rpc-port 8899 \
+          --gossip-port 8001 \
+          --dynamic-port-range 8002-8020 \
+          --enable-rpc-transaction-history \
+          --log /tmp/\${VALIDATOR_TYPE}_validator.log &
+
         VALIDATOR_PID=$!
-        echo "Validator PID: $VALIDATOR_PID"
-        
-        # Wait for validator to start
+        echo "Validator PID: \$VALIDATOR_PID"
         echo "Waiting for validator to start..."
         sleep 30
-        
-        # Check if validator is responding
+
         timeout=60
-        while [ $timeout -gt 0 ]; do
+        while [ \$timeout -gt 0 ]; do
           if curl -s http://localhost:8899/health > /dev/null 2>&1; then
             echo "Validator is ready!"
             break
           fi
           sleep 5
-          timeout=$((timeout - 5))
+          timeout=\$((timeout - 5))
         done
-        
-        if [ $timeout -eq 0 ]; then
+
+        if [ \$timeout -eq 0 ]; then
           echo "Validator failed to start within timeout"
-          kill $VALIDATOR_PID || true
+          kill \$VALIDATOR_PID || true
           exit 1
         fi
-        
-        # Record initial system metrics
+
         echo "Recording initial system state..."
-        cat > $RESULTS_DIR/system_start.json << SYSJSON
+        cat > \$RESULTS_DIR/system_start.json << SYSJSON
         {
-          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-          "memory_mb": $(free -m | awk '/^Mem:/{print $3}'),
-          "cpu_percent": $(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | sed 's/%us,//'),
-          "validator_pid": $VALIDATOR_PID
+          "timestamp": "\$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+          "memory_mb": \$(free -m | awk '/^Mem:/{print \$3}'),
+          "cpu_percent": \$(top -bn1 | grep "Cpu(s)" | awk '{print \$2}' | sed 's/%us,//'),
+          "validator_pid": \$VALIDATOR_PID
         }
         SYSJSON
-        
-        # Run benchmark tests
-        echo "Running benchmark tests..."
-        
-        # Test 1: Basic RPC response time
+
         echo "Testing RPC response times..."
-        START_TIME=$(date +%s%N)
+        START_TIME=\$(date +%s%N)
         for i in {1..100}; do
           curl -s -X POST http://localhost:8899 \
             -H "Content-Type: application/json" \
             -d '{"jsonrpc":"2.0","id":1,"method":"getVersion"}' \
             > /dev/null
         done
-        END_TIME=$(date +%s%N)
-        RPC_LATENCY_MS=$(( (END_TIME - START_TIME) / 1000000 / 100 ))
-        
-        # Test 2: Transaction throughput simulation
-        echo "Testing transaction throughput..."
-        
-        # Generate test transactions and measure processing
-        TXN_COUNT=0
-        START_TIME=$(date +%s)
-        TEST_DURATION=120  # 2 minutes
-        
-        while [ $(($(date +%s) - START_TIME)) -lt $TEST_DURATION ]; do
-          # Simulate transaction load
-          for i in {1..10}; do
-            curl -s -X POST http://localhost:8899 \
-              -H "Content-Type: application/json" \
-              -d '{"jsonrpc":"2.0","id":'$i',"method":"getBlockHeight"}' \
-              > /dev/null &
-          done
-          wait
-          TXN_COUNT=$((TXN_COUNT + 10))
-          sleep 0.1
+        END_TIME=\$(date +%s%N)
+        RPC_LATENCY_MS=\$(( (END_TIME - START_TIME) / 1000000 / 100 ))
+
+        echo "Testing transaction throughput with real transfers..."
+
+        export PATH="\$HOME/.local/share/solana/install/active_release/bin:\$PATH"
+        solana config set --url http://localhost:8899
+        solana-keygen new --no-bip39-passphrase --silent --outfile sender-keypair.json
+        solana-keygen new --no-bip39-passphrase --silent --outfile recipient-keypair.json
+
+        for i in {1..5}; do
+          solana airdrop 100 --keypair sender-keypair.json > /dev/null 2>&1 && break
+          sleep 2
         done
-        
-        ACTUAL_DURATION=$(($(date +%s) - START_TIME))
-        EFFECTIVE_TPS=$((TXN_COUNT / ACTUAL_DURATION))
-        
-        # Record system metrics during load
-        MEMORY_USAGE_MB=$(ps -p $VALIDATOR_PID -o rss= | awk '{print $1/1024}')
-        CPU_USAGE=$(ps -p $VALIDATOR_PID -o %cpu= | awk '{print $1}')
-        
-        # Create results
-        cat > $RESULTS_DIR/benchmark_results.json << RESULTS
+        BALANCE=\$(solana balance --keypair sender-keypair.json | awk '{print \$1}')
+        if (( \$(echo "\$BALANCE < 10" | bc -l) )); then
+          echo "Airdrop failed, insufficient balance: \$BALANCE SOL"
+          kill \$VALIDATOR_PID || true
+          exit 1
+        fi
+
+        TXN_COUNT=0
+        SUCCESS_COUNT=0
+        START_TIME=\$(date +%s)
+        TEST_DURATION=60
+
+        while [ \$((\$(date +%s) - START_TIME)) -lt \$TEST_DURATION ]; do
+          for i in {1..5}; do
+            if solana transfer \$(solana-keygen pubkey recipient-keypair.json) 0.001 --keypair sender-keypair.json --allow-unfunded-recipient --fee-payer sender-keypair.json --no-wait > /dev/null 2>&1; then
+              SUCCESS_COUNT=\$((SUCCESS_COUNT + 1))
+            fi
+            TXN_COUNT=\$((TXN_COUNT + 1))
+          done
+          sleep 0.2
+        done
+
+        ACTUAL_DURATION=\$((\$(date +%s) - START_TIME))
+        if [[ \$ACTUAL_DURATION -eq 0 ]]; then ACTUAL_DURATION=1; fi
+        EFFECTIVE_TPS=\$((SUCCESS_COUNT / ACTUAL_DURATION))
+
+        MEMORY_USAGE_MB=\$(ps -p \$VALIDATOR_PID -o rss= | awk '{print \$1/1024}')
+        CPU_USAGE=\$(ps -p \$VALIDATOR_PID -o %cpu= | awk '{print \$1}')
+
+        cat > \$RESULTS_DIR/benchmark_results.json << RESULTS
         {
-          "validator_type": "$VALIDATOR_TYPE",
-          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-          "test_duration_seconds": $ACTUAL_DURATION,
-          "rpc_latency_ms": $RPC_LATENCY_MS,
-          "effective_tps": $EFFECTIVE_TPS,
-          "simulated_requests": $TXN_COUNT,
-          "memory_usage_mb": $MEMORY_USAGE_MB,
-          "cpu_usage_percent": $CPU_USAGE,
+          "validator_type": "\$VALIDATOR_TYPE",
+          "timestamp": "\$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+          "test_duration_seconds": \$ACTUAL_DURATION,
+          "rpc_latency_ms": \$RPC_LATENCY_MS,
+          "effective_tps": \$EFFECTIVE_TPS,
+          "submitted_requests": \$TXN_COUNT,
+          "successful_transactions": \$SUCCESS_COUNT,
+          "memory_usage_mb": \$MEMORY_USAGE_MB,
+          "cpu_usage_percent": \$CPU_USAGE,
           "system_info": {
-            "cores": $(nproc),
-            "total_memory_mb": $(free -m | awk '/^Mem:/{print $2}')
+            "cores": \$(nproc),
+            "total_memory_mb": \$(free -m | awk '/^Mem:/{print \$2}')
           }
         }
         RESULTS
-        
-        echo "Benchmark completed for $VALIDATOR_TYPE"
-        echo "RPC Latency: ${RPC_LATENCY_MS}ms"
-        echo "Effective TPS: $EFFECTIVE_TPS"
-        echo "Memory Usage: ${MEMORY_USAGE_MB}MB"
-        echo "CPU Usage: ${CPU_USAGE}%"
-        
-        # Stop validator
-        kill $VALIDATOR_PID || true
+
+        echo "Benchmark completed for \$VALIDATOR_TYPE"
+        echo "RPC Latency: \${RPC_LATENCY_MS}ms"
+        echo "Effective TPS: \$EFFECTIVE_TPS"
+        echo "Successful transactions: \$SUCCESS_COUNT"
+        echo "Memory Usage: \${MEMORY_USAGE_MB}MB"
+        echo "CPU Usage: \${CPU_USAGE}%"
+
+        kill \$VALIDATOR_PID || true
         sleep 5
-        
-        # Force kill if still running
-        kill -9 $VALIDATOR_PID 2>/dev/null || true
-        
+        kill -9 \$VALIDATOR_PID 2>/dev/null || true
+
         EOF
-        
+
         chmod +x run_validator_benchmark.sh
 
     - name: Run Agave validator benchmark
       run: |
         echo "🔍 Running Agave validator benchmark..."
         ./run_validator_benchmark.sh agave agave-validator test_ledgers/agave benchmark_results/agave
-        
+
     - name: Run Slonana validator benchmark
       run: |
         echo "🔍 Running Slonana validator benchmark..."
-        # Check if slonana validator exists
         if [ -f "build/slonana_validator" ]; then
           ./run_validator_benchmark.sh slonana build/slonana_validator test_ledgers/slonana benchmark_results/slonana
         else
@@ -283,28 +261,24 @@ jobs:
     - name: Generate comparison report
       run: |
         echo "📊 Generating benchmark comparison report..."
-        
-        # Read results
+
         AGAVE_RESULTS=$(cat benchmark_results/agave/benchmark_results.json)
         SLONANA_RESULTS=$(cat benchmark_results/slonana/benchmark_results.json)
-        
-        # Extract metrics
+
         AGAVE_TPS=$(echo $AGAVE_RESULTS | jq -r '.effective_tps')
-        AGAVE_LATENCY=$(echo $AGAVE_RESULTS | jq -r '.rpc_latency_ms') 
+        AGAVE_LATENCY=$(echo $AGAVE_RESULTS | jq -r '.rpc_latency_ms')
         AGAVE_MEMORY=$(echo $AGAVE_RESULTS | jq -r '.memory_usage_mb')
         AGAVE_CPU=$(echo $AGAVE_RESULTS | jq -r '.cpu_usage_percent')
-        
+
         SLONANA_TPS=$(echo $SLONANA_RESULTS | jq -r '.effective_tps')
         SLONANA_LATENCY=$(echo $SLONANA_RESULTS | jq -r '.rpc_latency_ms')
         SLONANA_MEMORY=$(echo $SLONANA_RESULTS | jq -r '.memory_usage_mb')
         SLONANA_CPU=$(echo $SLONANA_RESULTS | jq -r '.cpu_usage_percent')
-        
-        # Calculate improvements
+
         TPS_IMPROVEMENT=$(echo "scale=1; ($SLONANA_TPS - $AGAVE_TPS) * 100 / $AGAVE_TPS" | bc -l)
         LATENCY_IMPROVEMENT=$(echo "scale=1; ($AGAVE_LATENCY - $SLONANA_LATENCY) * 100 / $AGAVE_LATENCY" | bc -l)
         MEMORY_IMPROVEMENT=$(echo "scale=1; ($AGAVE_MEMORY - $SLONANA_MEMORY) * 100 / $AGAVE_MEMORY" | bc -l)
-        
-        # Create comparison report
+
         cat > benchmark_comparison.json << EOF
         {
           "benchmark_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
@@ -334,7 +308,7 @@ jobs:
           }
         }
         EOF
-        
+
         echo "📈 Benchmark comparison completed!"
         echo "Agave TPS: $AGAVE_TPS | Slonana TPS: $SLONANA_TPS (${TPS_IMPROVEMENT}% improvement)"
         echo "Agave Latency: ${AGAVE_LATENCY}ms | Slonana Latency: ${SLONANA_LATENCY}ms (${LATENCY_IMPROVEMENT}% improvement)"
@@ -343,32 +317,29 @@ jobs:
     - name: Update README with real benchmark results
       run: |
         echo "📝 Updating README.md with real benchmark results..."
-        
-        # Read comparison data
+
         COMPARISON=$(cat benchmark_comparison.json)
-        
+
         AGAVE_TPS=$(echo $COMPARISON | jq -r '.results.agave.tps')
         AGAVE_LATENCY=$(echo $COMPARISON | jq -r '.results.agave.rpc_latency_ms')
         AGAVE_MEMORY=$(echo $COMPARISON | jq -r '.results.agave.memory_usage_mb')
-        
+
         SLONANA_TPS=$(echo $COMPARISON | jq -r '.results.slonana.tps')
         SLONANA_LATENCY=$(echo $COMPARISON | jq -r '.results.slonana.rpc_latency_ms')
         SLONANA_MEMORY=$(echo $COMPARISON | jq -r '.results.slonana.memory_usage_mb')
-        
+
         TPS_IMPROVEMENT=$(echo $COMPARISON | jq -r '.results.improvements.tps_percent')
         LATENCY_IMPROVEMENT=$(echo $COMPARISON | jq -r '.results.improvements.latency_percent')
         MEMORY_IMPROVEMENT=$(echo $COMPARISON | jq -r '.results.improvements.memory_percent')
-        
+
         BENCHMARK_DATE=$(echo $COMPARISON | jq -r '.benchmark_date' | cut -d'T' -f1)
-        
-        # Update performance table in README
+
         sed -i "/| Metric | Slonana.cpp | Anza\/Agave | Improvement |/,/| \*\*Test Reliability\*\*/ {
           s/| \*\*Transaction Processing\*\* | [^|]* | [^|]* | [^|]* |/| **Transaction Processing** | $SLONANA_TPS TPS | $AGAVE_TPS TPS | **${TPS_IMPROVEMENT}% faster** |/
           s/| \*\*RPC Response Time\*\* | [^|]* | [^|]* | [^|]* |/| **RPC Response Time** | ${SLONANA_LATENCY}ms | ${AGAVE_LATENCY}ms | **${LATENCY_IMPROVEMENT}% faster** |/
           s/| \*\*Memory Usage\*\* | [^|]* | [^|]* | [^|]* |/| **Memory Usage** | ${SLONANA_MEMORY}MB baseline | ${AGAVE_MEMORY}MB | **${MEMORY_IMPROVEMENT}% more efficient** |/
         }" README.md
-        
-        # Add benchmark date note
+
         echo "# Adding benchmark date note to README..."
         TEMP_NOTE="\\n> **Real Benchmark Results** *(Last Updated: $BENCHMARK_DATE)*  \\n> Automated comparison against Anza/Agave validator using GitHub Actions on ubuntu-latest runners.\\n"
         sed -i "/## 📊 Performance/a $TEMP_NOTE" README.md
@@ -376,18 +347,15 @@ jobs:
     - name: Update landing page with real benchmark results  
       run: |
         echo "🌐 Updating docs/index.html with real benchmark results..."
-        
-        # Read comparison data
+
         COMPARISON=$(cat benchmark_comparison.json)
-        
+
         SLONANA_TPS=$(echo $COMPARISON | jq -r '.results.slonana.tps')
         AGAVE_TPS=$(echo $COMPARISON | jq -r '.results.agave.tps')
-        
-        # Update TPS values in the landing page
+
         sed -i "s/65,000 TPS/${SLONANA_TPS} TPS/g" docs/index.html
         sed -i "s/50,000 TPS/${AGAVE_TPS} TPS/g" docs/index.html
-        
-        # Update performance benchmarks section  
+
         BENCH_NOTE="                        <p><em>Real benchmark results from automated GitHub Actions testing against Anza/Agave validator. Last updated: $(date +%Y-%m-%d)</em></p>"
         sed -i "/Performance Benchmarks (Production Verified)/a $BENCH_NOTE" docs/index.html
 
@@ -395,24 +363,21 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        
-        # Add the files
+
         git add README.md docs/index.html benchmark_comparison.json
-        
-        # Check if there are changes to commit
+
         if git diff --staged --quiet; then
           echo "No changes to commit"
         else
           git commit -m "🔀 Update benchmark results with real Agave vs Slonana comparison
-          
+
           - Agave TPS: $(jq -r '.results.agave.tps' benchmark_comparison.json)
           - Slonana TPS: $(jq -r '.results.slonana.tps' benchmark_comparison.json)  
           - Improvement: $(jq -r '.results.improvements.tps_percent' benchmark_comparison.json)%
           - Memory efficiency: $(jq -r '.results.improvements.memory_percent' benchmark_comparison.json)%
           - Latency improvement: $(jq -r '.results.improvements.latency_percent' benchmark_comparison.json)%
-          
+
           Automated benchmark comparison run on $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          
           git push
         fi
 
