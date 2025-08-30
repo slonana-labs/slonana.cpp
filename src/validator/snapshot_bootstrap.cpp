@@ -114,8 +114,7 @@ common::Result<SnapshotInfo> SnapshotBootstrapManager::discover_latest_snapshot(
     // Use the advanced snapshot finder to discover the best snapshot
     auto best_result = snapshot_finder_->find_single_best_snapshot();
     if (!best_result.is_ok()) {
-        std::cout << "Advanced discovery failed, falling back to simple method..." << std::endl;
-        return discover_latest_snapshot_simple();
+        return common::Result<SnapshotInfo>("Advanced snapshot discovery failed: " + best_result.error());
     }
     
     auto best_quality = best_result.value();
@@ -217,8 +216,7 @@ common::Result<bool> SnapshotBootstrapManager::download_snapshot(const SnapshotI
     
     auto download_result = snapshot_finder_->download_snapshot_from_best_source(snapshot_dir_, local_path_out, progress_cb);
     if (!download_result.is_ok()) {
-        std::cout << "Advanced download failed, falling back to simple method..." << std::endl;
-        return download_snapshot_simple(info, local_path_out);
+        return common::Result<bool>("Advanced snapshot download failed: " + download_result.error());
     }
     
     std::cout << "✅ Advanced multi-threaded download completed" << std::endl;
