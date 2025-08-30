@@ -1,0 +1,94 @@
+# Pre-commit configuration for Slonana validator project
+# Install with: pip install pre-commit && pre-commit install
+
+repos:
+  - repo: local
+    hooks:
+      - id: benchmark-scripts-validation
+        name: Benchmark Scripts Validation
+        entry: bash -c '
+          echo "🔍 Validating benchmark scripts...";
+          
+          # Test help functionality for both scripts
+          if [[ -f "scripts/benchmark_agave.sh" ]]; then
+            ./scripts/benchmark_agave.sh --help >/dev/null 2>&1 || {
+              echo "❌ Agave benchmark script help failed";
+              exit 1;
+            };
+            echo "✅ Agave benchmark script help works";
+          fi;
+          
+          if [[ -f "scripts/benchmark_slonana.sh" ]]; then
+            ./scripts/benchmark_slonana.sh --help >/dev/null 2>&1 || {
+              echo "❌ Slonana benchmark script help failed";
+              exit 1;
+            };
+            echo "✅ Slonana benchmark script help works";
+          fi;
+          
+          # Verify scripts are executable
+          if [[ -x "scripts/benchmark_agave.sh" && -x "scripts/benchmark_slonana.sh" ]]; then
+            echo "✅ Both benchmark scripts are executable";
+          else
+            echo "❌ Benchmark scripts are not executable";
+            exit 1;
+          fi;
+          
+          echo "✅ Benchmark script validation complete";
+        '
+        language: system
+        files: ^(scripts/benchmark_(agave|slonana)\.sh|\.github/workflows/benchmark-comparison\.yml)$
+        verbose: true
+
+  - repo: local
+    hooks:
+      - id: workflow-syntax-check
+        name: GitHub Actions Workflow Syntax Check
+        entry: bash -c '
+          if command -v yq >/dev/null 2>&1; then
+            echo "🔍 Checking GitHub Actions workflow syntax...";
+            yq eval ".jobs.benchmark-comparison.steps" .github/workflows/benchmark-comparison.yml >/dev/null || {
+              echo "❌ Invalid YAML syntax in workflow";
+              exit 1;
+            };
+            echo "✅ Workflow syntax is valid";
+          else
+            echo "⚠️  yq not available, skipping workflow syntax check";
+          fi;
+        '
+        language: system
+        files: ^\.github/workflows/benchmark-comparison\.yml$
+        verbose: true
+
+  - repo: local
+    hooks:
+      - id: script-shebang-check
+        name: Script Shebang Check
+        entry: bash -c '
+          for script in scripts/benchmark_agave.sh scripts/benchmark_slonana.sh; do
+            if [[ -f "$script" ]]; then
+              if ! head -1 "$script" | grep -q "^#!/usr/bin/env bash$\|^#!/bin/bash$"; then
+                echo "❌ $script missing proper shebang";
+                exit 1;
+              fi;
+            fi;
+          done;
+          echo "✅ All scripts have proper shebangs";
+        '
+        language: system
+        files: ^scripts/benchmark_(agave|slonana)\.sh$
+        verbose: true
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: check-executables-have-shebangs
+        files: ^scripts/.*\.sh$
+      - id: check-shebang-scripts-are-executable
+        files: ^scripts/.*\.sh$
+      - id: check-yaml
+        files: ^\.github/workflows/.*\.yml$
+      - id: end-of-file-fixer
+        files: ^scripts/.*\.sh$
+      - id: trailing-whitespace
+        files: ^scripts/.*\.sh$

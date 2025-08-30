@@ -6,6 +6,23 @@ Slonana.cpp uses an **automated real benchmark comparison system** that runs act
 
 ## 🤖 Automated Benchmark System
 
+### Standalone Benchmark Scripts
+
+The benchmark system now uses **standalone, versioned bash scripts** for improved maintainability and local testing:
+
+**Core Scripts:**
+- `scripts/benchmark_agave.sh` - Comprehensive Agave validator benchmarking
+- `scripts/benchmark_slonana.sh` - Slonana C++ validator benchmarking  
+- `scripts/example_usage.sh` - Usage examples and demos
+
+**Key Features:**
+- ✅ **Standalone execution** - Scripts work independently of CI/CD
+- ✅ **Comprehensive help** - `--help` flag with detailed usage information
+- ✅ **Error handling** - `set -euo pipefail` for robust execution
+- ✅ **Argument validation** - Required parameter checking with clear error messages
+- ✅ **Local testing** - Run benchmarks on development machines
+- ✅ **Pre-commit validation** - Automatic script testing before commits
+
 ### GitHub Actions Integration
 
 The benchmark system runs automatically:
@@ -13,6 +30,11 @@ The benchmark system runs automatically:
 - **Weekly scheduled runs** (Sundays at 6 AM UTC) 
 - **Manual triggers** via workflow dispatch
 - **Pull request validation** for performance regressions
+
+**Workflow Enhancement:**
+- Uses standalone scripts instead of inline workflow logic
+- Better error handling and logging
+- Improved maintainability and debugging capabilities
 
 ### Real Validator Testing
 
@@ -26,7 +48,77 @@ The benchmark system runs automatically:
 - Configures equivalent validator settings for fair comparison
 - Uses real validator binary, not test mocks
 
-### Benchmark Methodology
+## 🏗️ Benchmark Script Architecture
+
+### Standalone Scripts Design
+
+The benchmark system now uses **standalone, versioned bash scripts** designed for:
+
+**Robustness:**
+- `set -euo pipefail` - Fail fast on errors
+- Comprehensive argument validation
+- Graceful error handling with cleanup
+- Signal handling for process termination
+
+**Usability:**
+- Comprehensive `--help` documentation
+- Verbose logging modes
+- Clear exit codes for automation
+- Both local and CI/CD usage
+
+**Maintainability:**
+- Modular design with clear separation of concerns
+- Pre-commit hooks for script validation
+- Version controlled with the main codebase
+- Extensive inline documentation
+
+### Script Structure
+
+Each benchmark script follows a consistent structure:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Configuration and argument parsing
+parse_arguments() { ... }
+
+# Dependency checking
+check_dependencies() { ... }
+
+# Environment setup
+setup_validator() { ... }
+
+# Validator startup
+start_validator() { ... }
+
+# Benchmark execution
+run_benchmarks() { ... }
+
+# Cleanup handlers
+cleanup_validator() { ... }
+trap cleanup_validator EXIT
+
+# Main execution
+main() { ... }
+```
+
+### Error Handling
+
+Scripts implement comprehensive error handling:
+
+**Exit Codes:**
+- `0` - Success
+- `1` - General error
+- `2` - Invalid arguments
+- `3` - Missing dependencies
+- `4` - Validator startup failure
+- `5` - Benchmark execution failure
+
+**Cleanup:**
+- Automatic process cleanup on exit
+- Temporary file removal
+- Graceful validator shutdown
 
 **Test Environment:**
 - GitHub Actions ubuntu-latest runners
@@ -121,12 +213,91 @@ cat benchmark_comparison.json
 
 **Key Metrics**: Scalability factor, thread efficiency, lock contention
 
-## Running Benchmarks
+## 🚀 Running Benchmarks Locally
 
 ### Quick Start
+
 ```bash
-./run_benchmarks.sh
+# Clone and build the project
+git clone https://github.com/slonana-labs/slonana.cpp.git
+cd slonana.cpp
+cmake -B build && cmake --build build
+
+# Run basic Slonana benchmark
+./scripts/benchmark_slonana.sh \
+  --ledger /tmp/slonana_ledger \
+  --results /tmp/slonana_results
+
+# Run Agave comparison (requires Solana CLI)
+./scripts/benchmark_agave.sh \
+  --ledger /tmp/agave_ledger \
+  --results /tmp/agave_results
+
+# View latest CI results
+./scripts/show_benchmark_results.sh
 ```
+
+### Script Usage Examples
+
+**Basic benchmark with custom duration:**
+```bash
+./scripts/benchmark_slonana.sh \
+  --ledger /tmp/ledger \
+  --results /tmp/results \
+  --test-duration 120 \
+  --verbose
+```
+
+**Bootstrap-only mode (setup testing):**
+```bash
+./scripts/benchmark_slonana.sh \
+  --ledger /tmp/ledger \
+  --results /tmp/results \
+  --bootstrap-only
+```
+
+**Placeholder mode (when binary not available):**
+```bash
+./scripts/benchmark_slonana.sh \
+  --ledger /tmp/ledger \
+  --results /tmp/results \
+  --use-placeholder
+```
+
+**Custom ports and binary paths:**
+```bash
+./scripts/benchmark_agave.sh \
+  --ledger /tmp/ledger \
+  --results /tmp/results \
+  --validator-bin /usr/local/bin/agave-validator \
+  --rpc-port 9899 \
+  --gossip-port 9001
+```
+
+### Pre-commit Testing
+
+The system includes pre-commit hooks for script validation:
+
+```bash
+# Manual pre-commit test
+.git/hooks/pre-commit
+
+# Install pre-commit framework (optional)
+pip install pre-commit
+pre-commit install
+```
+
+### Script Help
+
+All scripts provide comprehensive help:
+
+```bash
+./scripts/benchmark_agave.sh --help
+./scripts/benchmark_slonana.sh --help
+./scripts/example_usage.sh
+```
+
+### Legacy Component Benchmarks
 
 ### Manual Execution
 ```bash

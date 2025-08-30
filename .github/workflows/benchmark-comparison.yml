@@ -86,176 +86,53 @@ jobs:
         }
         EOF
 
-    - name: Create benchmark test script
+    - name: Validate benchmark scripts
       run: |
-        cat > run_validator_benchmark.sh << 'EOF'
-        #!/bin/bash
-        set -e
-
-        VALIDATOR_TYPE=$1
-        VALIDATOR_BIN=$2
-        LEDGER_DIR=$3
-        RESULTS_DIR=$4
-
-        echo "Starting \$VALIDATOR_TYPE validator benchmark..."
-
-        solana-keygen new --no-bip39-passphrase --silent --outfile validator-keypair.json
-        solana-genesis --bootstrap-validator validator-keypair.json \$LEDGER_DIR
-
-        \$VALIDATOR_BIN \
-          --identity validator-keypair.json \
-          --ledger \$LEDGER_DIR \
-          --rpc-port 8899 \
-          --gossip-port 8001 \
-          --dynamic-port-range 8002-8020 \
-          --enable-rpc-transaction-history \
-          --log /tmp/\${VALIDATOR_TYPE}_validator.log &
-
-        VALIDATOR_PID=$!
-        echo "Validator PID: \$VALIDATOR_PID"
-        echo "Waiting for validator to start..."
-        sleep 30
-
-        timeout=60
-        while [ \$timeout -gt 0 ]; do
-          if curl -s http://localhost:8899/health > /dev/null 2>&1; then
-            echo "Validator is ready!"
-            break
-          fi
-          sleep 5
-          timeout=\$((timeout - 5))
-        done
-
-        if [ \$timeout -eq 0 ]; then
-          echo "Validator failed to start within timeout"
-          kill \$VALIDATOR_PID || true
+        echo "🔍 Validating standalone benchmark scripts..."
+        
+        # Test help functionality
+        ./scripts/benchmark_agave.sh --help
+        echo "✅ Agave benchmark script help works"
+        
+        ./scripts/benchmark_slonana.sh --help  
+        echo "✅ Slonana benchmark script help works"
+        
+        # Verify scripts are executable and have proper shebang
+        if [[ -x "./scripts/benchmark_agave.sh" && -x "./scripts/benchmark_slonana.sh" ]]; then
+          echo "✅ Both benchmark scripts are executable"
+        else
+          echo "❌ Benchmark scripts are not executable"
           exit 1
         fi
-
-        echo "Recording initial system state..."
-        cat > \$RESULTS_DIR/system_start.json << SYSJSON
-        {
-          "timestamp": "\$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-          "memory_mb": \$(free -m | awk '/^Mem:/{print \$3}'),
-          "cpu_percent": \$(top -bn1 | grep "Cpu(s)" | awk '{print \$2}' | sed 's/%us,//'),
-          "validator_pid": \$VALIDATOR_PID
-        }
-        SYSJSON
-
-        echo "Testing RPC response times..."
-        START_TIME=\$(date +%s%N)
-        for i in {1..100}; do
-          curl -s -X POST http://localhost:8899 \
-            -H "Content-Type: application/json" \
-            -d '{"jsonrpc":"2.0","id":1,"method":"getVersion"}' \
-            > /dev/null
-        done
-        END_TIME=\$(date +%s%N)
-        RPC_LATENCY_MS=\$(( (END_TIME - START_TIME) / 1000000 / 100 ))
-
-        echo "Testing transaction throughput with real transfers..."
-
-        export PATH="\$HOME/.local/share/solana/install/active_release/bin:\$PATH"
-        solana config set --url http://localhost:8899
-        solana-keygen new --no-bip39-passphrase --silent --outfile sender-keypair.json
-        solana-keygen new --no-bip39-passphrase --silent --outfile recipient-keypair.json
-
-        for i in {1..5}; do
-          solana airdrop 100 --keypair sender-keypair.json > /dev/null 2>&1 && break
-          sleep 2
-        done
-        BALANCE=\$(solana balance --keypair sender-keypair.json | awk '{print \$1}')
-        if (( \$(echo "\$BALANCE < 10" | bc -l) )); then
-          echo "Airdrop failed, insufficient balance: \$BALANCE SOL"
-          kill \$VALIDATOR_PID || true
-          exit 1
-        fi
-
-        TXN_COUNT=0
-        SUCCESS_COUNT=0
-        START_TIME=\$(date +%s)
-        TEST_DURATION=60
-
-        while [ \$((\$(date +%s) - START_TIME)) -lt \$TEST_DURATION ]; do
-          for i in {1..5}; do
-            if solana transfer \$(solana-keygen pubkey recipient-keypair.json) 0.001 --keypair sender-keypair.json --allow-unfunded-recipient --fee-payer sender-keypair.json --no-wait > /dev/null 2>&1; then
-              SUCCESS_COUNT=\$((SUCCESS_COUNT + 1))
-            fi
-            TXN_COUNT=\$((TXN_COUNT + 1))
-          done
-          sleep 0.2
-        done
-
-        ACTUAL_DURATION=\$((\$(date +%s) - START_TIME))
-        if [[ \$ACTUAL_DURATION -eq 0 ]]; then ACTUAL_DURATION=1; fi
-        EFFECTIVE_TPS=\$((SUCCESS_COUNT / ACTUAL_DURATION))
-
-        MEMORY_USAGE_MB=\$(ps -p \$VALIDATOR_PID -o rss= | awk '{print \$1/1024}')
-        CPU_USAGE=\$(ps -p \$VALIDATOR_PID -o %cpu= | awk '{print \$1}')
-
-        cat > \$RESULTS_DIR/benchmark_results.json << RESULTS
-        {
-          "validator_type": "\$VALIDATOR_TYPE",
-          "timestamp": "\$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-          "test_duration_seconds": \$ACTUAL_DURATION,
-          "rpc_latency_ms": \$RPC_LATENCY_MS,
-          "effective_tps": \$EFFECTIVE_TPS,
-          "submitted_requests": \$TXN_COUNT,
-          "successful_transactions": \$SUCCESS_COUNT,
-          "memory_usage_mb": \$MEMORY_USAGE_MB,
-          "cpu_usage_percent": \$CPU_USAGE,
-          "system_info": {
-            "cores": \$(nproc),
-            "total_memory_mb": \$(free -m | awk '/^Mem:/{print \$2}')
-          }
-        }
-        RESULTS
-
-        echo "Benchmark completed for \$VALIDATOR_TYPE"
-        echo "RPC Latency: \${RPC_LATENCY_MS}ms"
-        echo "Effective TPS: \$EFFECTIVE_TPS"
-        echo "Successful transactions: \$SUCCESS_COUNT"
-        echo "Memory Usage: \${MEMORY_USAGE_MB}MB"
-        echo "CPU Usage: \${CPU_USAGE}%"
-
-        kill \$VALIDATOR_PID || true
-        sleep 5
-        kill -9 \$VALIDATOR_PID 2>/dev/null || true
-
-        EOF
-
-        chmod +x run_validator_benchmark.sh
 
     - name: Run Agave validator benchmark
       run: |
         echo "🔍 Running Agave validator benchmark..."
-        ./run_validator_benchmark.sh agave agave-validator test_ledgers/agave benchmark_results/agave
+        ./scripts/benchmark_agave.sh \
+          --ledger test_ledgers/agave \
+          --results benchmark_results/agave \
+          --validator-bin agave-validator \
+          --test-duration 60 \
+          --verbose
 
     - name: Run Slonana validator benchmark
       run: |
         echo "🔍 Running Slonana validator benchmark..."
         if [ -f "build/slonana_validator" ]; then
-          ./run_validator_benchmark.sh slonana build/slonana_validator test_ledgers/slonana benchmark_results/slonana
+          ./scripts/benchmark_slonana.sh \
+            --ledger test_ledgers/slonana \
+            --results benchmark_results/slonana \
+            --validator-bin build/slonana_validator \
+            --test-duration 60 \
+            --verbose
         else
-          echo "Slonana validator not found, creating placeholder results..."
-          mkdir -p benchmark_results/slonana
-          cat > benchmark_results/slonana/benchmark_results.json << EOF
-        {
-          "validator_type": "slonana",
-          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-          "test_duration_seconds": 120,
-          "rpc_latency_ms": 45,
-          "effective_tps": 12500,
-          "simulated_requests": 1500000,
-          "memory_usage_mb": 2100,
-          "cpu_usage_percent": 65.2,
-          "system_info": {
-            "cores": $(nproc),
-            "total_memory_mb": $(free -m | awk '/^Mem:/{print $2}')
-          },
-          "note": "Placeholder results - validator binary not available"
-        }
-        EOF
+          echo "Slonana validator not found, using placeholder mode..."
+          ./scripts/benchmark_slonana.sh \
+            --ledger test_ledgers/slonana \
+            --results benchmark_results/slonana \
+            --test-duration 60 \
+            --use-placeholder \
+            --verbose
         fi
 
     - name: Generate comparison report
