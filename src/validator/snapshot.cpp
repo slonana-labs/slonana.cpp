@@ -587,39 +587,106 @@ SnapshotMetadata SnapshotManager::deserialize_metadata(const std::vector<uint8_t
     SnapshotMetadata metadata;
     size_t offset = 0;
     
+    // Minimum required size validation
+    const size_t min_size = sizeof(metadata.slot) + sizeof(uint32_t) + sizeof(metadata.timestamp) + 
+                           sizeof(metadata.lamports_total) + sizeof(metadata.account_count) + 
+                           sizeof(uint32_t) + sizeof(uint8_t) + sizeof(metadata.base_slot);
+    
+    if (data.size() < min_size) {
+        std::cerr << "Invalid metadata: data too small (" << data.size() << " < " << min_size << ")" << std::endl;
+        // Return default metadata instead of crashing
+        metadata.slot = 0;
+        metadata.block_hash = "invalid";
+        metadata.timestamp = 0;
+        metadata.lamports_total = 0;
+        metadata.account_count = 0;
+        metadata.version = "invalid";
+        metadata.is_incremental = false;
+        metadata.base_slot = 0;
+        return metadata;
+    }
+    
     // Read slot
+    if (offset + sizeof(metadata.slot) > data.size()) {
+        std::cerr << "Invalid metadata: insufficient data for slot" << std::endl;
+        return metadata; // Returns default initialized
+    }
     std::memcpy(&metadata.slot, data.data() + offset, sizeof(metadata.slot));
     offset += sizeof(metadata.slot);
     
     // Read block hash
+    if (offset + sizeof(uint32_t) > data.size()) {
+        std::cerr << "Invalid metadata: insufficient data for hash length" << std::endl;
+        return metadata;
+    }
     uint32_t hash_len;
     std::memcpy(&hash_len, data.data() + offset, sizeof(hash_len));
     offset += sizeof(hash_len);
-    metadata.block_hash = std::string(reinterpret_cast<const char*>(data.data() + offset), hash_len);
+    
+    // Validate hash length
+    if (hash_len > 1024 || offset + hash_len > data.size()) {
+        std::cerr << "Invalid metadata: invalid hash length " << hash_len << std::endl;
+        metadata.block_hash = "invalid";
+    } else {
+        metadata.block_hash = std::string(reinterpret_cast<const char*>(data.data() + offset), hash_len);
+    }
     offset += hash_len;
     
-    // Read other fields
+    // Read other fields with bounds checking
+    if (offset + sizeof(metadata.timestamp) > data.size()) {
+        std::cerr << "Invalid metadata: insufficient data for timestamp" << std::endl;
+        return metadata;
+    }
     std::memcpy(&metadata.timestamp, data.data() + offset, sizeof(metadata.timestamp));
     offset += sizeof(metadata.timestamp);
+    
+    if (offset + sizeof(metadata.lamports_total) > data.size()) {
+        std::cerr << "Invalid metadata: insufficient data for lamports_total" << std::endl;
+        return metadata;
+    }
     std::memcpy(&metadata.lamports_total, data.data() + offset, sizeof(metadata.lamports_total));
     offset += sizeof(metadata.lamports_total);
+    
+    if (offset + sizeof(metadata.account_count) > data.size()) {
+        std::cerr << "Invalid metadata: insufficient data for account_count" << std::endl;
+        return metadata;
+    }
     std::memcpy(&metadata.account_count, data.data() + offset, sizeof(metadata.account_count));
     offset += sizeof(metadata.account_count);
     
     // Read version
+    if (offset + sizeof(uint32_t) > data.size()) {
+        std::cerr << "Invalid metadata: insufficient data for version length" << std::endl;
+        return metadata;
+    }
     uint32_t version_len;
     std::memcpy(&version_len, data.data() + offset, sizeof(version_len));
     offset += sizeof(version_len);
-    metadata.version = std::string(reinterpret_cast<const char*>(data.data() + offset), version_len);
+    
+    // Validate version length  
+    if (version_len > 1024 || offset + version_len > data.size()) {
+        std::cerr << "Invalid metadata: invalid version length " << version_len << std::endl;
+        metadata.version = "invalid";
+    } else {
+        metadata.version = std::string(reinterpret_cast<const char*>(data.data() + offset), version_len);
+    }
     offset += version_len;
     
     // Read is_incremental
+    if (offset + sizeof(uint8_t) > data.size()) {
+        std::cerr << "Invalid metadata: insufficient data for is_incremental" << std::endl;
+        return metadata;
+    }
     uint8_t is_incremental;
     std::memcpy(&is_incremental, data.data() + offset, sizeof(is_incremental));
     metadata.is_incremental = (is_incremental == 1);
     offset += sizeof(is_incremental);
     
     // Read base_slot
+    if (offset + sizeof(metadata.base_slot) > data.size()) {
+        std::cerr << "Invalid metadata: insufficient data for base_slot" << std::endl;
+        return metadata;
+    }
     std::memcpy(&metadata.base_slot, data.data() + offset, sizeof(metadata.base_slot));
     
     return metadata;

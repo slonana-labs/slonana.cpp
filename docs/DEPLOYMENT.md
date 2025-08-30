@@ -1,7 +1,8 @@
-# Slonana.cpp Deployment Guide
+# Slonana.cpp Production Deployment Guide
 
 ## Table of Contents
 - [Quick Start](#quick-start)
+- [Universal Installation](#universal-installation)
 - [Installation Methods](#installation-methods)
 - [Docker Deployment](#docker-deployment)
 - [Production Deployment](#production-deployment)
@@ -20,14 +21,51 @@
 - Storage: 100 GB SSD
 - Network: 100 Mbps bandwidth
 
-**Recommended Requirements:**
-- CPU: 16+ cores, 3.0 GHz
+**Recommended Requirements (Production):**
+- CPU: 16+ cores, 3.0 GHz with AVX2 support
 - RAM: 32+ GB  
-- Storage: 1+ TB NVMe SSD
-- Network: 1 Gbps bandwidth
+- Storage: 2+ TB NVMe SSD (RAID recommended)
+- Network: 1 Gbps bandwidth with low latency
 
 **Supported Operating Systems:**
-- Ubuntu 20.04+ LTS
+- Ubuntu 18.04+ LTS, 20.04+ LTS, 22.04+ LTS
+- Debian 10+, 11+, 12+
+- CentOS 7+, 8+, Rocky Linux 8+, 9+
+- RHEL 7+, 8+, 9+, AlmaLinux 8+, 9+
+- Fedora 35+, 36+, 37+, 38+
+- macOS 11+ (Big Sur), 12+ (Monterey), 13+ (Ventura), 14+ (Sonoma)
+- Windows 10+, Windows 11 (via WSL2)
+- Alpine Linux 3.15+, 3.16+, 3.17+
+- Arch Linux (rolling)
+
+## Universal Installation
+
+### One-Line Installation (Recommended)
+
+The universal installer automatically detects your OS and handles all dependencies:
+
+```bash
+# Install on any supported system
+curl -sSL https://install.slonana.com | bash
+
+# Or download and inspect first
+wget https://raw.githubusercontent.com/slonana-labs/slonana.cpp/main/install.sh
+chmod +x install.sh && ./install.sh
+```
+
+**What the Universal Installer Does:**
+- ✅ Detects your operating system and architecture
+- ✅ Installs build tools and dependencies (cmake, gcc/clang, openssl, etc.)
+- ✅ Downloads pre-built binaries or builds from source as needed
+- ✅ Creates configuration files with sensible defaults
+- ✅ Sets up systemd services (Linux) for automatic startup
+- ✅ Verifies installation with health checks
+- ✅ Provides usage instructions and next steps
+
+**Supported Platforms:**
+- Linux: x86_64, ARM64, ARMv7
+- macOS: Intel x86_64, Apple Silicon ARM64
+- Windows: x86_64 (via WSL2)
 - CentOS/RHEL 8+
 - macOS 12+
 - Windows 10/Server 2019+

@@ -7,6 +7,13 @@
 #include <string>
 #include <functional>
 
+// Forward declaration
+namespace slonana {
+namespace validator {
+class SnapshotFinder;
+}
+}
+
 namespace slonana {
 namespace validator {
 
@@ -55,6 +62,10 @@ public:
     common::Result<bool> verify_snapshot(const std::string& local_path);
     common::Result<bool> apply_snapshot(const std::string& local_path);
     
+    // Fallback methods for simple discovery/download
+    common::Result<SnapshotInfo> discover_latest_snapshot_simple();
+    common::Result<bool> download_snapshot_simple(const SnapshotInfo& info, std::string& local_path_out);
+    
     // Progress tracking
     void set_progress_callback(BootstrapProgressCallback callback) { 
         progress_callback_ = std::move(callback); 
@@ -73,6 +84,7 @@ private:
     const common::ValidatorConfig& config_;
     std::unique_ptr<network::HttpClient> http_client_;
     std::unique_ptr<SnapshotManager> snapshot_manager_;
+    std::unique_ptr<SnapshotFinder> snapshot_finder_;  // Advanced multi-threaded finder
     std::string snapshot_dir_;
     BootstrapProgressCallback progress_callback_;
     

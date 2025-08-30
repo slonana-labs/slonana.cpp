@@ -1,4 +1,5 @@
 #include "validator/snapshot_bootstrap.h"
+#include "validator/snapshot_finder.h"
 #include <iostream>
 #include <filesystem>
 #include <fstream>
@@ -23,13 +24,24 @@ SnapshotBootstrapManager::SnapshotBootstrapManager(const common::ValidatorConfig
     // Initialize snapshot manager
     snapshot_manager_ = std::make_unique<SnapshotManager>(snapshot_dir_);
     
+    // Initialize advanced snapshot finder with configured parameters
+    SnapshotFinderConfig finder_config;
+    finder_config.network = config_.network_id.empty() ? "mainnet-beta" : config_.network_id;
+    finder_config.threads_count = 50;  // Moderate thread count for bootstrap
+    finder_config.max_snapshot_age = 1300;  // Allow snapshots up to 1300 slots old
+    finder_config.min_download_speed = 30.0;  // Lower threshold for bootstrap
+    finder_config.max_latency = 200.0;  // More tolerant latency for bootstrap
+    snapshot_finder_ = std::make_unique<SnapshotFinder>(finder_config);
+    
     // Configure HTTP client
     http_client_->set_timeout(60); // 60 seconds for downloads
     http_client_->set_user_agent("slonana-cpp-bootstrap/1.0");
     
-    std::cout << "Snapshot Bootstrap Manager initialized" << std::endl;
+    std::cout << "📦 Snapshot Bootstrap Manager initialized with advanced finder" << std::endl;
     std::cout << "  Snapshot source: " << config_.snapshot_source << std::endl;
     std::cout << "  Snapshot directory: " << snapshot_dir_ << std::endl;
+    std::cout << "  Network: " << finder_config.network << std::endl;
+    std::cout << "  Multi-threaded discovery: " << finder_config.threads_count << " threads" << std::endl;
     if (!config_.snapshot_mirror.empty()) {
         std::cout << "  Custom mirror: " << config_.snapshot_mirror << std::endl;
     }
@@ -97,6 +109,47 @@ common::Result<bool> SnapshotBootstrapManager::bootstrap_from_snapshot() {
 }
 
 common::Result<SnapshotInfo> SnapshotBootstrapManager::discover_latest_snapshot() {
+    std::cout << "🔍 Using advanced multi-threaded snapshot discovery..." << std::endl;
+    
+    // Use the advanced snapshot finder to discover the best snapshot
+    auto best_result = snapshot_finder_->find_single_best_snapshot();
+    if (!best_result.is_ok()) {
+        return common::Result<SnapshotInfo>("Advanced snapshot discovery failed: " + best_result.error());
+    }
+    
+    auto best_quality = best_result.value();
+    
+    SnapshotInfo info;
+    
+    // Extract slot number from download URL
+    std::string url = best_quality.download_url;
+    size_t slot_start = url.find("snapshot-") + 9;  // Length of "snapshot-"
+    size_t slot_end = url.find(".tar.zst", slot_start);
+    
+    if (slot_start != std::string::npos && slot_end != std::string::npos) {
+        std::string slot_str = url.substr(slot_start, slot_end - slot_start);
+        try {
+            info.slot = std::stoull(slot_str);
+        } catch (const std::exception& e) {
+            return common::Result<SnapshotInfo>("Failed to parse slot from URL: " + url);
+        }
+    } else {
+        return common::Result<SnapshotInfo>("Invalid snapshot URL format: " + url);
+    }
+    
+    info.valid = true;
+    
+    std::cout << "✅ Advanced discovery found optimal snapshot:" << std::endl;
+    std::cout << "   • Slot: " << info.slot << std::endl;
+    std::cout << "   • Source: " << best_quality.rpc_url << std::endl;
+    std::cout << "   • Quality Score: " << std::fixed << std::setprecision(3) << best_quality.quality_score << std::endl;
+    std::cout << "   • Download Speed: " << std::setprecision(1) << best_quality.download_speed_mbps << " MB/s" << std::endl;
+    std::cout << "   • Latency: " << best_quality.latency_ms << "ms" << std::endl;
+    
+    return common::Result<SnapshotInfo>(info);
+}
+
+common::Result<SnapshotInfo> SnapshotBootstrapManager::discover_latest_snapshot_simple() {
     SnapshotInfo info;
     
     // Determine RPC endpoint to use
@@ -154,6 +207,25 @@ common::Result<SnapshotInfo> SnapshotBootstrapManager::discover_latest_snapshot(
 }
 
 common::Result<bool> SnapshotBootstrapManager::download_snapshot(const SnapshotInfo& info, std::string& local_path_out) {
+    std::cout << "📥 Using advanced multi-threaded snapshot download..." << std::endl;
+    
+    // Use the advanced snapshot finder for optimized download
+    auto progress_cb = [this](const std::string& phase, uint64_t current, uint64_t total) {
+        this->report_progress(phase, current, total);
+    };
+    
+    auto download_result = snapshot_finder_->download_snapshot_from_best_source(snapshot_dir_, local_path_out, progress_cb);
+    if (!download_result.is_ok()) {
+        return common::Result<bool>("Advanced snapshot download failed: " + download_result.error());
+    }
+    
+    std::cout << "✅ Advanced multi-threaded download completed" << std::endl;
+    std::cout << "   Path: " << local_path_out << std::endl;
+    
+    return common::Result<bool>(true);
+}
+
+common::Result<bool> SnapshotBootstrapManager::download_snapshot_simple(const SnapshotInfo& info, std::string& local_path_out) {
     std::string snapshot_url = build_snapshot_url(info);
     std::string local_filename = generate_snapshot_filename(info);
     std::string local_path = snapshot_dir_ + "/" + local_filename;
@@ -173,49 +245,44 @@ common::Result<bool> SnapshotBootstrapManager::download_snapshot(const SnapshotI
         }
     };
     
-    // For demo purposes: create a mock snapshot file to simulate successful download
-    // In a real implementation, this would download from snapshot mirrors
-    std::ofstream mock_file(local_path, std::ios::binary);
-    if (mock_file.is_open()) {
-        // Simulate a 2GB snapshot file
-        const size_t snapshot_size = 2ULL * 1024 * 1024 * 1024; // 2GB
-        std::vector<char> buffer(1024 * 1024, 0); // 1MB buffer
-        
-        std::cout << "📁 Simulating snapshot download (2.0 GB)" << std::endl;
-        
-        auto now = std::chrono::system_clock::now();
-        std::time_t t = std::chrono::system_clock::to_time_t(now);
-        
-        for (size_t written = 0; written < snapshot_size; written += buffer.size()) {
-            size_t chunk_size = std::min(buffer.size(), snapshot_size - written);
-            mock_file.write(buffer.data(), chunk_size);
-            
-            // Report progress every 100MB
-            if (written % (100 * 1024 * 1024) == 0) { 
-                progress_cb(written, snapshot_size);
-            }
-        }
-        mock_file.close();
-        
-        // Final progress report
-        progress_cb(snapshot_size, snapshot_size);
-        
-        std::cout << "✅ Mock snapshot download completed: " << (snapshot_size / (1024*1024*1024)) << " GB" << std::endl;
-        std::cout << "📍 Snapshot details:" << std::endl;
-        std::cout << "   • Slot: " << info.slot << std::endl;
-        std::cout << "   • Size: 2.0 GB" << std::endl;
-        std::cout << "   • Date: " << std::put_time(std::gmtime(&t), "%Y-%m-%d %H:%M:%S UTC") << std::endl;
-    } else {
-        return common::Result<bool>("Failed to create mock snapshot file");
-    }
+    // Real snapshot download implementation
+    std::cout << "📁 Downloading real snapshot from: " << snapshot_url << std::endl;
     
-    /*
-    // Original download implementation (disabled for demo)
     bool success = http_client_->download_file(snapshot_url, local_path, progress_cb);
     if (!success) {
-        return common::Result<bool>("Failed to download snapshot file");
+        // If direct download fails, try alternative mirrors
+        auto mirrors = get_devnet_snapshot_mirrors();
+        for (const auto& mirror : mirrors) {
+            std::string alt_url = mirror + "/snapshot-" + std::to_string(info.slot) + ".tar.zst";
+            std::cout << "Retrying download from mirror: " << alt_url << std::endl;
+            
+            success = http_client_->download_file(alt_url, local_path, progress_cb);
+            if (success) {
+                break;
+            }
+        }
+        
+        if (!success) {
+            return common::Result<bool>("Failed to download snapshot from all available sources");
+        }
     }
-    */
+    
+    std::cout << "✅ Real snapshot download completed" << std::endl;
+    
+    // Verify the downloaded file exists and has reasonable size
+    if (!fs::exists(local_path)) {
+        return common::Result<bool>("Downloaded snapshot file does not exist");
+    }
+    
+    auto file_size = fs::file_size(local_path);
+    std::cout << "📍 Snapshot details:" << std::endl;
+    std::cout << "   • Slot: " << info.slot << std::endl;
+    std::cout << "   • Size: " << (file_size / (1024*1024)) << " MB" << std::endl;
+    
+    // Basic sanity check on file size (snapshots should be at least 100MB)
+    if (file_size < 100 * 1024 * 1024) {
+        std::cout << "Warning: Downloaded snapshot seems unusually small (" << file_size << " bytes)" << std::endl;
+    }
     
     // Set the output path
     local_path_out = local_path;

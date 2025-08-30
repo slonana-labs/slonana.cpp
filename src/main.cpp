@@ -1,5 +1,6 @@
 #include "slonana_validator.h"
 #include "network/discovery.h"
+#include "validator/snapshot_finder.h"
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -19,8 +20,15 @@ void signal_handler(int signal) {
 }
 
 void print_usage(const char* program_name) {
-    std::cout << "Usage: " << program_name << " [options]" << std::endl;
-    std::cout << "Options:" << std::endl;
+    std::cout << "Usage: " << program_name << " [command] [options]" << std::endl;
+    std::cout << std::endl;
+    std::cout << "Commands:" << std::endl;
+    std::cout << "  validator                  Start validator node (default)" << std::endl;
+    std::cout << "  snapshot-find              Find optimal snapshots from RPC sources" << std::endl;
+    std::cout << "  snapshot-download          Download snapshot from best source" << std::endl;
+    std::cout << "  test-rpc                   Test RPC endpoint quality" << std::endl;
+    std::cout << std::endl;
+    std::cout << "Validator Options:" << std::endl;
     std::cout << "  --ledger-path PATH         Path to ledger data directory" << std::endl;
     std::cout << "  --identity KEYPAIR         Path to validator identity keypair" << std::endl;
     std::cout << "  --rpc-bind-address ADDR    RPC server bind address (default: 127.0.0.1:8899)" << std::endl;
@@ -38,6 +46,13 @@ void print_usage(const char* program_name) {
     std::cout << "  --no-rpc                   Disable RPC server" << std::endl;
     std::cout << "  --no-gossip                Disable gossip protocol" << std::endl;
     std::cout << "  --help                     Show this help message" << std::endl;
+    std::cout << std::endl;
+    std::cout << "Snapshot Finder Options (use with snapshot-find):" << std::endl;
+    std::cout << "  -t, --threads-count COUNT  Number of concurrent threads (default: 100)" << std::endl;
+    std::cout << "  --max-snapshot-age SLOTS   Maximum snapshot age in slots (default: 1300)" << std::endl;
+    std::cout << "  --min-download-speed MB/s  Minimum download speed (default: 60)" << std::endl;
+    std::cout << "  --max-latency MS           Maximum RPC latency (default: 100)" << std::endl;
+    std::cout << "  --json                     Output in JSON format" << std::endl;
 }
 
 // Simple JSON value extraction for configuration parsing
@@ -393,7 +408,28 @@ int main(int argc, char* argv[]) {
     
     print_banner();
     
-    // Parse command line arguments
+    // Handle snapshot commands first
+    if (argc > 1) {
+        std::string command = argv[1];
+        
+        if (command == "snapshot-find") {
+            return slonana::validator::SnapshotFinderCli::run_find_command(argc - 1, argv + 1);
+        } else if (command == "snapshot-download") {
+            return slonana::validator::SnapshotFinderCli::run_download_command(argc - 1, argv + 1);
+        } else if (command == "test-rpc") {
+            return slonana::validator::SnapshotFinderCli::run_test_rpc_command(argc - 1, argv + 1);
+        } else if (command == "validator") {
+            // Remove "validator" from args and continue
+            argc--; 
+            argv++;
+        } else if (command == "--help" || command == "-h") {
+            print_usage(argv[0]);
+            return 0;
+        }
+        // If not a recognized command, treat as validator with that arg
+    }
+    
+    // Parse command line arguments for validator
     auto config = parse_arguments(argc, argv);
     
     std::cout << "Starting Solana C++ Validator..." << std::endl;

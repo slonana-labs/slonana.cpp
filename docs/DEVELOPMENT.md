@@ -18,7 +18,16 @@
 - CMake 3.16 or higher
 - Git for version control
 
-**Platform-Specific:**
+**Development Philosophy:**
+Slonana.cpp is built with a "zero-mock" philosophy - all code uses real implementations, not mock objects or test stubs. This ensures that development and testing environments closely mirror production behavior.
+
+**Platform-Specific Setup:**
+
+**Universal Installation (Recommended):**
+```bash
+# Automatically installs all development dependencies
+curl -sSL https://install.slonana.com | bash
+```
 
 **Ubuntu/Debian:**
 ```bash

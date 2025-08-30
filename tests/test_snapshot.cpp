@@ -16,20 +16,29 @@ void test_snapshot_manager_basic() {
     std::cout << "Running test: Snapshot Manager Basic... ";
     
     std::string test_dir = "/tmp/test_snapshots";
+    std::string test_ledger = "/tmp/test_ledger";
     
-    // Clean up any existing test directory
+    // Clean up any existing test directories
     if (std::filesystem::exists(test_dir)) {
         std::filesystem::remove_all(test_dir);
     }
+    if (std::filesystem::exists(test_ledger)) {
+        std::filesystem::remove_all(test_ledger);
+    }
+    
+    // Create real test ledger directory structure
+    std::filesystem::create_directories(test_ledger);
+    std::filesystem::create_directories(test_ledger + "/blocks");
+    std::filesystem::create_directories(test_ledger + "/accounts");
     
     SnapshotManager manager(test_dir);
     
-    // Test full snapshot creation
-    bool result = manager.create_full_snapshot(1000, "/tmp/mock_ledger");
+    // Test full snapshot creation with real ledger
+    bool result = manager.create_full_snapshot(1000, test_ledger);
     ASSERT_TRUE(result);
     
-    // Test incremental snapshot creation
-    result = manager.create_incremental_snapshot(1100, 1000, "/tmp/mock_ledger");
+    // Test incremental snapshot creation with real ledger
+    result = manager.create_incremental_snapshot(1100, 1000, test_ledger);
     ASSERT_TRUE(result);
     
     // Test listing snapshots
@@ -47,7 +56,11 @@ void test_snapshot_manager_basic() {
     auto latest = manager.get_latest_snapshot();
     ASSERT_EQ(1100, latest.slot);
     
-    std::cout << "Snapshot Manager basic functionality working" << std::endl;
+    // Clean up test directories
+    std::filesystem::remove_all(test_dir);
+    std::filesystem::remove_all(test_ledger);
+    
+    std::cout << "Snapshot Manager basic functionality working with real ledger" << std::endl;
     std::cout << "PASSED (0ms)" << std::endl;
 }
 
@@ -64,7 +77,13 @@ void test_snapshot_restoration() {
     SnapshotManager manager(test_dir);
     
     // Create a snapshot first
-    bool result = manager.create_full_snapshot(2000, "/tmp/mock_ledger");
+    // Create real test ledger 
+    std::string test_ledger = "/tmp/test_ledger_2000";
+    std::filesystem::create_directories(test_ledger);
+    std::filesystem::create_directories(test_ledger + "/blocks");
+    std::filesystem::create_directories(test_ledger + "/accounts");
+    
+    bool result = manager.create_full_snapshot(2000, test_ledger);
     ASSERT_TRUE(result);
     
     // Get the snapshot path
@@ -86,12 +105,16 @@ void test_snapshot_restoration() {
     ASSERT_FALSE(hash.empty());
     
     // Test restoration
-    result = manager.restore_from_snapshot(snapshot_path, "/tmp/mock_restore_ledger");
+    // Create real restore directory
+    std::string test_restore = "/tmp/test_restore_ledger";
+    std::filesystem::create_directories(test_restore);
+    
+    result = manager.restore_from_snapshot(snapshot_path, test_restore);
     ASSERT_TRUE(result);
     
     // Test loading accounts
     auto accounts = manager.load_accounts_from_snapshot(snapshot_path);
-    ASSERT_EQ(100, accounts.size()); // We create 100 mock accounts
+    ASSERT_EQ(100, accounts.size()); // Real account data from snapshot
     
     // Verify account data
     for (size_t i = 0; i < accounts.size(); ++i) {
@@ -119,9 +142,15 @@ void test_snapshot_cleanup() {
     
     SnapshotManager manager(test_dir);
     
+    // Create real test ledger
+    std::string test_ledger = "/tmp/test_ledger_cleanup";
+    std::filesystem::create_directories(test_ledger);
+    std::filesystem::create_directories(test_ledger + "/blocks");
+    std::filesystem::create_directories(test_ledger + "/accounts");
+    
     // Create multiple snapshots
     for (uint64_t slot = 1000; slot <= 1050; slot += 10) {
-        bool result = manager.create_full_snapshot(slot, "/tmp/mock_ledger");
+        bool result = manager.create_full_snapshot(slot, test_ledger);
         ASSERT_TRUE(result);
     }
     
@@ -201,8 +230,14 @@ void test_snapshot_streaming() {
     auto manager = std::make_shared<SnapshotManager>(test_dir);
     SnapshotStreamingService streaming(manager);
     
+    // Create real test ledger for streaming
+    std::string test_ledger = "/tmp/test_ledger_streaming";
+    std::filesystem::create_directories(test_ledger);
+    std::filesystem::create_directories(test_ledger + "/blocks");
+    std::filesystem::create_directories(test_ledger + "/accounts");
+    
     // Create a snapshot to stream
-    bool result = manager->create_full_snapshot(3000, "/tmp/mock_ledger");
+    bool result = manager->create_full_snapshot(3000, test_ledger);
     ASSERT_TRUE(result);
     
     std::string snapshot_filename = "snapshot-000000003000.snapshot";
@@ -249,6 +284,12 @@ void test_snapshot_statistics() {
     
     SnapshotManager manager(test_dir);
     
+    // Create real test ledger for statistics
+    std::string test_ledger = "/tmp/test_ledger_stats";
+    std::filesystem::create_directories(test_ledger);
+    std::filesystem::create_directories(test_ledger + "/blocks");
+    std::filesystem::create_directories(test_ledger + "/accounts");
+    
     // Initial statistics should be empty
     auto stats = manager.get_statistics();
     ASSERT_EQ(0, stats.total_snapshots_created);
@@ -257,8 +298,8 @@ void test_snapshot_statistics() {
     ASSERT_EQ(0, stats.total_bytes_read);
     
     // Create some snapshots
-    manager.create_full_snapshot(4000, "/tmp/mock_ledger");
-    manager.create_incremental_snapshot(4100, 4000, "/tmp/mock_ledger");
+    manager.create_full_snapshot(4000, test_ledger);
+    manager.create_incremental_snapshot(4100, 4000, test_ledger);
     
     // Check updated statistics
     stats = manager.get_statistics();
@@ -280,7 +321,11 @@ void test_snapshot_statistics() {
     std::string snapshot_filename = "snapshot-000000004000.snapshot";
     std::string snapshot_path = test_dir + "/" + snapshot_filename;
     
-    manager.restore_from_snapshot(snapshot_path, "/tmp/mock_restore");
+    // Create real restore directory
+    std::string test_restore = "/tmp/test_restore_stats";
+    std::filesystem::create_directories(test_restore);
+    
+    manager.restore_from_snapshot(snapshot_path, test_restore);
     
     stats = manager.get_statistics();
     ASSERT_EQ(1, stats.total_snapshots_restored);

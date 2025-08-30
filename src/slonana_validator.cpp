@@ -30,14 +30,17 @@ SolanaValidator::SolanaValidator(const common::ValidatorConfig& config)
         auto identity_result = load_validator_identity(config_.identity_keypair_path);
         if (identity_result.is_ok()) {
             validator_identity_ = identity_result.value();
+            impl_->validator_identity_ = identity_result.value();
             std::cout << "Loaded validator identity from " << config_.identity_keypair_path << std::endl;
         } else {
             std::cout << "Failed to load identity, generating new one" << std::endl;
             validator_identity_ = generate_validator_identity();
+            impl_->validator_identity_ = validator_identity_;
         }
     } else {
         // Generate new identity
         validator_identity_ = generate_validator_identity();
+        impl_->validator_identity_ = validator_identity_;
         std::cout << "Generated new validator identity" << std::endl;
     }
     

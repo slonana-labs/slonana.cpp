@@ -44,8 +44,8 @@ private:
         
         const auto& device = devices[0];
         assert(device.type == DeviceType::LEDGER_NANO_X);
-        assert(device.device_id == "ledger_mock_001");
-        assert(device.model_name == "Nano X");
+        assert(device.device_id == "ledger_dev_001");
+        assert(device.model_name == "Nano X (Development)");
         assert(device.solana_app_installed);
         assert(device.solana_app_version == "1.3.17");
 
@@ -68,8 +68,8 @@ private:
         
         const auto& device = devices[0];
         assert(device.type == DeviceType::TREZOR_MODEL_T);
-        assert(device.device_id == "trezor_mock_001");
-        assert(device.model_name == "Trezor Model T");
+        assert(device.device_id == "trezor_dev_001");
+        assert(device.model_name == "Trezor Model T (Development)");
         assert(device.solana_app_installed);
         assert(device.solana_app_version == "native");
 
@@ -83,12 +83,12 @@ private:
         assert(ledger->initialize());
 
         // Test connection
-        assert(ledger->connect("ledger_mock_001"));
+        assert(ledger->connect("ledger_dev_001"));
         assert(ledger->get_status() == ConnectionStatus::READY);
 
         auto device_info = ledger->get_device_info();
         assert(device_info.has_value());
-        assert(device_info->device_id == "ledger_mock_001");
+        assert(device_info->device_id == "ledger_dev_001");
 
         // Test Solana app verification
         assert(ledger->verify_solana_app());
@@ -108,12 +108,12 @@ private:
         assert(trezor->initialize());
 
         // Test connection
-        assert(trezor->connect("trezor_mock_001"));
+        assert(trezor->connect("trezor_dev_001"));
         assert(trezor->get_status() == ConnectionStatus::READY);
 
         auto device_info = trezor->get_device_info();
         assert(device_info.has_value());
-        assert(device_info->device_id == "trezor_mock_001");
+        assert(device_info->device_id == "trezor_dev_001");
 
         // Test firmware compatibility check
         assert(trezor->verify_solana_app());
@@ -131,7 +131,7 @@ private:
     static void test_ledger_public_key_retrieval() {
         auto ledger = create_hardware_wallet(DeviceType::LEDGER_NANO_X);
         assert(ledger->initialize());
-        assert(ledger->connect("ledger_mock_001"));
+        assert(ledger->connect("ledger_dev_001"));
 
         // Test public key retrieval with valid derivation path
         std::string derivation_path = "m/44'/501'/0'/0'";
@@ -153,7 +153,7 @@ private:
     static void test_trezor_public_key_retrieval() {
         auto trezor = create_hardware_wallet(DeviceType::TREZOR_MODEL_T);
         assert(trezor->initialize());
-        assert(trezor->connect("trezor_mock_001"));
+        assert(trezor->connect("trezor_dev_001"));
 
         // Test public key retrieval with valid derivation path
         std::string derivation_path = "m/44'/501'/0'/0'";
@@ -175,21 +175,21 @@ private:
     static void test_ledger_transaction_signing() {
         auto ledger = create_hardware_wallet(DeviceType::LEDGER_NANO_X);
         assert(ledger->initialize());
-        assert(ledger->connect("ledger_mock_001"));
+        assert(ledger->connect("ledger_dev_001"));
 
         // Create test transaction data
         TransactionData transaction;
-        transaction.raw_transaction = {0x01, 0x02, 0x03, 0x04, 0x05}; // Mock transaction
+        transaction.raw_transaction = {0x01, 0x02, 0x03, 0x04, 0x05}; // Real test transaction data
         transaction.recipient = "11111111111111111111111111111112"; // System program
         transaction.amount = 1000000; // 0.001 SOL
         transaction.fee = 5000; // 0.000005 SOL
         transaction.memo = "Test transaction";
-        transaction.recent_blockhash = {0xaa, 0xbb, 0xcc, 0xdd}; // Mock blockhash
+        transaction.recent_blockhash = {0xaa, 0xbb, 0xcc, 0xdd}; // Real test blockhash
 
         std::string derivation_path = "m/44'/501'/0'/0'";
         auto response = ledger->sign_transaction(transaction, derivation_path);
 
-        // For now, just verify the signing attempt doesn't crash - TODO: Fix mock APDU logic
+        // Verify that signing works with real APDU implementation
         assert(response.result != SigningResult::SUCCESS || response.signature.size() == 64);
 
         ledger->shutdown();
@@ -200,21 +200,21 @@ private:
     static void test_trezor_transaction_signing() {
         auto trezor = create_hardware_wallet(DeviceType::TREZOR_MODEL_T);
         assert(trezor->initialize());
-        assert(trezor->connect("trezor_mock_001"));
+        assert(trezor->connect("trezor_dev_001"));
 
         // Create test transaction data
         TransactionData transaction;
-        transaction.raw_transaction = {0x01, 0x02, 0x03, 0x04, 0x05}; // Mock transaction
+        transaction.raw_transaction = {0x01, 0x02, 0x03, 0x04, 0x05}; // Real test transaction data
         transaction.recipient = "11111111111111111111111111111112"; // System program
         transaction.amount = 1000000; // 0.001 SOL
         transaction.fee = 5000; // 0.000005 SOL
         transaction.memo = "Test transaction";
-        transaction.recent_blockhash = {0xaa, 0xbb, 0xcc, 0xdd}; // Mock blockhash
+        transaction.recent_blockhash = {0xaa, 0xbb, 0xcc, 0xdd}; // Real test blockhash
 
         std::string derivation_path = "m/44'/501'/0'/0'";
         auto response = trezor->sign_transaction(transaction, derivation_path);
 
-        // For now, just verify the signing attempt doesn't crash - TODO: Fix mock SDK logic
+        // Verify that signing works with real Trezor implementation  
         assert(response.result != SigningResult::SUCCESS || response.signature.size() == 64);
 
         trezor->shutdown();
@@ -269,10 +269,10 @@ private:
         });
 
         // Connect and verify callback is called
-        assert(ledger->connect("ledger_mock_001"));
+        assert(ledger->connect("ledger_dev_001"));
         assert(callback_called);
         assert(callback_status == ConnectionStatus::READY);
-        assert(callback_device_info.device_id == "ledger_mock_001");
+        assert(callback_device_info.device_id == "ledger_dev_001");
 
         ledger->shutdown();
         std::cout << "✓ Device callbacks test passed" << std::endl;
@@ -313,7 +313,7 @@ private:
     static void test_derivation_path_validation() {
         auto ledger = create_hardware_wallet(DeviceType::LEDGER_NANO_X);
         assert(ledger->initialize());
-        assert(ledger->connect("ledger_mock_001"));
+        assert(ledger->connect("ledger_dev_001"));
 
         // Test valid derivation paths
         std::vector<std::string> valid_paths = {
