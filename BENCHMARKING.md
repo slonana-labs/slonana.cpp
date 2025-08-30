@@ -746,6 +746,186 @@ solana airdrop 1 --keypair ~/.config/solana/id.json
 ./slonana_benchmarks --single-thread
 ```
 
+## 🐛 Local Debugging Guide
+
+### Debugging Benchmark Script Execution
+
+When running benchmark scripts locally, use this systematic debugging approach:
+
+#### Step 1: Basic Script Validation
+```bash
+# Check script syntax and help
+./scripts/benchmark_agave.sh --help
+
+# Verify script permissions
+ls -la ./scripts/benchmark_agave.sh
+chmod +x ./scripts/benchmark_agave.sh  # If needed
+```
+
+#### Step 2: Dependency Debugging
+```bash
+# Run dependency check first
+./scripts/benchmark_agave.sh --ledger test_ledgers/agave --results benchmark_results/agave --bootstrap-only --verbose
+
+# Check PATH configuration
+echo $PATH
+which agave-validator
+which solana
+which solana-keygen
+
+# Common PATH fix for Solana CLI
+export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+```
+
+#### Step 3: Verbose Mode Debugging
+```bash
+# Enable maximum verbosity for troubleshooting
+./scripts/benchmark_agave.sh \
+    --ledger test_ledgers/agave \
+    --results benchmark_results/agave \
+    --validator-bin agave-validator \
+    --test-duration 60 \
+    --verbose \
+    --bootstrap-only  # Test setup without full benchmark
+```
+
+#### Step 4: Component Testing
+```bash
+# Test individual components
+# 1. Directory creation
+mkdir -p test_ledgers/agave benchmark_results/agave
+
+# 2. Keypair generation
+solana-keygen new --no-bip39-passphrase --silent --outfile benchmark_results/agave/test-keypair.json
+
+# 3. Validator binary test
+agave-validator --help
+
+# 4. Genesis creation test
+solana-genesis --bootstrap-validator benchmark_results/agave/test-keypair.json test_ledgers/agave
+```
+
+### Common Issues and Solutions
+
+#### "Binary not found in PATH" Errors
+```bash
+# Problem: agave-validator not found
+# Solution 1: Install Agave binaries
+cargo install agave-validator agave-ledger-tool --locked
+
+# Solution 2: Use bundled Solana CLI binaries
+curl --proto '=https' --tlsv1.2 -sSfL https://solana-install.solana.workers.dev | bash
+export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+
+# Verify installation
+which agave-validator || echo "❌ agave-validator not found"
+which solana-keygen || echo "❌ solana-keygen not found"
+```
+
+#### Validator Startup Failures
+```bash
+# Check port availability
+netstat -tulpn | grep :8899
+netstat -tulpn | grep :8001
+
+# Use different ports if needed
+./scripts/benchmark_agave.sh \
+    --ledger test_ledgers/agave \
+    --results benchmark_results/agave \
+    --rpc-port 9899 \
+    --gossip-port 9001 \
+    --verbose
+```
+
+#### Permission and Directory Issues
+```bash
+# Check directory permissions
+ls -la test_ledgers/
+ls -la benchmark_results/
+
+# Clean and recreate if needed
+rm -rf test_ledgers/agave benchmark_results/agave
+mkdir -p test_ledgers/agave benchmark_results/agave
+
+# Verify write access
+touch test_ledgers/agave/test.txt
+touch benchmark_results/agave/test.txt
+rm test_ledgers/agave/test.txt benchmark_results/agave/test.txt
+```
+
+### Advanced Debugging Techniques
+
+#### Script Error Tracking
+```bash
+# Run with bash debug mode
+bash -x ./scripts/benchmark_agave.sh \
+    --ledger test_ledgers/agave \
+    --results benchmark_results/agave \
+    --verbose
+
+# Monitor system logs during execution
+sudo tail -f /var/log/syslog &
+./scripts/benchmark_agave.sh [args...]
+```
+
+#### Process Monitoring
+```bash
+# Monitor validator process
+ps aux | grep agave-validator
+top -p $(pgrep agave-validator)
+
+# Check resource usage
+watch -n 1 'ps -p $(pgrep agave-validator) -o pid,%cpu,%mem,cmd'
+```
+
+#### Log Analysis
+```bash
+# Check validator logs
+tail -f benchmark_results/agave/agave_validator.log
+
+# Check for common error patterns
+grep -i error benchmark_results/agave/agave_validator.log
+grep -i "failed\|timeout\|connection" benchmark_results/agave/agave_validator.log
+```
+
+### Script Exit Codes Reference
+
+The benchmark scripts use specific exit codes for debugging:
+
+- **0**: Success
+- **1**: General error
+- **2**: Invalid arguments
+- **3**: Missing dependencies  
+- **4**: Validator startup failure
+- **5**: Benchmark execution failure
+
+```bash
+# Check exit code after script failure
+echo "Exit code: $?"
+
+# Example debugging based on exit code
+if [ $? -eq 3 ]; then
+    echo "Dependency issue - check PATH and installations"
+elif [ $? -eq 4 ]; then
+    echo "Validator startup failed - check ports and permissions"
+fi
+```
+
+### Network and Connectivity Issues
+```bash
+# Test localhost connectivity
+curl -s http://localhost:8899/health
+
+# Check RPC endpoint
+curl -X POST http://localhost:8899 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getVersion"}'
+
+# Firewall check (if needed)
+sudo ufw status
+sudo iptables -L INPUT | grep 8899
+```
+
 ## Contributing
 
 ### Performance Improvements
