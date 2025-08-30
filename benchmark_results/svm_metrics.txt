@@ -1,6 +1,0 @@
-SVM Performance Metrics:
-========================
-Parallel execution time: 452 microseconds
-Basic engine time: 547 microseconds
-Enhanced engine time: 1057 microseconds
-Tests passed: 100%
