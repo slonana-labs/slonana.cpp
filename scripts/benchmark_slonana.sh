@@ -344,16 +344,12 @@ start_validator() {
 
     log_info "Starting Slonana validator..."
 
-    # Dynamic port range
-    local port_range=$((GOSSIP_PORT + 1))-$((GOSSIP_PORT + 20))
-
     log_verbose "Validator configuration:"
     log_verbose "  Binary: $VALIDATOR_BIN"
     log_verbose "  Identity: ${IDENTITY_FILE:-N/A}"
-    log_verbose "  Ledger: $LEDGER_DIR"
-    log_verbose "  RPC Port: $RPC_PORT"
-    log_verbose "  Gossip Port: $GOSSIP_PORT"
-    log_verbose "  Port Range: $port_range"
+    log_verbose "  Ledger Path: $LEDGER_DIR"
+    log_verbose "  RPC Bind: 127.0.0.1:$RPC_PORT"
+    log_verbose "  Gossip Bind: 127.0.0.1:$GOSSIP_PORT"
 
     # Prepare validator arguments
     local validator_args=()
@@ -363,12 +359,9 @@ start_validator() {
     fi
     
     validator_args+=(
-        --ledger "$LEDGER_DIR"
-        --rpc-port "$RPC_PORT"
-        --gossip-port "$GOSSIP_PORT"
-        --dynamic-port-range "$port_range"
-        --enable-rpc-transaction-history
-        --log "$RESULTS_DIR/slonana_validator.log"
+        --ledger-path "$LEDGER_DIR"
+        --rpc-bind-address "127.0.0.1:$RPC_PORT"
+        --gossip-bind-address "127.0.0.1:$GOSSIP_PORT"
     )
 
     # Start validator in background

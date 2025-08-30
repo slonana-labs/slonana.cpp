@@ -512,6 +512,13 @@ export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
   --verbose
 ```
 
+**Fixed: Validator Argument Format**
+The Slonana validator arguments have been updated to match the expected format:
+- `--ledger` → `--ledger-path`  
+- `--rpc-port PORT` → `--rpc-bind-address 127.0.0.1:PORT`
+- `--gossip-port PORT` → `--gossip-bind-address 127.0.0.1:PORT`
+- Removed unsupported arguments: `--dynamic-port-range`, `--enable-rpc-transaction-history`, `--log`
+
 **Common genesis issues and solutions:**
 
 1. **"Invalid value for '--faucet-pubkey'" error** - Fixed in script, now generates all required keypairs:
