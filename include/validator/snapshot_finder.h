@@ -137,6 +137,9 @@ private:
         size_t start_index,
         size_t end_index);
     
+    common::Result<std::vector<std::string>> discover_cluster_nodes(const std::vector<std::string>& seed_endpoints);
+    std::vector<std::string> extract_rpc_endpoints_from_cluster_response(const std::string& response);
+    
     common::Result<uint64_t> get_current_slot(const std::string& rpc_url);
     common::Result<uint64_t> get_snapshot_slot(const std::string& rpc_url);
     std::string build_snapshot_download_url(const std::string& rpc_url, uint64_t slot);

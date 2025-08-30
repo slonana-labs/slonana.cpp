@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <cstring>
 #include <filesystem>
+#include <set>
 
 namespace slonana {
 namespace validator {
@@ -98,15 +99,34 @@ std::vector<std::string> SnapshotFinder::get_snapshot_mirror_urls(const std::str
 common::Result<std::vector<RpcNodeInfo>> SnapshotFinder::discover_rpc_nodes() {
     std::cout << "🔍 Starting RPC node discovery with " << config_.threads_count << " threads..." << std::endl;
     
-    // Get list of RPC endpoints to test
-    auto rpc_endpoints = get_default_rpc_endpoints(config_.network);
+    // Get seed RPC endpoints
+    auto seed_endpoints = get_default_rpc_endpoints(config_.network);
     
-    // Add custom snapshot mirrors as RPC endpoints for testing
+    // Add custom snapshot mirrors as seed endpoints
     auto mirrors = get_snapshot_mirror_urls(config_.network);
-    rpc_endpoints.insert(rpc_endpoints.end(), mirrors.begin(), mirrors.end());
+    seed_endpoints.insert(seed_endpoints.end(), mirrors.begin(), mirrors.end());
+    
+    if (seed_endpoints.empty()) {
+        return common::Result<std::vector<RpcNodeInfo>>("No seed RPC endpoints found for network: " + config_.network);
+    }
+    
+    std::cout << "   • Using " << seed_endpoints.size() << " seed endpoints for cluster discovery" << std::endl;
+    
+    // Discover cluster nodes from seed endpoints
+    auto cluster_result = discover_cluster_nodes(seed_endpoints);
+    std::vector<std::string> rpc_endpoints;
+    
+    if (cluster_result.is_ok()) {
+        rpc_endpoints = cluster_result.value();
+        std::cout << "   • Discovered " << rpc_endpoints.size() << " RPC endpoints from cluster" << std::endl;
+    } else {
+        std::cout << "   • Cluster discovery failed: " << cluster_result.error() << std::endl;
+        std::cout << "   • Falling back to seed endpoints only" << std::endl;
+        rpc_endpoints = seed_endpoints;
+    }
     
     if (rpc_endpoints.empty()) {
-        return common::Result<std::vector<RpcNodeInfo>>("No RPC endpoints found for network: " + config_.network);
+        return common::Result<std::vector<RpcNodeInfo>>("No RPC endpoints available after discovery");
     }
     
     // Clear previous results
@@ -307,6 +327,115 @@ bool SnapshotFinder::meets_version_criteria(const std::string& version) const {
     }
     
     return true;  // No version restrictions
+}
+
+common::Result<std::vector<std::string>> SnapshotFinder::discover_cluster_nodes(const std::vector<std::string>& seed_endpoints) {
+    std::cout << "🌐 Discovering cluster nodes from " << seed_endpoints.size() << " seed endpoints..." << std::endl;
+    
+    std::vector<std::string> discovered_rpcs;
+    std::set<std::string> unique_rpcs;
+    
+    // Try each seed endpoint for cluster discovery
+    for (const auto& seed_rpc : seed_endpoints) {
+        try {
+            std::cout << "   • Querying cluster nodes from: " << seed_rpc << std::endl;
+            
+            auto response = http_client_->solana_rpc_call(seed_rpc, "getClusterNodes", "[]");
+            
+            if (!response.success) {
+                std::cout << "     ❌ Failed to query cluster nodes: " << response.error_message << std::endl;
+                continue;
+            }
+            
+            if (network::rpc_utils::is_rpc_error(response.body)) {
+                std::cout << "     ❌ RPC error: " << network::rpc_utils::extract_error_message(response.body) << std::endl;
+                continue;
+            }
+            
+            // Extract cluster nodes from response
+            auto cluster_rpcs = extract_rpc_endpoints_from_cluster_response(response.body);
+            
+            std::cout << "     ✅ Found " << cluster_rpcs.size() << " RPC endpoints" << std::endl;
+            
+            // Add unique RPCs to our collection
+            for (const auto& rpc_url : cluster_rpcs) {
+                if (unique_rpcs.find(rpc_url) == unique_rpcs.end()) {
+                    unique_rpcs.insert(rpc_url);
+                    discovered_rpcs.push_back(rpc_url);
+                }
+            }
+            
+        } catch (const std::exception& e) {
+            std::cout << "     ❌ Exception during cluster discovery: " << e.what() << std::endl;
+            continue;
+        }
+    }
+    
+    // Also include seed endpoints in final list
+    for (const auto& seed : seed_endpoints) {
+        if (unique_rpcs.find(seed) == unique_rpcs.end()) {
+            unique_rpcs.insert(seed);
+            discovered_rpcs.push_back(seed);
+        }
+    }
+    
+    if (discovered_rpcs.empty()) {
+        return common::Result<std::vector<std::string>>("No RPC endpoints discovered from cluster");
+    }
+    
+    std::cout << "   • Total unique RPC endpoints discovered: " << discovered_rpcs.size() << std::endl;
+    return common::Result<std::vector<std::string>>(discovered_rpcs);
+}
+
+std::vector<std::string> SnapshotFinder::extract_rpc_endpoints_from_cluster_response(const std::string& response) {
+    std::vector<std::string> rpc_endpoints;
+    
+    // Extract the result array from the JSON response
+    std::string result_field = network::rpc_utils::extract_json_field(response, "result");
+    if (result_field.empty()) {
+        return rpc_endpoints;
+    }
+    
+    // Parse the array of cluster nodes
+    // Each node object should have an "rpc" field if it provides RPC services
+    size_t pos = 0;
+    while (pos < result_field.length()) {
+        // Find next object in array
+        size_t obj_start = result_field.find('{', pos);
+        if (obj_start == std::string::npos) break;
+        
+        // Find matching closing brace
+        size_t obj_end = obj_start + 1;
+        int brace_count = 1;
+        while (obj_end < result_field.length() && brace_count > 0) {
+            if (result_field[obj_end] == '{') brace_count++;
+            else if (result_field[obj_end] == '}') brace_count--;
+            obj_end++;
+        }
+        
+        if (brace_count == 0) {
+            // Extract node object
+            std::string node_obj = result_field.substr(obj_start, obj_end - obj_start);
+            
+            // Extract RPC field if present
+            std::string rpc_field = network::rpc_utils::extract_json_field(node_obj, "rpc");
+            if (!rpc_field.empty() && rpc_field != "null") {
+                // Clean up the RPC URL (remove quotes if present)
+                if (rpc_field.front() == '"' && rpc_field.back() == '"') {
+                    rpc_field = rpc_field.substr(1, rpc_field.length() - 2);
+                }
+                
+                // Validate URL format
+                if (rpc_field.find("http://") == 0 || rpc_field.find("https://") == 0) {
+                    rpc_endpoints.push_back(rpc_field);
+                }
+            }
+        }
+        
+        pos = obj_end;
+    }
+    
+    return rpc_endpoints;
 }
 
 common::Result<std::vector<SnapshotQuality>> SnapshotFinder::find_best_snapshots() {
