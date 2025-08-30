@@ -412,15 +412,24 @@ EOF
 verify_installation() {
     log "Verifying installation..."
     
-    if command -v slonana-validator >/dev/null 2>&1; then
-        local version=$(slonana-validator --version 2>/dev/null || echo "unknown")
-        log "✅ slonana-validator installed: $version"
+    # Update PATH to include installation directory
+    export PATH="$INSTALL_DIR:$PATH"
+    
+    if command -v slonana_validator >/dev/null 2>&1; then
+        local version=$(slonana_validator --version 2>/dev/null || echo "unknown")
+        log "✅ slonana_validator installed: $version"
+    elif [[ -f "$INSTALL_DIR/slonana_validator" ]]; then
+        local version=$($INSTALL_DIR/slonana_validator --version 2>/dev/null || echo "unknown")
+        log "✅ slonana_validator installed: $version"
     else
-        error "slonana-validator not found in PATH"
+        error "slonana_validator not found"
     fi
     
     if command -v slonana-cli >/dev/null 2>&1; then
         local version=$(slonana-cli --version 2>/dev/null || echo "unknown")
+        log "✅ slonana-cli installed: $version"
+    elif [[ -f "$INSTALL_DIR/slonana-cli" ]]; then
+        local version=$($INSTALL_DIR/slonana-cli --version 2>/dev/null || echo "unknown")
         log "✅ slonana-cli installed: $version"
     else
         warn "slonana-cli not found (optional)"
@@ -428,7 +437,7 @@ verify_installation() {
     
     # Test basic functionality
     log "Testing basic functionality..."
-    if timeout 10s slonana-validator --help >/dev/null 2>&1; then
+    if timeout 10s $INSTALL_DIR/slonana_validator --help >/dev/null 2>&1; then
         log "✅ Basic functionality test passed"
     else
         warn "Basic functionality test failed (this may be normal)"
@@ -443,15 +452,15 @@ print_usage() {
     echo -e "${GREEN}🎉 Slonana installation completed successfully!${NC}"
     echo ""
     echo -e "${BLUE}Quick Start:${NC}"
-    echo "  1. Start validator: slonana-validator --config $DATA_DIR/validator.conf"
+    echo "  1. Start validator: $INSTALL_DIR/slonana_validator --config $DATA_DIR/validator.conf"
     echo "  2. Check health: curl http://localhost:8899/health"
     echo "  3. View logs: tail -f $DATA_DIR/logs/validator.log"
     echo ""
     echo -e "${BLUE}Useful Commands:${NC}"
     echo "  • Configuration: $DATA_DIR/validator.conf"
     echo "  • Data directory: $DATA_DIR"
-    echo "  • Check version: slonana-validator --version"
-    echo "  • CLI help: slonana-cli --help"
+    echo "  • Check version: $INSTALL_DIR/slonana_validator --version"
+    echo "  • Add to PATH: export PATH=\"$INSTALL_DIR:\$PATH\""
     echo ""
     
     if [[ "$os" != "macos" ]] && [[ "$os" != "windows" ]] && command -v systemctl >/dev/null 2>&1; then
