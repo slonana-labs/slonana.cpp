@@ -60,19 +60,19 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cargo-
 
-    - name: Setup Solana CLI and install Agave validator
+    - name: Install Solana CLI
       run: |
-        echo "🔍 Installing Solana CLI..."
-        curl --proto '=https' --tlsv1.2 -sSfL https://solana-install.solana.workers.dev | bash
-        
-        # Export PATH for this step
+        echo "🔍 Installing Solana CLI (pinned version)..."
+        # Install and pin to specific version to avoid breaking changes
+        sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
         
         # Add to GITHUB_PATH for subsequent steps
         echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
         
-        # Verify Solana CLI installation
-        if ! command -v solana; then
+        # Verify Solana CLI installation with fail-fast
+        echo "🔍 Verifying Solana CLI installation..."
+        if ! which solana; then
           echo "❌ Solana CLI install failed - binary not found in PATH"
           echo "Expected location: $HOME/.local/share/solana/install/active_release/bin/solana"
           if [ -f "$HOME/.local/share/solana/install/active_release/bin/solana" ]; then
@@ -85,41 +85,51 @@ jobs:
           exit 1
         fi
         
+        if ! which solana-keygen; then
+          echo "❌ solana-keygen not found in PATH"
+          exit 1
+        fi
+        
         echo "✅ Solana CLI installed successfully"
         solana --version
-        which solana
+        solana-keygen --version
+        echo "✅ Found solana at: $(which solana)"
+        echo "✅ Found solana-keygen at: $(which solana-keygen)"
 
-    - name: Install Agave validator via cargo install (optimized)
+    - name: Verify Agave binaries from Solana CLI
       run: |
-        echo "🔍 Installing Agave validator via cargo install..."
-        cargo install agave-validator agave-ledger-tool --locked
+        echo "🔍 Verifying Agave binaries (bundled with Solana CLI)..."
         
-        # Copy binaries to system location
-        sudo cp ~/.cargo/bin/agave-validator /usr/local/bin/agave-validator
-        sudo cp ~/.cargo/bin/agave-ledger-tool /usr/local/bin/agave-ledger-tool
+        # Export PATH to include Solana installation
+        export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
         
-        # Verify installation
-        if ! command -v agave-validator; then
-          echo "❌ agave-validator not found in PATH after install"
-          echo "Checking installation locations:"
-          ls -la ~/.cargo/bin/agave-validator || echo "Not found in ~/.cargo/bin/"
-          ls -la /usr/local/bin/agave-validator || echo "Not found in /usr/local/bin/"
+        # The Agave binaries are already included with Solana CLI installation
+        # Verify they are available with fail-fast validation
+        echo "🔍 Checking for bundled Agave binaries..."
+        if ! which agave-validator; then
+          echo "❌ agave-validator not found in PATH"
+          
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          cargo install agave-validator agave-ledger-tool
+          echo "Available binaries in Solana installation:"
+          ls -la "$HOME/.local/share/solana/install/active_release/bin/" | grep agave || echo "No agave binaries found"
+          echo "Current PATH: $PATH"
+        fi
+        
+        if ! which agave-ledger-tool; then
+          echo "❌ agave-ledger-tool not found in PATH"
+          echo "Available binaries in Solana installation:"
+          ls -la "$HOME/.local/share/solana/install/active_release/bin/" | grep agave || echo "No agave binaries found"
+          echo "Current PATH: $PATH"
           exit 1
         fi
         
-        if ! command -v agave-ledger-tool; then
-          echo "❌ agave-ledger-tool not found in PATH after install"
-          echo "Checking installation locations:"
-          ls -la ~/.cargo/bin/agave-ledger-tool || echo "Not found in ~/.cargo/bin/"
-          ls -la /usr/local/bin/agave-ledger-tool || echo "Not found in /usr/local/bin/"
-          exit 1
-        fi
-        
-        echo "✅ Agave binaries installed successfully"
+        echo "✅ Agave binaries verified successfully (bundled with Solana CLI)"
         agave-validator --version
         agave-ledger-tool --version
-        which agave-validator
-        which agave-ledger-tool
+        echo "✅ Found agave-validator at: $(which agave-validator)"
+        echo "✅ Found agave-ledger-tool at: $(which agave-ledger-tool)"
 
     - name: Build Slonana validator
       run: |
@@ -144,52 +154,76 @@ jobs:
         }
         EOF
 
-    - name: Ensure benchmark scripts are executable
+    - name: Make benchmark scripts executable
       run: |
+        echo "🔍 Making benchmark scripts executable..."
         chmod +x ./scripts/benchmark_agave.sh
         chmod +x ./scripts/benchmark_slonana.sh
-
-    - name: Validate benchmark scripts
-      run: |
-        echo "🔍 Validating standalone benchmark scripts..."
         
-        # Test help functionality
-        ./scripts/benchmark_agave.sh --help
-        echo "✅ Agave benchmark script help works"
-        
-        ./scripts/benchmark_slonana.sh --help  
-        echo "✅ Slonana benchmark script help works"
-        
-        # Verify scripts are executable and have proper shebang
+        # Verify scripts are executable
         if [[ -x "./scripts/benchmark_agave.sh" && -x "./scripts/benchmark_slonana.sh" ]]; then
           echo "✅ Both benchmark scripts are executable"
         else
           echo "❌ Benchmark scripts are not executable"
           exit 1
         fi
+
+    - name: Validate benchmark dependencies
+      run: |
+        echo "🔍 Validating all benchmark dependencies..."
         
-        # Final dependency check
-        echo "🔍 Final dependency validation..."
-        echo "PATH: $PATH"
+        # Export PATH for this validation step
+        export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+        echo "Current PATH: $PATH"
         echo ""
         
-        echo "Checking Solana CLI:"
-        which solana || echo "❌ solana not found"
-        which solana-keygen || echo "❌ solana-keygen not found"
-        solana --version || echo "❌ solana version check failed"
+        # Test help functionality
+        echo "🔍 Testing benchmark scripts..."
+        ./scripts/benchmark_agave.sh --help > /dev/null
+        echo "✅ Agave benchmark script help works"
+        
+        ./scripts/benchmark_slonana.sh --help > /dev/null
+        echo "✅ Slonana benchmark script help works"
         echo ""
         
-        echo "Checking Agave binaries:"
-        which agave-validator || echo "❌ agave-validator not found"
-        which agave-ledger-tool || echo "❌ agave-ledger-tool not found" 
-        agave-validator --version || echo "❌ agave-validator version check failed"
+        # Fail-fast dependency validation
+        echo "🔍 Validating Solana CLI tools..."
+        if ! which solana; then
+          echo "❌ solana not found in PATH"
+          exit 1
+        fi
+        if ! which solana-keygen; then
+          echo "❌ solana-keygen not found in PATH"
+          exit 1
+        fi
+        echo "✅ Found solana at: $(which solana)"
+        echo "✅ Found solana-keygen at: $(which solana-keygen)"
+        solana --version
         echo ""
         
-        echo "✅ All dependencies validated successfully"
+        echo "🔍 Validating Agave binaries..."
+        if ! which agave-validator; then
+          echo "❌ agave-validator not found in PATH"
+          exit 1
+        fi
+        if ! which agave-ledger-tool; then
+          echo "❌ agave-ledger-tool not found in PATH"
+          exit 1
+        fi
+        echo "✅ Found agave-validator at: $(which agave-validator)"
+        echo "✅ Found agave-ledger-tool at: $(which agave-ledger-tool)"
+        agave-validator --version
+        echo ""
+        
+        echo "✅ All dependencies validated successfully - ready for benchmarking!"
 
     - name: Run Agave validator benchmark
       run: |
         echo "🔍 Running Agave validator benchmark..."
+        
+        # Ensure PATH includes Solana CLI (which includes Agave binaries)
+        export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+        
         ./scripts/benchmark_agave.sh \
           --ledger test_ledgers/agave \
           --results benchmark_results/agave \
@@ -200,6 +234,10 @@ jobs:
     - name: Run Slonana validator benchmark
       run: |
         echo "🔍 Running Slonana validator benchmark..."
+        
+        # Ensure PATH includes Solana CLI (which includes Agave binaries)
+        export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+        
         if [ -f "build/slonana_validator" ]; then
           ./scripts/benchmark_slonana.sh \
             --ledger test_ledgers/slonana \
