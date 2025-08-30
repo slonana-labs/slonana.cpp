@@ -64,13 +64,10 @@ jobs:
       run: |
         echo "🔍 Installing Solana CLI (pinned version)..."
         # Install and pin to specific version to avoid breaking changes
-        bash -c "$(curl --proto '=https' --tlsv1.2 -sSfL https://solana-install.solana.workers.dev)"
-        
+        sh -c "$(curl -sSfL https://release.anza.xyz/v3.0.0/install)"        
         # Export PATH for this step
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
         
-        # Pin to a stable version using agave-install-init
-        agave-install-init v2.3.8
         
         # Add to GITHUB_PATH for subsequent steps
         echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
