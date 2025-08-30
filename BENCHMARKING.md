@@ -237,7 +237,236 @@ cmake -B build && cmake --build build
 ./scripts/show_benchmark_results.sh
 ```
 
-### Script Usage Examples
+## 🏗️ Manual Cluster Benchmarking
+
+For comprehensive performance testing and development work, you can set up and benchmark a complete Solana cluster manually. This provides more control and deeper insights than the automated scripts.
+
+### Prerequisites Setup
+
+First, set up the Rust toolchain and Solana source code:
+
+```bash
+# Setup Rust, Cargo and system packages as described in the Solana README
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source ~/.cargo/env
+
+# Install required system dependencies
+sudo apt-get update
+sudo apt-get install -y build-essential libssl-dev libudev-dev pkg-config
+
+# Clone Solana source code
+git clone https://github.com/solana-labs/solana.git
+cd solana
+
+# For stability, checkout the latest release
+TAG=$(git describe --tags $(git rev-list --tags --max-count=1))
+git checkout $TAG
+echo "Using Solana version: $TAG"
+```
+
+### Configuration Setup
+
+Ensure important programs such as the vote program are built before any nodes are started:
+
+```bash
+# Use release build for good performance
+cargo build --release
+
+# Set environment variable to enforce release builds
+export CARGO_BUILD_PROFILE=release
+
+# For profiling, use release-with-debug profile
+# cargo build --profile release-with-debug
+# export CARGO_BUILD_PROFILE=release-with-debug
+
+# For debug builds without optimizations, just use:
+# cargo build
+# (and don't set CARGO_BUILD_PROFILE)
+```
+
+### Network Initialization
+
+Initialize the network with a genesis ledger:
+
+```bash
+# Generate genesis ledger
+./multinode-demo/setup.sh
+```
+
+### Faucet Setup
+
+Start the faucet to provide test tokens for transactions:
+
+```bash
+# Start faucet in a separate terminal
+./multinode-demo/faucet.sh
+```
+
+The faucet delivers "air drops" (free tokens) to requesting clients for test transactions.
+
+### Singlenode Testnet
+
+For high-level development work like smart contract experimentation:
+
+```bash
+# Ensure UDP ports 8000-10000 are open
+# Get your machine's IP address
+IP_ADDRESS=$(hostname -I | awk '{print $1}')
+echo "Bootstrap validator will run on: $IP_ADDRESS"
+
+# Start bootstrap validator in a separate terminal
+./multinode-demo/bootstrap-validator.sh
+
+# Wait for "leader ready..." message before proceeding
+```
+
+### Multinode Testnet
+
+For consensus work and full performance testing:
+
+```bash
+# After starting a leader node, spin up additional validators in separate terminals
+./multinode-demo/validator.sh
+
+# For performance-enhanced validator on Linux with CUDA 10.0
+./fetch-perf-libs.sh
+SOLANA_CUDA=1 ./multinode-demo/bootstrap-validator.sh
+SOLANA_CUDA=1 ./multinode-demo/validator.sh
+```
+
+**Testnet Variations:**
+- **Rust-only singlenode**: For smart contract development
+- **Enhanced singlenode**: For transaction pipeline optimization  
+- **Rust-only multinode**: For consensus work
+- **Enhanced multinode**: To reproduce TPS metrics
+
+### Client Demo and Benchmarking
+
+Run actual transaction load testing:
+
+```bash
+# Run client demo against localhost
+./multinode-demo/bench-tps.sh
+
+# The client will:
+# - Spin up several threads
+# - Send 500,000 transactions as quickly as possible
+# - Ping testnet periodically for processed transaction counts
+# - Intentionally flood network with UDP packets
+# - Ensure testnet has opportunity to reach 710k TPS
+# - Show TPS measurements for each validator node
+```
+
+### Performance Measurement
+
+The benchmark client provides real-time metrics:
+
+- **Transaction Throughput**: TPS measurements per validator
+- **Network Efficiency**: UDP packet handling under load
+- **Processing Latency**: Time from submission to confirmation
+- **Resource Usage**: CPU, memory, and network utilization
+
+### Debugging and Monitoring
+
+Enable detailed logging for troubleshooting:
+
+```bash
+# Enable info everywhere and debug in specific modules
+export RUST_LOG=solana=info,solana::banking_stage=debug
+
+# Enable SBF program logging
+export RUST_LOG=solana_bpf_loader=trace
+
+# For performance-related logging
+export RUST_LOG=solana=info
+
+# Log levels:
+# - debug: Infrequent debug messages
+# - trace: Potentially frequent messages  
+# - info: Performance-related logging
+```
+
+### Process Debugging
+
+Attach to running processes for deeper analysis:
+
+```bash
+# The leader process is named agave-validator
+sudo gdb
+attach $(pgrep agave-validator)
+```
+
+### Network Configuration
+
+Before starting validators, ensure proper network setup:
+
+```bash
+# Open required UDP ports (8000-10000)
+sudo ufw allow 8000:10000/udp
+
+# Check firewall status
+sudo ufw status
+
+# Verify network connectivity
+netstat -tulpn | grep :8000
+```
+
+### Custom Benchmark Configurations
+
+Modify test parameters for specific benchmarking needs:
+
+```bash
+# Custom TPS targets
+./multinode-demo/bench-tps.sh --tx-count 1000000 --thread-batch-sleep-ms 1
+
+# Specific transaction types
+./multinode-demo/bench-tps.sh --account-mode account-creation
+./multinode-demo/bench-tps.sh --account-mode account-query
+
+# Network stress testing
+./multinode-demo/bench-tps.sh --sustained
+```
+
+### Cluster Health Monitoring
+
+Monitor cluster status during benchmarking:
+
+```bash
+# Check cluster status
+solana cluster-version
+solana validators
+solana slot
+
+# Monitor gossip network
+solana gossip
+
+# Check validator logs
+tail -f ~/.local/share/solana/install/active_release/bin/agave-validator.log
+```
+
+### Results Collection
+
+Collect comprehensive benchmark data:
+
+```bash
+# Validator metrics
+./multinode-demo/metrics.sh
+
+# Network analysis
+ss -tuln | grep 8000
+
+# Resource usage
+htop
+iostat -x 1
+vmstat 1
+
+# Save results
+./multinode-demo/bench-tps.sh > benchmark_results_$(date +%Y%m%d_%H%M%S).log
+```
+
+This manual setup provides complete control over the benchmarking environment and enables detailed performance analysis that complements the automated testing system.
+
+### Automated Script Usage Examples
 
 **Basic benchmark with custom duration:**
 ```bash
@@ -443,6 +672,61 @@ void benchmark_custom_operations() {
 ```
 
 ## Troubleshooting
+
+### Manual Cluster Issues
+
+**Network Setup Problems:**
+```bash
+# Verify UDP ports are open
+sudo netstat -tulpn | grep :8000
+sudo ufw status
+
+# Check if validator can bind to ports
+lsof -i :8899  # RPC port
+lsof -i :8001  # Gossip port
+```
+
+**Validator Startup Issues:**
+```bash
+# Check validator logs
+tail -f ~/.local/share/solana/install/active_release/bin/agave-validator.log
+
+# Verify genesis configuration
+solana config get
+solana genesis-hash
+
+# Check cluster connectivity
+solana cluster-version
+solana validators
+```
+
+**Performance Issues:**
+```bash
+# Monitor system resources during benchmarking
+htop
+iostat -x 1  
+iotop
+nethogs
+
+# Check for memory pressure
+free -h
+dmesg | grep -i memory
+
+# Verify CPU frequency scaling
+cat /proc/cpuinfo | grep MHz
+```
+
+**Transaction Processing Issues:**
+```bash
+# Check transaction pool status
+solana transaction-count
+
+# Monitor slot progression
+watch -n 1 'solana slot'
+
+# Verify faucet connectivity
+solana airdrop 1 --keypair ~/.config/solana/id.json
+```
 
 ### Common Issues
 1. **Low Performance**: Check system resources and background processes
