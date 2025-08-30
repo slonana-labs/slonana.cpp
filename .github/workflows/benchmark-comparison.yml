@@ -60,12 +60,12 @@ jobs:
         # Clone and build Agave validator
         git clone https://github.com/anza-xyz/agave.git agave-validator
         cd agave-validator
-        git checkout v1.18.22  # Use latest stable
-        cargo build --release --bin solana-validator --bin solana-ledger-tool
+        git checkout v3.0  # Use latest stable
+        cargo build --release --bin agave-validator --bin agave-ledger-tool
         
         # Move binaries to PATH
-        sudo cp target/release/solana-validator /usr/local/bin/agave-validator
-        sudo cp target/release/solana-ledger-tool /usr/local/bin/agave-ledger-tool
+        sudo cp target/release/agave-validator /usr/local/bin/agave-validator
+        sudo cp target/release/agave-ledger-tool /usr/local/bin/agave-ledger-tool
         cd ..
 
     - name: Build Slonana validator
