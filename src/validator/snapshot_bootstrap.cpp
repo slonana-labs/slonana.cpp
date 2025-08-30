@@ -28,8 +28,8 @@ SnapshotBootstrapManager::SnapshotBootstrapManager(const common::ValidatorConfig
     SnapshotFinderConfig finder_config;
     finder_config.network = config_.network_id.empty() ? "mainnet-beta" : config_.network_id;
     finder_config.threads_count = 50;  // Moderate thread count for bootstrap
-    finder_config.max_snapshot_age = 1300;  // Allow snapshots up to 1300 slots old
-    finder_config.min_download_speed = 30.0;  // Lower threshold for bootstrap
+    finder_config.max_snapshot_age = 13000;  // Allow snapshots up to 13000 slots old
+    finder_config.min_download_speed = 1.0;  // Lower threshold for bootstrap
     finder_config.max_latency = 200.0;  // More tolerant latency for bootstrap
     snapshot_finder_ = std::make_unique<SnapshotFinder>(finder_config);
     
