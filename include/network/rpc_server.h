@@ -88,6 +88,10 @@ private:
     void register_validator_methods();
     void register_staking_methods();
     void register_utility_methods();
+    void register_system_methods();
+    void register_token_methods();
+    void register_websocket_methods();
+    void register_network_management_methods();
     
     // Account Methods
     RpcResponse get_account_info(const RpcRequest& request);
@@ -96,6 +100,11 @@ private:
     RpcResponse get_multiple_accounts(const RpcRequest& request);
     RpcResponse get_largest_accounts(const RpcRequest& request);
     RpcResponse get_minimum_balance_for_rent_exemption(const RpcRequest& request);
+    RpcResponse get_account_info_and_context(const RpcRequest& request);
+    RpcResponse get_balance_and_context(const RpcRequest& request);
+    RpcResponse get_multiple_accounts_and_context(const RpcRequest& request);
+    RpcResponse get_program_accounts_and_context(const RpcRequest& request);
+    RpcResponse get_account_owner(const RpcRequest& request);
     
     // Block Methods
     RpcResponse get_slot(const RpcRequest& request);
@@ -106,6 +115,12 @@ private:
     RpcResponse get_genesis_hash(const RpcRequest& request);
     RpcResponse get_slot_leaders(const RpcRequest& request);
     RpcResponse get_block_production(const RpcRequest& request);
+    RpcResponse get_block_commitment(const RpcRequest& request);
+    RpcResponse get_block_time(const RpcRequest& request);
+    RpcResponse get_blocks_with_limit(const RpcRequest& request);
+    RpcResponse get_confirmed_block(const RpcRequest& request);
+    RpcResponse get_confirmed_blocks(const RpcRequest& request);
+    RpcResponse get_confirmed_blocks_with_limit(const RpcRequest& request);
     
     // Transaction Methods
     RpcResponse get_transaction(const RpcRequest& request);
@@ -113,6 +128,8 @@ private:
     RpcResponse simulate_transaction(const RpcRequest& request);
     RpcResponse get_signature_statuses(const RpcRequest& request);
     RpcResponse get_confirmed_signatures_for_address2(const RpcRequest& request);
+    RpcResponse get_signatures_for_address(const RpcRequest& request);
+    RpcResponse get_confirmed_transaction(const RpcRequest& request);
     
     // Network Methods
     RpcResponse get_cluster_nodes(const RpcRequest& request);
@@ -137,6 +154,55 @@ private:
     RpcResponse get_fee_for_message(const RpcRequest& request);
     RpcResponse get_latest_blockhash(const RpcRequest& request);
     RpcResponse is_blockhash_valid(const RpcRequest& request);
+    
+    // System Methods
+    RpcResponse get_slot_leader(const RpcRequest& request);
+    RpcResponse minimum_ledger_slot(const RpcRequest& request);
+    RpcResponse get_max_retransmit_slot(const RpcRequest& request);
+    RpcResponse get_max_shred_insert_slot(const RpcRequest& request);
+    RpcResponse get_highest_snapshot_slot(const RpcRequest& request);
+    RpcResponse get_recent_performance_samples(const RpcRequest& request);
+    RpcResponse get_recent_prioritization_fees(const RpcRequest& request);
+    RpcResponse get_supply(const RpcRequest& request);
+    RpcResponse get_transaction_count(const RpcRequest& request);
+    RpcResponse request_airdrop(const RpcRequest& request);
+    RpcResponse get_stake_minimum_delegation(const RpcRequest& request);
+    RpcResponse get_snapshot_slot(const RpcRequest& request);
+    RpcResponse get_fees(const RpcRequest& request);
+    
+    // Token Methods
+    RpcResponse get_token_accounts_by_owner(const RpcRequest& request);
+    RpcResponse get_token_supply(const RpcRequest& request);
+    RpcResponse get_token_account_balance(const RpcRequest& request);
+    RpcResponse get_token_accounts_by_delegate(const RpcRequest& request);
+    RpcResponse get_token_largest_accounts(const RpcRequest& request);
+    RpcResponse get_token_accounts_by_mint(const RpcRequest& request);
+    
+    // WebSocket Subscription Methods
+    RpcResponse account_subscribe(const RpcRequest& request);
+    RpcResponse account_unsubscribe(const RpcRequest& request);
+    RpcResponse block_subscribe(const RpcRequest& request);
+    RpcResponse block_unsubscribe(const RpcRequest& request);
+    RpcResponse logs_subscribe(const RpcRequest& request);
+    RpcResponse logs_unsubscribe(const RpcRequest& request);
+    RpcResponse program_subscribe(const RpcRequest& request);
+    RpcResponse program_unsubscribe(const RpcRequest& request);
+    RpcResponse root_subscribe(const RpcRequest& request);
+    RpcResponse root_unsubscribe(const RpcRequest& request);
+    RpcResponse signature_subscribe(const RpcRequest& request);
+    RpcResponse signature_unsubscribe(const RpcRequest& request);
+    RpcResponse slot_subscribe(const RpcRequest& request);
+    RpcResponse slot_unsubscribe(const RpcRequest& request);
+    RpcResponse slots_updates_subscribe(const RpcRequest& request);
+    RpcResponse slots_updates_unsubscribe(const RpcRequest& request);
+    RpcResponse vote_subscribe(const RpcRequest& request);
+    RpcResponse vote_unsubscribe(const RpcRequest& request);
+    
+    // Network Management Methods
+    RpcResponse list_svm_networks(const RpcRequest& request);
+    RpcResponse enable_svm_network(const RpcRequest& request);
+    RpcResponse disable_svm_network(const RpcRequest& request);
+    RpcResponse set_network_rpc_url(const RpcRequest& request);
     
     // Helper methods
     RpcResponse create_error_response(const std::string& id, int code, const std::string& message, bool id_is_number = false);

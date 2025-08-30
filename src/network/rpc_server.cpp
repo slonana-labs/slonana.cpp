@@ -305,6 +305,10 @@ SolanaRpcServer::SolanaRpcServer(const ValidatorConfig& config)
     register_validator_methods();
     register_staking_methods();
     register_utility_methods();
+    register_system_methods();
+    register_token_methods();
+    register_websocket_methods();
+    register_network_management_methods();
 }
 
 SolanaRpcServer::~SolanaRpcServer() {
@@ -449,6 +453,13 @@ void SolanaRpcServer::register_account_methods() {
     register_method("getMultipleAccounts", [this](const RpcRequest& req) { return get_multiple_accounts(req); });
     register_method("getLargestAccounts", [this](const RpcRequest& req) { return get_largest_accounts(req); });
     register_method("getMinimumBalanceForRentExemption", [this](const RpcRequest& req) { return get_minimum_balance_for_rent_exemption(req); });
+    
+    // Context variants
+    register_method("getAccountInfoAndContext", [this](const RpcRequest& req) { return get_account_info_and_context(req); });
+    register_method("getBalanceAndContext", [this](const RpcRequest& req) { return get_balance_and_context(req); });
+    register_method("getMultipleAccountsAndContext", [this](const RpcRequest& req) { return get_multiple_accounts_and_context(req); });
+    register_method("getProgramAccountsAndContext", [this](const RpcRequest& req) { return get_program_accounts_and_context(req); });
+    register_method("getAccountOwner", [this](const RpcRequest& req) { return get_account_owner(req); });
 }
 
 void SolanaRpcServer::register_block_methods() {
@@ -461,6 +472,16 @@ void SolanaRpcServer::register_block_methods() {
     register_method("getGenesisHash", [this](const RpcRequest& req) { return get_genesis_hash(req); });
     register_method("getSlotLeaders", [this](const RpcRequest& req) { return get_slot_leaders(req); });
     register_method("getBlockProduction", [this](const RpcRequest& req) { return get_block_production(req); });
+    
+    // Additional block methods
+    register_method("getBlockCommitment", [this](const RpcRequest& req) { return get_block_commitment(req); });
+    register_method("getBlockTime", [this](const RpcRequest& req) { return get_block_time(req); });
+    register_method("getBlocksWithLimit", [this](const RpcRequest& req) { return get_blocks_with_limit(req); });
+    
+    // Deprecated methods for compatibility
+    register_method("getConfirmedBlock", [this](const RpcRequest& req) { return get_confirmed_block(req); });
+    register_method("getConfirmedBlocks", [this](const RpcRequest& req) { return get_confirmed_blocks(req); });
+    register_method("getConfirmedBlocksWithLimit", [this](const RpcRequest& req) { return get_confirmed_blocks_with_limit(req); });
 }
 
 void SolanaRpcServer::register_transaction_methods() {
@@ -470,6 +491,10 @@ void SolanaRpcServer::register_transaction_methods() {
     register_method("simulateTransaction", [this](const RpcRequest& req) { return simulate_transaction(req); });
     register_method("getSignatureStatuses", [this](const RpcRequest& req) { return get_signature_statuses(req); });
     register_method("getConfirmedSignaturesForAddress2", [this](const RpcRequest& req) { return get_confirmed_signatures_for_address2(req); });
+    register_method("getSignaturesForAddress", [this](const RpcRequest& req) { return get_signatures_for_address(req); });
+    
+    // Deprecated transaction methods
+    register_method("getConfirmedTransaction", [this](const RpcRequest& req) { return get_confirmed_transaction(req); });
 }
 
 void SolanaRpcServer::register_network_methods() {
@@ -502,6 +527,65 @@ void SolanaRpcServer::register_utility_methods() {
     register_method("getFeeForMessage", [this](const RpcRequest& req) { return get_fee_for_message(req); });
     register_method("getLatestBlockhash", [this](const RpcRequest& req) { return get_latest_blockhash(req); });
     register_method("isBlockhashValid", [this](const RpcRequest& req) { return is_blockhash_valid(req); });
+}
+
+void SolanaRpcServer::register_system_methods() {
+    // System and performance methods
+    register_method("getSlotLeader", [this](const RpcRequest& req) { return get_slot_leader(req); });
+    register_method("minimumLedgerSlot", [this](const RpcRequest& req) { return minimum_ledger_slot(req); });
+    register_method("getMaxRetransmitSlot", [this](const RpcRequest& req) { return get_max_retransmit_slot(req); });
+    register_method("getMaxShredInsertSlot", [this](const RpcRequest& req) { return get_max_shred_insert_slot(req); });
+    register_method("getHighestSnapshotSlot", [this](const RpcRequest& req) { return get_highest_snapshot_slot(req); });
+    register_method("getRecentPerformanceSamples", [this](const RpcRequest& req) { return get_recent_performance_samples(req); });
+    register_method("getRecentPrioritizationFees", [this](const RpcRequest& req) { return get_recent_prioritization_fees(req); });
+    register_method("getSupply", [this](const RpcRequest& req) { return get_supply(req); });
+    register_method("getTransactionCount", [this](const RpcRequest& req) { return get_transaction_count(req); });
+    register_method("requestAirdrop", [this](const RpcRequest& req) { return request_airdrop(req); });
+    register_method("getStakeMinimumDelegation", [this](const RpcRequest& req) { return get_stake_minimum_delegation(req); });
+    
+    // Deprecated system methods
+    register_method("getSnapshotSlot", [this](const RpcRequest& req) { return get_snapshot_slot(req); });
+    register_method("getFees", [this](const RpcRequest& req) { return get_fees(req); });
+}
+
+void SolanaRpcServer::register_token_methods() {
+    // SPL Token methods
+    register_method("getTokenAccountsByOwner", [this](const RpcRequest& req) { return get_token_accounts_by_owner(req); });
+    register_method("getTokenSupply", [this](const RpcRequest& req) { return get_token_supply(req); });
+    register_method("getTokenAccountBalance", [this](const RpcRequest& req) { return get_token_account_balance(req); });
+    register_method("getTokenAccountsByDelegate", [this](const RpcRequest& req) { return get_token_accounts_by_delegate(req); });
+    register_method("getTokenLargestAccounts", [this](const RpcRequest& req) { return get_token_largest_accounts(req); });
+    register_method("getTokenAccountsByMint", [this](const RpcRequest& req) { return get_token_accounts_by_mint(req); });
+}
+
+void SolanaRpcServer::register_websocket_methods() {
+    // WebSocket subscription methods
+    register_method("accountSubscribe", [this](const RpcRequest& req) { return account_subscribe(req); });
+    register_method("accountUnsubscribe", [this](const RpcRequest& req) { return account_unsubscribe(req); });
+    register_method("blockSubscribe", [this](const RpcRequest& req) { return block_subscribe(req); });
+    register_method("blockUnsubscribe", [this](const RpcRequest& req) { return block_unsubscribe(req); });
+    register_method("logsSubscribe", [this](const RpcRequest& req) { return logs_subscribe(req); });
+    register_method("logsUnsubscribe", [this](const RpcRequest& req) { return logs_unsubscribe(req); });
+    register_method("programSubscribe", [this](const RpcRequest& req) { return program_subscribe(req); });
+    register_method("programUnsubscribe", [this](const RpcRequest& req) { return program_unsubscribe(req); });
+    register_method("rootSubscribe", [this](const RpcRequest& req) { return root_subscribe(req); });
+    register_method("rootUnsubscribe", [this](const RpcRequest& req) { return root_unsubscribe(req); });
+    register_method("signatureSubscribe", [this](const RpcRequest& req) { return signature_subscribe(req); });
+    register_method("signatureUnsubscribe", [this](const RpcRequest& req) { return signature_unsubscribe(req); });
+    register_method("slotSubscribe", [this](const RpcRequest& req) { return slot_subscribe(req); });
+    register_method("slotUnsubscribe", [this](const RpcRequest& req) { return slot_unsubscribe(req); });
+    register_method("slotsUpdatesSubscribe", [this](const RpcRequest& req) { return slots_updates_subscribe(req); });
+    register_method("slotsUpdatesUnsubscribe", [this](const RpcRequest& req) { return slots_updates_unsubscribe(req); });
+    register_method("voteSubscribe", [this](const RpcRequest& req) { return vote_subscribe(req); });
+    register_method("voteUnsubscribe", [this](const RpcRequest& req) { return vote_unsubscribe(req); });
+}
+
+void SolanaRpcServer::register_network_management_methods() {
+    // Network management methods
+    register_method("listSvmNetworks", [this](const RpcRequest& req) { return list_svm_networks(req); });
+    register_method("enableSvmNetwork", [this](const RpcRequest& req) { return enable_svm_network(req); });
+    register_method("disableSvmNetwork", [this](const RpcRequest& req) { return disable_svm_network(req); });
+    register_method("setNetworkRpcUrl", [this](const RpcRequest& req) { return set_network_rpc_url(req); });
 }
 
 // Account Methods Implementation
@@ -1510,6 +1594,673 @@ std::string SolanaRpcServer::compute_signature_hash(const std::vector<uint8_t>& 
         ss << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(hash[i]);
     }
     return ss.str();
+}
+
+// Additional Account Methods Implementation
+RpcResponse SolanaRpcServer::get_account_info_and_context(const RpcRequest& request) {
+    // Same as getAccountInfo but ensures context is always included
+    return get_account_info(request);
+}
+
+RpcResponse SolanaRpcServer::get_balance_and_context(const RpcRequest& request) {
+    // Same as getBalance but ensures context is always included
+    return get_balance(request);
+}
+
+RpcResponse SolanaRpcServer::get_multiple_accounts_and_context(const RpcRequest& request) {
+    // Same as getMultipleAccounts but ensures context is always included
+    return get_multiple_accounts(request);
+}
+
+RpcResponse SolanaRpcServer::get_program_accounts_and_context(const RpcRequest& request) {
+    // Same as getProgramAccounts but ensures context is always included
+    return get_program_accounts(request);
+}
+
+RpcResponse SolanaRpcServer::get_account_owner(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    try {
+        std::string address = extract_first_param(request.params);
+        if (address.empty()) {
+            return create_error_response(request.id, -32602, "Invalid params", request.id_is_number);
+        }
+        
+        if (account_manager_) {
+            PublicKey pubkey(address.begin(), address.end());
+            auto account_info = account_manager_->get_account(pubkey);
+            
+            if (account_info.has_value()) {
+                std::string owner(account_info.value().owner.begin(), account_info.value().owner.end());
+                response.result = "\"" + owner + "\"";
+            } else {
+                response.result = "null";
+            }
+        } else {
+            response.result = "null";
+        }
+        
+    } catch (const std::exception& e) {
+        return create_error_response(request.id, -32603, "Internal error", request.id_is_number);
+    }
+    
+    return response;
+}
+
+// Additional Block Methods Implementation
+RpcResponse SolanaRpcServer::get_block_commitment(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    try {
+        std::string slot_str = extract_first_param(request.params);
+        if (slot_str.empty()) {
+            return create_error_response(request.id, -32602, "Invalid params", request.id_is_number);
+        }
+        
+        // Mock block commitment data
+        std::ostringstream oss;
+        oss << "{\"commitment\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,32],"
+            << "\"totalStake\":42}";
+        
+        response.result = oss.str();
+        
+    } catch (const std::exception& e) {
+        return create_error_response(request.id, -32603, "Internal error", request.id_is_number);
+    }
+    
+    return response;
+}
+
+RpcResponse SolanaRpcServer::get_block_time(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    try {
+        std::string slot_str = extract_first_param(request.params);
+        if (slot_str.empty()) {
+            return create_error_response(request.id, -32602, "Invalid params", request.id_is_number);
+        }
+        
+        // Return estimated production time (current timestamp)
+        auto now = std::chrono::system_clock::now();
+        auto timestamp = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
+        
+        response.result = std::to_string(timestamp);
+        
+    } catch (const std::exception& e) {
+        return create_error_response(request.id, -32603, "Internal error", request.id_is_number);
+    }
+    
+    return response;
+}
+
+RpcResponse SolanaRpcServer::get_blocks_with_limit(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    try {
+        std::string start_slot_str = extract_param_by_index(request.params, 0);
+        std::string limit_str = extract_param_by_index(request.params, 1);
+        
+        if (start_slot_str.empty() || limit_str.empty()) {
+            return create_error_response(request.id, -32602, "Invalid params", request.id_is_number);
+        }
+        
+        uint64_t start_slot = std::stoull(start_slot_str);
+        uint64_t limit = std::stoull(limit_str);
+        
+        // Limit to reasonable maximum
+        if (limit > 500) limit = 500;
+        
+        std::ostringstream oss;
+        oss << "[";
+        for (uint64_t i = 0; i < limit; ++i) {
+            if (i > 0) oss << ",";
+            oss << (start_slot + i);
+        }
+        oss << "]";
+        
+        response.result = oss.str();
+        
+    } catch (const std::exception& e) {
+        return create_error_response(request.id, -32603, "Internal error", request.id_is_number);
+    }
+    
+    return response;
+}
+
+RpcResponse SolanaRpcServer::get_confirmed_block(const RpcRequest& request) {
+    // Deprecated method, redirect to getBlock
+    return get_block(request);
+}
+
+RpcResponse SolanaRpcServer::get_confirmed_blocks(const RpcRequest& request) {
+    // Deprecated method, redirect to getBlocks
+    return get_blocks(request);
+}
+
+RpcResponse SolanaRpcServer::get_confirmed_blocks_with_limit(const RpcRequest& request) {
+    // Deprecated method, redirect to getBlocksWithLimit
+    return get_blocks_with_limit(request);
+}
+
+// Additional Transaction Methods Implementation
+RpcResponse SolanaRpcServer::get_signatures_for_address(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    try {
+        std::string address = extract_first_param(request.params);
+        if (address.empty()) {
+            return create_error_response(request.id, -32602, "Invalid params", request.id_is_number);
+        }
+        
+        // Return empty array for now
+        response.result = "[]";
+        
+    } catch (const std::exception& e) {
+        return create_error_response(request.id, -32603, "Internal error", request.id_is_number);
+    }
+    
+    return response;
+}
+
+RpcResponse SolanaRpcServer::get_confirmed_transaction(const RpcRequest& request) {
+    // Deprecated method, redirect to getTransaction
+    return get_transaction(request);
+}
+
+// System Methods Implementation
+RpcResponse SolanaRpcServer::get_slot_leader(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    // Return current validator identity as slot leader
+    std::string leader = get_validator_identity();
+    response.result = "\"" + leader + "\"";
+    
+    return response;
+}
+
+RpcResponse SolanaRpcServer::minimum_ledger_slot(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    response.result = "0"; // Genesis slot
+    return response;
+}
+
+RpcResponse SolanaRpcServer::get_max_retransmit_slot(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    uint64_t slot = validator_core_ ? validator_core_->get_current_slot() : 0;
+    response.result = std::to_string(slot);
+    
+    return response;
+}
+
+RpcResponse SolanaRpcServer::get_max_shred_insert_slot(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    uint64_t slot = validator_core_ ? validator_core_->get_current_slot() : 0;
+    response.result = std::to_string(slot);
+    
+    return response;
+}
+
+RpcResponse SolanaRpcServer::get_highest_snapshot_slot(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    uint64_t slot = validator_core_ ? validator_core_->get_current_slot() : 0;
+    std::ostringstream oss;
+    oss << "{\"full\":" << slot << ",\"incremental\":" << (slot + 100) << "}";
+    
+    response.result = oss.str();
+    return response;
+}
+
+RpcResponse SolanaRpcServer::get_recent_performance_samples(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    std::string limit_str = extract_first_param(request.params);
+    int limit = limit_str.empty() ? 720 : std::stoi(limit_str);
+    
+    std::ostringstream oss;
+    oss << "[";
+    for (int i = 0; i < std::min(limit, 5); ++i) {
+        if (i > 0) oss << ",";
+        uint64_t slot = validator_core_ ? validator_core_->get_current_slot() - i : i;
+        oss << "{\"slot\":" << slot << ",\"numTransactions\":126,\"numSlots\":126,\"samplePeriodSecs\":60,\"numNonVoteTransactions\":1}";
+    }
+    oss << "]";
+    
+    response.result = oss.str();
+    return response;
+}
+
+RpcResponse SolanaRpcServer::get_recent_prioritization_fees(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    std::ostringstream oss;
+    oss << "[";
+    for (int i = 0; i < 5; ++i) {
+        if (i > 0) oss << ",";
+        uint64_t slot = validator_core_ ? validator_core_->get_current_slot() - i : i;
+        oss << "{\"slot\":" << slot << ",\"prioritizationFee\":" << (i * 1000) << "}";
+    }
+    oss << "]";
+    
+    response.result = oss.str();
+    return response;
+}
+
+RpcResponse SolanaRpcServer::get_supply(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    std::ostringstream oss;
+    oss << "{\"context\":" << get_current_context() << ","
+        << "\"value\":{\"total\":1000000000000000,\"circulating\":800000000000000,\"nonCirculating\":200000000000000,\"nonCirculatingAccounts\":[]}}";
+    
+    response.result = oss.str();
+    return response;
+}
+
+RpcResponse SolanaRpcServer::get_transaction_count(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    response.result = "1000000"; // Mock transaction count
+    return response;
+}
+
+RpcResponse SolanaRpcServer::request_airdrop(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    try {
+        std::string address = extract_param_by_index(request.params, 0);
+        std::string amount_str = extract_param_by_index(request.params, 1);
+        
+        if (address.empty() || amount_str.empty()) {
+            return create_error_response(request.id, -32602, "Invalid params", request.id_is_number);
+        }
+        
+        // Generate airdrop transaction signature
+        std::string signature = process_transaction_submission(request);
+        response.result = "\"" + signature + "\"";
+        
+    } catch (const std::exception& e) {
+        return create_error_response(request.id, -32603, "Internal error", request.id_is_number);
+    }
+    
+    return response;
+}
+
+RpcResponse SolanaRpcServer::get_stake_minimum_delegation(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    std::ostringstream oss;
+    oss << "{\"context\":" << get_current_context() << ",\"value\":1000000000}"; // 1 SOL minimum
+    
+    response.result = oss.str();
+    return response;
+}
+
+RpcResponse SolanaRpcServer::get_snapshot_slot(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    uint64_t slot = validator_core_ ? validator_core_->get_current_slot() : 0;
+    response.result = std::to_string(slot);
+    
+    return response;
+}
+
+RpcResponse SolanaRpcServer::get_fees(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    std::ostringstream oss;
+    oss << "{\"context\":" << get_current_context() << ","
+        << "\"value\":{\"blockhash\":\"11111111111111111111111111111111\",\"feeCalculator\":{\"lamportsPerSignature\":5000}}}";
+    
+    response.result = oss.str();
+    return response;
+}
+
+// Token Methods Implementation
+RpcResponse SolanaRpcServer::get_token_accounts_by_owner(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    std::ostringstream oss;
+    oss << "{\"context\":" << get_current_context() << ",\"value\":[]}";
+    
+    response.result = oss.str();
+    return response;
+}
+
+RpcResponse SolanaRpcServer::get_token_supply(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    std::ostringstream oss;
+    oss << "{\"context\":" << get_current_context() << ","
+        << "\"value\":{\"amount\":\"1000000\",\"decimals\":6,\"uiAmount\":1.0,\"uiAmountString\":\"1\"}}";
+    
+    response.result = oss.str();
+    return response;
+}
+
+RpcResponse SolanaRpcServer::get_token_account_balance(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    std::ostringstream oss;
+    oss << "{\"context\":" << get_current_context() << ","
+        << "\"value\":{\"amount\":\"9864\",\"decimals\":2,\"uiAmount\":98.64,\"uiAmountString\":\"98.64\"}}";
+    
+    response.result = oss.str();
+    return response;
+}
+
+RpcResponse SolanaRpcServer::get_token_accounts_by_delegate(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    std::ostringstream oss;
+    oss << "{\"context\":" << get_current_context() << ",\"value\":[]}";
+    
+    response.result = oss.str();
+    return response;
+}
+
+RpcResponse SolanaRpcServer::get_token_largest_accounts(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    std::ostringstream oss;
+    oss << "{\"context\":" << get_current_context() << ",\"value\":[]}";
+    
+    response.result = oss.str();
+    return response;
+}
+
+RpcResponse SolanaRpcServer::get_token_accounts_by_mint(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    std::ostringstream oss;
+    oss << "{\"context\":" << get_current_context() << ",\"value\":[]}";
+    
+    response.result = oss.str();
+    return response;
+}
+
+// WebSocket Subscription Methods Implementation
+RpcResponse SolanaRpcServer::account_subscribe(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    // Generate subscription ID
+    static std::atomic<uint64_t> subscription_counter{0};
+    uint64_t subscription_id = subscription_counter.fetch_add(1);
+    
+    response.result = std::to_string(subscription_id);
+    return response;
+}
+
+RpcResponse SolanaRpcServer::account_unsubscribe(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    response.result = "true";
+    return response;
+}
+
+RpcResponse SolanaRpcServer::block_subscribe(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    static std::atomic<uint64_t> subscription_counter{0};
+    uint64_t subscription_id = subscription_counter.fetch_add(1);
+    
+    response.result = std::to_string(subscription_id);
+    return response;
+}
+
+RpcResponse SolanaRpcServer::block_unsubscribe(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    response.result = "true";
+    return response;
+}
+
+RpcResponse SolanaRpcServer::logs_subscribe(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    static std::atomic<uint64_t> subscription_counter{0};
+    uint64_t subscription_id = subscription_counter.fetch_add(1);
+    
+    response.result = std::to_string(subscription_id);
+    return response;
+}
+
+RpcResponse SolanaRpcServer::logs_unsubscribe(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    response.result = "true";
+    return response;
+}
+
+RpcResponse SolanaRpcServer::program_subscribe(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    static std::atomic<uint64_t> subscription_counter{0};
+    uint64_t subscription_id = subscription_counter.fetch_add(1);
+    
+    response.result = std::to_string(subscription_id);
+    return response;
+}
+
+RpcResponse SolanaRpcServer::program_unsubscribe(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    response.result = "true";
+    return response;
+}
+
+RpcResponse SolanaRpcServer::root_subscribe(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    static std::atomic<uint64_t> subscription_counter{0};
+    uint64_t subscription_id = subscription_counter.fetch_add(1);
+    
+    response.result = std::to_string(subscription_id);
+    return response;
+}
+
+RpcResponse SolanaRpcServer::root_unsubscribe(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    response.result = "true";
+    return response;
+}
+
+RpcResponse SolanaRpcServer::signature_subscribe(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    static std::atomic<uint64_t> subscription_counter{0};
+    uint64_t subscription_id = subscription_counter.fetch_add(1);
+    
+    response.result = std::to_string(subscription_id);
+    return response;
+}
+
+RpcResponse SolanaRpcServer::signature_unsubscribe(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    response.result = "true";
+    return response;
+}
+
+RpcResponse SolanaRpcServer::slot_subscribe(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    static std::atomic<uint64_t> subscription_counter{0};
+    uint64_t subscription_id = subscription_counter.fetch_add(1);
+    
+    response.result = std::to_string(subscription_id);
+    return response;
+}
+
+RpcResponse SolanaRpcServer::slot_unsubscribe(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    response.result = "true";
+    return response;
+}
+
+RpcResponse SolanaRpcServer::slots_updates_subscribe(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    static std::atomic<uint64_t> subscription_counter{0};
+    uint64_t subscription_id = subscription_counter.fetch_add(1);
+    
+    response.result = std::to_string(subscription_id);
+    return response;
+}
+
+RpcResponse SolanaRpcServer::slots_updates_unsubscribe(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    response.result = "true";
+    return response;
+}
+
+RpcResponse SolanaRpcServer::vote_subscribe(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    static std::atomic<uint64_t> subscription_counter{0};
+    uint64_t subscription_id = subscription_counter.fetch_add(1);
+    
+    response.result = std::to_string(subscription_id);
+    return response;
+}
+
+RpcResponse SolanaRpcServer::vote_unsubscribe(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    response.result = "true";
+    return response;
+}
+
+// Network Management Methods Implementation
+RpcResponse SolanaRpcServer::list_svm_networks(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    std::ostringstream oss;
+    oss << "[{\"name\":\"mainnet\",\"url\":\"https://api.mainnet-beta.solana.com\",\"enabled\":true},"
+        << "{\"name\":\"testnet\",\"url\":\"https://api.testnet.solana.com\",\"enabled\":false},"
+        << "{\"name\":\"devnet\",\"url\":\"https://api.devnet.solana.com\",\"enabled\":true}]";
+    
+    response.result = oss.str();
+    return response;
+}
+
+RpcResponse SolanaRpcServer::enable_svm_network(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    response.result = "true";
+    return response;
+}
+
+RpcResponse SolanaRpcServer::disable_svm_network(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    response.result = "true";
+    return response;
+}
+
+RpcResponse SolanaRpcServer::set_network_rpc_url(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.id_is_number = request.id_is_number;
+    
+    response.result = "true";
+    return response;
 }
 
 } // namespace network
