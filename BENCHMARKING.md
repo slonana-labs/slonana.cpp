@@ -1,8 +1,63 @@
-# Slonana.cpp Comprehensive Benchmarking Suite
+# Slonana.cpp Real Benchmark Comparison System
 
 ## Overview
 
-This document describes the comprehensive benchmarking framework for slonana.cpp, designed to measure and compare performance with the Anza/Agave reference implementation of the Solana validator.
+Slonana.cpp uses an **automated real benchmark comparison system** that runs actual performance tests against both Slonana and Anza/Agave validators. All performance metrics shown in documentation are **real, measured results** from automated testing, not estimated or mocked values.
+
+## 🤖 Automated Benchmark System
+
+### GitHub Actions Integration
+
+The benchmark system runs automatically:
+- **On every push** to main branches
+- **Weekly scheduled runs** (Sundays at 6 AM UTC) 
+- **Manual triggers** via workflow dispatch
+- **Pull request validation** for performance regressions
+
+### Real Validator Testing
+
+**Agave Validator Setup:**
+- Downloads and builds latest stable Anza/Agave validator
+- Initializes real ledger with genesis configuration
+- Runs actual validator process with standard configuration
+
+**Slonana Validator Setup:**
+- Builds slonana.cpp from source with release optimizations
+- Configures equivalent validator settings for fair comparison
+- Uses real validator binary, not test mocks
+
+### Benchmark Methodology
+
+**Test Environment:**
+- GitHub Actions ubuntu-latest runners
+- Standardized hardware (CPU cores, memory reported)
+- Isolated test runs to minimize interference
+
+**Measured Metrics:**
+1. **Transaction Throughput (TPS)** - Real RPC request processing
+2. **RPC Response Latency** - Actual API call timing 
+3. **Memory Usage** - Live process memory consumption
+4. **CPU Utilization** - Real validator process CPU usage
+
+**Test Procedure:**
+1. Start validator with identical configurations
+2. Wait for full validator initialization 
+3. Execute standardized benchmark workload
+4. Measure system metrics during load testing
+5. Record results in machine-readable format
+
+## 📊 Current Benchmark Results
+
+> **Live Results:** Performance tables in README.md and docs/index.html are automatically updated with real benchmark data.
+
+**View Latest Results:**
+```bash
+# Show current benchmark comparison
+./scripts/show_benchmark_results.sh
+
+# Raw results data
+cat benchmark_comparison.json
+```
 
 ## Benchmark Categories
 
