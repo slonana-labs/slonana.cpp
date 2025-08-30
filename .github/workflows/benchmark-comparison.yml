@@ -49,19 +49,28 @@ jobs:
         profile: minimal
         override: true
 
-    - name: Setup Solana CLI and Agave validator
+    - name: Cache cargo registry and binaries
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          ~/.cargo/bin
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-agave-v3.0
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+
+    - name: Setup Solana CLI and install Agave validator
       run: |
         curl --proto '=https' --tlsv1.2 -sSfL https://solana-install.solana.workers.dev | bash
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
         echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
 
-        git clone https://github.com/anza-xyz/agave.git agave-validator
-        cd agave-validator
-        git checkout v3.0
-        cargo build --release --locked --bin agave-validator --bin agave-ledger-tool
-        sudo cp target/release/agave-validator /usr/local/bin/agave-validator
-        sudo cp target/release/agave-ledger-tool /usr/local/bin/agave-ledger-tool
-        cd ..
+    - name: Install Agave validator via cargo install (optimized)
+      run: |
+        cargo install --git https://github.com/anza-xyz/agave.git --tag v3.0 --locked agave-validator agave-ledger-tool
+        sudo cp ~/.cargo/bin/agave-validator /usr/local/bin/agave-validator
+        sudo cp ~/.cargo/bin/agave-ledger-tool /usr/local/bin/agave-ledger-tool
 
     - name: Build Slonana validator
       run: |
@@ -85,6 +94,11 @@ jobs:
           "measurement_interval_seconds": 10
         }
         EOF
+
+    - name: Ensure benchmark scripts are executable
+      run: |
+        chmod +x ./scripts/benchmark_agave.sh
+        chmod +x ./scripts/benchmark_slonana.sh
 
     - name: Validate benchmark scripts
       run: |
