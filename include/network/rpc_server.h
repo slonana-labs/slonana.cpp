@@ -233,6 +233,17 @@ private:
     std::shared_ptr<staking::StakingManager> staking_manager_;
     std::shared_ptr<svm::ExecutionEngine> execution_engine_;
     std::shared_ptr<svm::AccountManager> account_manager_;
+    
+    // Performance optimization caches
+    mutable std::map<std::string, std::pair<std::string, uint64_t>> account_cache_; // address -> (data, timestamp)
+    mutable std::map<uint64_t, std::string> block_cache_; // slot -> block_data
+    mutable std::string cached_supply_data_;
+    mutable uint64_t cached_supply_timestamp_;
+    mutable uint64_t cache_ttl_ms_ = 5000; // 5 second cache TTL
+    
+    // Cache management
+    bool is_cache_valid(uint64_t timestamp) const;
+    uint64_t get_current_timestamp_ms() const;
 };
 
 } // namespace network

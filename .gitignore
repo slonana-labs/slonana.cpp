@@ -54,6 +54,19 @@ slonana_tests
 slonana_comprehensive_tests
 slonana_common_tests
 slonana_rpc_tests
+slonana_wallet_tests
+slonana_monitoring_tests
+slonana_consensus_timing_tests
+slonana_proof_of_history_tests
+slonana_genesis_tests
+slonana_enhanced_svm_tests
+slonana_spl_extended_tests
+slonana_websocket_tests
+slonana_cluster_tests
+slonana_snapshot_tests
+slonana_hardware_wallet_tests
+slonana_benchmarks
+slonana-genesis
 libslonana_core.a
 
 # Test directories
