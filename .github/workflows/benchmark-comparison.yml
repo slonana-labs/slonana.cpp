@@ -66,8 +66,6 @@ jobs:
         # Install and pin to specific version to avoid breaking changes
         sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
-
-        sh -c "$(c
         
         # Add to GITHUB_PATH for subsequent steps
         echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
