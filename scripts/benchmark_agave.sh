@@ -675,3 +675,6 @@ main() {
 
 # Execute main function with all arguments
 main "$@"
+
+# Ensure successful completion returns exit code 0
+exit 0
