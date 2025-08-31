@@ -5,6 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>The Slonana Chronicle - C++ Solana Validator by OpenSVM</title>
     <link rel="stylesheet" href="styles.css">
+    <!-- MathJax for LaTeX math rendering -->
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script>
+      MathJax = {
+        tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']],
+          displayMath: [['$$', '$$'], ['\\[', '\\]']],
+          processEscapes: true,
+          processEnvironments: true
+        },
+        options: {
+          skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre']
+        }
+      };
+    </script>
 </head>
 <body>
     <div class="newspaper">
@@ -158,6 +174,105 @@
                         <li><strong>Energy Efficiency:</strong> Optimized algorithms reduce environmental impact compared to traditional PoW chains</li>
                         <li><strong>Scalability Preservation:</strong> Maintain Solana's high throughput while adding mining-based security</li>
                     </ul>
+                </div>
+            </section>
+
+            <!-- THEORETICAL FOUNDATIONS SECTION -->
+            <section class="theory-section">
+                <h2 class="section-title">MATHEMATICAL FOUNDATIONS</h2>
+                <div class="theory-subtitle">Rigorous Analysis of SVM Consensus Theory</div>
+                
+                <div class="theory-content">
+                    <div class="theory-main">
+                        <h3>Research Paper: The Mathematical Foundations of SVM Consensus</h3>
+                        <p class="theory-lead">We present a comprehensive mathematical analysis of the Solana Virtual Machine consensus mechanism, providing formal proofs of Byzantine fault tolerance, game-theoretic equilibrium analysis, and cryptographic security foundations.</p>
+                        
+                        <div class="theory-highlights">
+                            <div class="theory-item">
+                                <h4>🔬 Academic Rigor</h4>
+                                <p>Complete formal definitions with mathematical notation and cryptographic assumptions. Structured as a peer-reviewed research publication with abstract, introduction, preliminaries, main results, and proofs.</p>
+                            </div>
+                            
+                            <div class="theory-item">
+                                <h4>📊 Mathematical Proofs</h4>
+                                <p>Rigorous proofs of safety and liveness properties under Byzantine adversaries. Analysis includes complexity bounds, security reductions, and performance guarantees.</p>
+                            </div>
+                            
+                            <div class="theory-item">
+                                <h4>🎮 Game Theory</h4>
+                                <p>Economic incentive analysis proving Nash equilibrium at honest behavior. Includes slashing mechanisms, reward structures, and rational validator strategies.</p>
+                            </div>
+                            
+                            <div class="theory-item">
+                                <h4>🔐 Cryptographic Foundations</h4>
+                                <p>Security analysis under standard cryptographic assumptions including ECDSA security, hash function properties, and verifiable delay functions.</p>
+                            </div>
+                        </div>
+                        
+                        <div class="key-results">
+                            <h4>Key Mathematical Results</h4>
+                            <div class="math-formula">
+                                <strong>Byzantine Fault Tolerance:</strong> Safety guaranteed under $S_{\mathcal{B}} < \frac{S}{3}$ (Byzantine stake < 1/3 total)
+                            </div>
+                            <div class="math-formula">
+                                <strong>Fork Weight Function:</strong> $W(B) = \sum_{v \in \text{Votes}(B)} s_v \cdot e^{-\alpha(t - t_v)}$ with time decay
+                            </div>
+                            <div class="math-formula">
+                                <strong>Communication Complexity:</strong> $O(n)$ messages per slot, $O(\lambda)$ signature verification per vote
+                            </div>
+                            <div class="math-formula">
+                                <strong>Nash Equilibrium:</strong> Honest behavior optimal when $\frac{R_{\text{honest}}}{C_{\text{honest}}} > \frac{P_{\text{slashing}}}{R_{\text{attack}}}$
+                            </div>
+                        </div>
+                        
+                        <div class="paper-access">
+                            <a href="svm-consensus-theory.html" class="theory-paper-btn">📖 Read Full Research Paper</a>
+                            <p class="paper-note">Complete with LaTeX mathematics, formal proofs, cryptographic analysis, and extensive references</p>
+                        </div>
+                    </div>
+                    
+                    <div class="theory-sidebar">
+                        <div class="theory-box">
+                            <h4>Paper Structure</h4>
+                            <ul>
+                                <li><strong>Abstract & Introduction</strong></li>
+                                <li><strong>Preliminaries & Definitions</strong></li>
+                                <li><strong>SVM Consensus Protocol</strong></li>
+                                <li><strong>Safety & Liveness Analysis</strong></li>
+                                <li><strong>Game-Theoretic Analysis</strong></li>
+                                <li><strong>Proof-of-History Integration</strong></li>
+                                <li><strong>Complexity Analysis</strong></li>
+                                <li><strong>Security Analysis</strong></li>
+                                <li><strong>Performance Optimizations</strong></li>
+                                <li><strong>Experimental Validation</strong></li>
+                                <li><strong>References & Appendices</strong></li>
+                            </ul>
+                        </div>
+                        
+                        <div class="theory-box">
+                            <h4>Mathematical Topics</h4>
+                            <ul>
+                                <li>Byzantine consensus theory</li>
+                                <li>Cryptographic hash functions</li>
+                                <li>Digital signature schemes</li>
+                                <li>Game theory & Nash equilibria</li>
+                                <li>Probability theory</li>
+                                <li>Complexity analysis</li>
+                                <li>Network synchrony models</li>
+                                <li>Economic mechanism design</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="theory-box">
+                            <h4>Implementation Validation</h4>
+                            <ul>
+                                <li>Theoretical bounds verified empirically</li>
+                                <li>Security properties tested</li>
+                                <li>Performance predictions confirmed</li>
+                                <li>Game-theoretic models validated</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
             </section>
 
