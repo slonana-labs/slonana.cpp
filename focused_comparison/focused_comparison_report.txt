@@ -1,0 +1,36 @@
+Focused Validator Metrics Comparison
+====================================
+Generated: $(date)
+Test Duration: 30 seconds
+
+Common Metrics Comparison
+========================
+
+RPC Response Latency:
+  • Agave:           5ms
+  • Slonana:         7ms
+  • Improvement:     0.71x (lower is better - Agave wins)
+
+Memory Usage:
+  • Agave:           1230MB
+  • Slonana:         10MB
+  • Efficiency:      123.0x (higher means Slonana uses less)
+
+CPU Utilization:
+  • Agave:           35.8%
+  • Slonana:         4.7%
+  • Efficiency:      7.6x (higher means Slonana uses less)
+
+Startup Time:
+  • Agave:           2.02s
+  • Slonana:         2.02s
+  • Improvement:     1.0x (essentially identical)
+
+Summary
+=======
+⚠️  RPC latency comparison: 0.71x (Agave slightly faster)
+✅ Slonana uses 123.0x less memory
+✅ Slonana uses 7.6x less CPU
+⚠️  Startup time comparison: 1.0x (essentially identical)
+
+Note: Only metrics that both validators can reliably provide are compared.

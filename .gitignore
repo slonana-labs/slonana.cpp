@@ -152,3 +152,7 @@ __pycache__/
 
 # Package builds
 packages/
+
+# Benchmark test files
+test_ledgers/
+benchmark_results/

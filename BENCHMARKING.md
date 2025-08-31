@@ -237,7 +237,236 @@ cmake -B build && cmake --build build
 ./scripts/show_benchmark_results.sh
 ```
 
-### Script Usage Examples
+## 🏗️ Manual Cluster Benchmarking
+
+For comprehensive performance testing and development work, you can set up and benchmark a complete Solana cluster manually. This provides more control and deeper insights than the automated scripts.
+
+### Prerequisites Setup
+
+First, set up the Rust toolchain and Solana source code:
+
+```bash
+# Setup Rust, Cargo and system packages as described in the Solana README
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source ~/.cargo/env
+
+# Install required system dependencies
+sudo apt-get update
+sudo apt-get install -y build-essential libssl-dev libudev-dev pkg-config
+
+# Clone Solana source code
+git clone https://github.com/solana-labs/solana.git
+cd solana
+
+# For stability, checkout the latest release
+TAG=$(git describe --tags $(git rev-list --tags --max-count=1))
+git checkout $TAG
+echo "Using Solana version: $TAG"
+```
+
+### Configuration Setup
+
+Ensure important programs such as the vote program are built before any nodes are started:
+
+```bash
+# Use release build for good performance
+cargo build --release
+
+# Set environment variable to enforce release builds
+export CARGO_BUILD_PROFILE=release
+
+# For profiling, use release-with-debug profile
+# cargo build --profile release-with-debug
+# export CARGO_BUILD_PROFILE=release-with-debug
+
+# For debug builds without optimizations, just use:
+# cargo build
+# (and don't set CARGO_BUILD_PROFILE)
+```
+
+### Network Initialization
+
+Initialize the network with a genesis ledger:
+
+```bash
+# Generate genesis ledger
+./multinode-demo/setup.sh
+```
+
+### Faucet Setup
+
+Start the faucet to provide test tokens for transactions:
+
+```bash
+# Start faucet in a separate terminal
+./multinode-demo/faucet.sh
+```
+
+The faucet delivers "air drops" (free tokens) to requesting clients for test transactions.
+
+### Singlenode Testnet
+
+For high-level development work like smart contract experimentation:
+
+```bash
+# Ensure UDP ports 8000-10000 are open
+# Get your machine's IP address
+IP_ADDRESS=$(hostname -I | awk '{print $1}')
+echo "Bootstrap validator will run on: $IP_ADDRESS"
+
+# Start bootstrap validator in a separate terminal
+./multinode-demo/bootstrap-validator.sh
+
+# Wait for "leader ready..." message before proceeding
+```
+
+### Multinode Testnet
+
+For consensus work and full performance testing:
+
+```bash
+# After starting a leader node, spin up additional validators in separate terminals
+./multinode-demo/validator.sh
+
+# For performance-enhanced validator on Linux with CUDA 10.0
+./fetch-perf-libs.sh
+SOLANA_CUDA=1 ./multinode-demo/bootstrap-validator.sh
+SOLANA_CUDA=1 ./multinode-demo/validator.sh
+```
+
+**Testnet Variations:**
+- **Rust-only singlenode**: For smart contract development
+- **Enhanced singlenode**: For transaction pipeline optimization  
+- **Rust-only multinode**: For consensus work
+- **Enhanced multinode**: To reproduce TPS metrics
+
+### Client Demo and Benchmarking
+
+Run actual transaction load testing:
+
+```bash
+# Run client demo against localhost
+./multinode-demo/bench-tps.sh
+
+# The client will:
+# - Spin up several threads
+# - Send 500,000 transactions as quickly as possible
+# - Ping testnet periodically for processed transaction counts
+# - Intentionally flood network with UDP packets
+# - Ensure testnet has opportunity to reach 710k TPS
+# - Show TPS measurements for each validator node
+```
+
+### Performance Measurement
+
+The benchmark client provides real-time metrics:
+
+- **Transaction Throughput**: TPS measurements per validator
+- **Network Efficiency**: UDP packet handling under load
+- **Processing Latency**: Time from submission to confirmation
+- **Resource Usage**: CPU, memory, and network utilization
+
+### Debugging and Monitoring
+
+Enable detailed logging for troubleshooting:
+
+```bash
+# Enable info everywhere and debug in specific modules
+export RUST_LOG=solana=info,solana::banking_stage=debug
+
+# Enable SBF program logging
+export RUST_LOG=solana_bpf_loader=trace
+
+# For performance-related logging
+export RUST_LOG=solana=info
+
+# Log levels:
+# - debug: Infrequent debug messages
+# - trace: Potentially frequent messages  
+# - info: Performance-related logging
+```
+
+### Process Debugging
+
+Attach to running processes for deeper analysis:
+
+```bash
+# The leader process is named agave-validator
+sudo gdb
+attach $(pgrep agave-validator)
+```
+
+### Network Configuration
+
+Before starting validators, ensure proper network setup:
+
+```bash
+# Open required UDP ports (8000-10000)
+sudo ufw allow 8000:10000/udp
+
+# Check firewall status
+sudo ufw status
+
+# Verify network connectivity
+netstat -tulpn | grep :8000
+```
+
+### Custom Benchmark Configurations
+
+Modify test parameters for specific benchmarking needs:
+
+```bash
+# Custom TPS targets
+./multinode-demo/bench-tps.sh --tx-count 1000000 --thread-batch-sleep-ms 1
+
+# Specific transaction types
+./multinode-demo/bench-tps.sh --account-mode account-creation
+./multinode-demo/bench-tps.sh --account-mode account-query
+
+# Network stress testing
+./multinode-demo/bench-tps.sh --sustained
+```
+
+### Cluster Health Monitoring
+
+Monitor cluster status during benchmarking:
+
+```bash
+# Check cluster status
+solana cluster-version
+solana validators
+solana slot
+
+# Monitor gossip network
+solana gossip
+
+# Check validator logs
+tail -f ~/.local/share/solana/install/active_release/bin/agave-validator.log
+```
+
+### Results Collection
+
+Collect comprehensive benchmark data:
+
+```bash
+# Validator metrics
+./multinode-demo/metrics.sh
+
+# Network analysis
+ss -tuln | grep 8000
+
+# Resource usage
+htop
+iostat -x 1
+vmstat 1
+
+# Save results
+./multinode-demo/bench-tps.sh > benchmark_results_$(date +%Y%m%d_%H%M%S).log
+```
+
+This manual setup provides complete control over the benchmarking environment and enables detailed performance analysis that complements the automated testing system.
+
+### Automated Script Usage Examples
 
 **Basic benchmark with custom duration:**
 ```bash
@@ -263,6 +492,66 @@ cmake -B build && cmake --build build
   --results /tmp/results \
   --use-placeholder
 ```
+
+### Slonana Benchmark Script Debugging
+
+The slonana benchmark script includes comprehensive genesis creation and validator setup. Here's how to debug common issues:
+
+**Debug genesis creation specifically:**
+```bash
+# Install Solana CLI first
+sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+
+# Test genesis creation with verbose output
+./scripts/benchmark_slonana.sh \
+  --ledger test_ledgers/slonana \
+  --results benchmark_results/slonana \
+  --test-duration 60 \
+  --use-placeholder \
+  --verbose
+```
+
+**Fixed: Validator Argument Format**
+The Slonana validator arguments have been updated to match the expected format:
+- `--ledger` → `--ledger-path`  
+- `--rpc-port PORT` → `--rpc-bind-address 127.0.0.1:PORT`
+- `--gossip-port PORT` → `--gossip-bind-address 127.0.0.1:PORT`
+- Removed unsupported arguments: `--dynamic-port-range`, `--enable-rpc-transaction-history`, `--log`
+
+**Common genesis issues and solutions:**
+
+1. **"Invalid value for '--faucet-pubkey'" error** - Fixed in script, now generates all required keypairs:
+   - validator-keypair.json (identity)
+   - vote-keypair.json 
+   - stake-keypair.json
+   - faucet-keypair.json
+
+2. **Missing keypairs** - Script auto-generates all required keypairs when Solana CLI is available
+
+3. **Ledger directory issues** - Script creates directories automatically with proper permissions
+
+**Verify successful genesis creation:**
+```bash
+# Check generated files
+ls -la benchmark_results/slonana/
+# Should show: validator-keypair.json, vote-keypair.json, stake-keypair.json, faucet-keypair.json
+
+ls -la test_ledgers/slonana/
+# Should show: genesis.bin, genesis.tar.bz2, rocksdb/
+```
+
+**Bootstrap-only testing (fastest debug):**
+```bash
+./scripts/benchmark_slonana.sh \
+  --ledger test_ledgers/slonana \
+  --results benchmark_results/slonana \
+  --bootstrap-only \
+  --use-placeholder \
+  --verbose
+```
+
+This tests the complete setup process without running performance benchmarks, allowing rapid validation of genesis creation and environment setup.
 
 **Custom ports and binary paths:**
 ```bash
@@ -444,6 +733,61 @@ void benchmark_custom_operations() {
 
 ## Troubleshooting
 
+### Manual Cluster Issues
+
+**Network Setup Problems:**
+```bash
+# Verify UDP ports are open
+sudo netstat -tulpn | grep :8000
+sudo ufw status
+
+# Check if validator can bind to ports
+lsof -i :8899  # RPC port
+lsof -i :8001  # Gossip port
+```
+
+**Validator Startup Issues:**
+```bash
+# Check validator logs
+tail -f ~/.local/share/solana/install/active_release/bin/agave-validator.log
+
+# Verify genesis configuration
+solana config get
+solana genesis-hash
+
+# Check cluster connectivity
+solana cluster-version
+solana validators
+```
+
+**Performance Issues:**
+```bash
+# Monitor system resources during benchmarking
+htop
+iostat -x 1  
+iotop
+nethogs
+
+# Check for memory pressure
+free -h
+dmesg | grep -i memory
+
+# Verify CPU frequency scaling
+cat /proc/cpuinfo | grep MHz
+```
+
+**Transaction Processing Issues:**
+```bash
+# Check transaction pool status
+solana transaction-count
+
+# Monitor slot progression
+watch -n 1 'solana slot'
+
+# Verify faucet connectivity
+solana airdrop 1 --keypair ~/.config/solana/id.json
+```
+
 ### Common Issues
 1. **Low Performance**: Check system resources and background processes
 2. **Inconsistent Results**: Ensure stable test environment
@@ -460,6 +804,260 @@ void benchmark_custom_operations() {
 
 # Single-threaded mode for debugging
 ./slonana_benchmarks --single-thread
+```
+
+## 🐛 Local Debugging Guide
+
+### Debugging Benchmark Script Execution
+
+When running benchmark scripts locally, use this systematic debugging approach:
+
+#### Step 1: Basic Script Validation
+```bash
+# Check script syntax and help
+./scripts/benchmark_agave.sh --help
+
+# Verify script permissions
+ls -la ./scripts/benchmark_agave.sh
+chmod +x ./scripts/benchmark_agave.sh  # If needed
+```
+
+#### Step 2: Dependency Debugging
+```bash
+# Run dependency check first
+./scripts/benchmark_agave.sh --ledger test_ledgers/agave --results benchmark_results/agave --bootstrap-only --verbose
+
+# Check PATH configuration
+echo $PATH
+which agave-validator
+which solana
+which solana-keygen
+
+# Common PATH fix for Solana CLI
+export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+```
+
+#### Step 3: Verbose Mode Debugging
+```bash
+# Enable maximum verbosity for troubleshooting
+./scripts/benchmark_agave.sh \
+    --ledger test_ledgers/agave \
+    --results benchmark_results/agave \
+    --validator-bin agave-validator \
+    --test-duration 60 \
+    --verbose \
+    --bootstrap-only  # Test setup without full benchmark
+```
+
+#### Step 4: Component Testing
+```bash
+# Test individual components
+# 1. Directory creation
+mkdir -p test_ledgers/agave benchmark_results/agave
+
+# 2. Keypair generation
+solana-keygen new --no-bip39-passphrase --silent --outfile benchmark_results/agave/test-keypair.json
+
+# 3. Validator binary test
+agave-validator --help
+
+# 4. Genesis creation test
+solana-genesis --bootstrap-validator benchmark_results/agave/test-keypair.json test_ledgers/agave
+```
+
+### Common Issues and Solutions
+
+#### "Binary not found in PATH" Errors
+```bash
+# Problem: agave-validator not found
+# Solution 1: Install Agave binaries via cargo
+cargo install agave-validator agave-ledger-tool --locked
+
+# Solution 2: Use official Anza installer (recommended)
+sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+
+# Solution 3: Use legacy Solana installer
+curl --proto '=https' --tlsv1.2 -sSfL https://solana-install.solana.workers.dev | bash
+export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+
+# Verify installation
+which agave-validator || echo "❌ agave-validator not found"
+which solana-keygen || echo "❌ solana-keygen not found"
+which solana || echo "❌ solana CLI not found"
+```
+
+#### Validator Startup Failures
+```bash
+# Check port availability
+netstat -tulpn | grep :8899
+netstat -tulpn | grep :8001
+
+# Use different ports if needed
+./scripts/benchmark_agave.sh \
+    --ledger test_ledgers/agave \
+    --results benchmark_results/agave \
+    --rpc-port 9899 \
+    --gossip-port 9001 \
+    --verbose
+```
+
+#### Permission and Directory Issues
+```bash
+# Check directory permissions
+ls -la test_ledgers/
+ls -la benchmark_results/
+
+# Clean and recreate if needed
+rm -rf test_ledgers/agave benchmark_results/agave
+mkdir -p test_ledgers/agave benchmark_results/agave
+
+# Verify write access
+touch test_ledgers/agave/test.txt
+touch benchmark_results/agave/test.txt
+rm test_ledgers/agave/test.txt benchmark_results/agave/test.txt
+```
+
+### Advanced Debugging Techniques
+
+#### Script Error Tracking
+```bash
+# Run with bash debug mode
+bash -x ./scripts/benchmark_agave.sh \
+    --ledger test_ledgers/agave \
+    --results benchmark_results/agave \
+    --verbose
+
+# Monitor system logs during execution
+sudo tail -f /var/log/syslog &
+./scripts/benchmark_agave.sh [args...]
+```
+
+#### Process Monitoring
+```bash
+# Monitor validator process
+ps aux | grep agave-validator
+top -p $(pgrep agave-validator)
+
+# Check resource usage
+watch -n 1 'ps -p $(pgrep agave-validator) -o pid,%cpu,%mem,cmd'
+```
+
+#### Log Analysis
+```bash
+# Check validator logs
+tail -f benchmark_results/agave/agave_validator.log
+
+# Check for common error patterns
+grep -i error benchmark_results/agave/agave_validator.log
+grep -i "failed\|timeout\|connection" benchmark_results/agave/agave_validator.log
+```
+
+### Debugging Specific Command Sequences
+
+#### Debugging Anza Installation + Script Run
+This section covers debugging the specific sequence many users follow:
+
+```bash
+# Step 1: Install Anza/Agave toolchain
+sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+
+# Step 2: Run benchmark script (without arguments - will fail)
+./scripts/benchmark_agave.sh
+```
+
+**Expected Error:**
+```
+[ERROR] Missing required argument: --ledger
+```
+
+**Debug Process:**
+
+1. **Verify Installation:**
+```bash
+# Check if binaries are available after installation
+which agave-validator
+which solana-keygen
+which solana
+
+# If not found, re-export PATH:
+export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+
+# Test binaries
+agave-validator --help
+solana --version
+```
+
+2. **Run with Required Arguments:**
+```bash
+# Create test directories
+mkdir -p test_ledgers/agave benchmark_results/agave
+
+# Run with minimum required arguments
+./scripts/benchmark_agave.sh \
+    --ledger test_ledgers/agave \
+    --results benchmark_results/agave \
+    --verbose
+
+# Or test setup only
+./scripts/benchmark_agave.sh \
+    --ledger test_ledgers/agave \
+    --results benchmark_results/agave \
+    --bootstrap-only \
+    --verbose
+```
+
+3. **Common Issues After Anza Installation:**
+```bash
+# Issue: PATH not persisted across terminals
+echo 'export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+
+# Issue: Permission denied on script
+chmod +x ./scripts/benchmark_agave.sh
+
+# Issue: Script not found
+ls -la ./scripts/benchmark_agave.sh
+pwd  # Make sure you're in the slonana.cpp project root
+```
+
+### Script Exit Codes Reference
+
+The benchmark scripts use specific exit codes for debugging:
+
+- **0**: Success
+- **1**: General error
+- **2**: Invalid arguments
+- **3**: Missing dependencies  
+- **4**: Validator startup failure
+- **5**: Benchmark execution failure
+
+```bash
+# Check exit code after script failure
+echo "Exit code: $?"
+
+# Example debugging based on exit code
+if [ $? -eq 3 ]; then
+    echo "Dependency issue - check PATH and installations"
+elif [ $? -eq 4 ]; then
+    echo "Validator startup failed - check ports and permissions"
+fi
+```
+
+### Network and Connectivity Issues
+```bash
+# Test localhost connectivity
+curl -s http://localhost:8899/health
+
+# Check RPC endpoint
+curl -X POST http://localhost:8899 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getVersion"}'
+
+# Firewall check (if needed)
+sudo ufw status
+sudo iptables -L INPUT | grep 8899
 ```
 
 ## Contributing

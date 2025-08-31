@@ -302,6 +302,11 @@ common::Result<bool> ValidatorCore::start() {
     
     std::cout << "Starting validator core" << std::endl;
     
+    // Check if Proof of History is initialized before accessing it
+    if (!consensus::GlobalProofOfHistory::is_initialized()) {
+        return common::Result<bool>("GlobalProofOfHistory not initialized. Initialize it before starting ValidatorCore.");
+    }
+    
     // Access the already initialized Proof of History instance
     auto& poh = consensus::GlobalProofOfHistory::instance();
     
@@ -324,9 +329,7 @@ void ValidatorCore::stop() {
     if (impl_->running_) {
         std::cout << "Stopping validator core" << std::endl;
         
-        // Stop Proof of History
-        consensus::GlobalProofOfHistory::shutdown();
-        
+        // Just stop the running flag - PoH will be shut down by the main validator
         impl_->running_ = false;
     }
 }
@@ -341,11 +344,15 @@ void ValidatorCore::process_block(const ledger::Block& block) {
     
     auto validation_result = block_validator_->validate_block(block);
     if (validation_result.is_ok()) {
-        // Mix block hash into PoH for timestamping
-        auto& poh = consensus::GlobalProofOfHistory::instance();
-        uint64_t poh_sequence = poh.mix_data(block.block_hash);
-        
-        std::cout << "Mixed block hash into PoH at sequence " << poh_sequence << std::endl;
+        // Mix block hash into PoH for timestamping only if PoH is available
+        uint64_t poh_sequence = 0;
+        if (consensus::GlobalProofOfHistory::is_initialized()) {
+            auto& poh = consensus::GlobalProofOfHistory::instance();
+            poh_sequence = poh.mix_data(block.block_hash);
+            std::cout << "Mixed block hash into PoH at sequence " << poh_sequence << std::endl;
+        } else {
+            std::cout << "Warning: GlobalProofOfHistory not available for timestamping block" << std::endl;
+        }
         
         fork_choice_->add_block(block);
         
@@ -416,10 +423,9 @@ bool ValidatorCore::is_running() const {
 }
 
 common::Slot ValidatorCore::get_current_slot() const {
-    // Return the PoH-driven current slot for RPC queries
+    // Return the PoH-driven current slot for RPC queries with safe checking
     // This represents the current time-based slot progression, not the blockchain state
-    auto& poh = consensus::GlobalProofOfHistory::instance();
-    return poh.get_current_slot();
+    return consensus::GlobalProofOfHistory::get_current_slot();
 }
 
 common::Slot ValidatorCore::get_blockchain_head_slot() const {

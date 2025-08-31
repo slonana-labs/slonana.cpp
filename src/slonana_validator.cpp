@@ -211,6 +211,9 @@ void SolanaValidator::shutdown() {
     account_manager_.reset();
     ledger_manager_.reset();
     
+    // Shutdown GlobalProofOfHistory after all components are destroyed
+    consensus::GlobalProofOfHistory::shutdown();
+    
     initialized_.store(false);
     std::cout << "Validator shutdown complete" << std::endl;
 }
