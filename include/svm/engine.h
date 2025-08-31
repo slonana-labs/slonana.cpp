@@ -12,6 +12,13 @@ namespace svm {
 
 using namespace slonana::common;
 
+// Forward declarations for new components
+class AccountLoader;
+class RentCalculator;
+class NonceInfo;
+struct TransactionBalances;
+struct TransactionErrorMetrics;
+
 /**
  * Program account data and executable information
  */
@@ -101,6 +108,8 @@ struct ExecutionOutcome {
     std::vector<ProgramAccount> modified_accounts;
     std::string error_details;
     std::string logs;  // Added for program output logs
+    bool has_balance_changes = false;
+    bool has_error_metrics = false;
     
     bool is_success() const { return result == ExecutionResult::SUCCESS; }
 };
@@ -180,13 +189,38 @@ public:
         std::unordered_map<PublicKey, ProgramAccount>& accounts
     );
     
+    // Enhanced transaction execution with account loading and validation
+    ExecutionOutcome execute_transaction_with_loader(
+        const std::vector<Instruction>& instructions,
+        const std::vector<PublicKey>& account_keys,
+        const std::vector<bool>& is_signer,
+        const std::vector<bool>& is_writable,
+        const PublicKey& fee_payer,
+        Lamports fee_amount,
+        AccountLoader* account_loader = nullptr
+    );
+    
+    // Batch transaction execution
+    std::vector<ExecutionOutcome> execute_transaction_batch(
+        const std::vector<std::vector<Instruction>>& transaction_batch,
+        std::vector<std::unordered_map<PublicKey, ProgramAccount>>& account_batch
+    );
+    
     // Configuration
     void set_compute_budget(uint64_t max_compute_units);
     void set_feature_set(const std::vector<std::string>& features);
+    void set_rent_calculator(std::shared_ptr<RentCalculator> rent_calc);
+    void enable_balance_tracking(bool enabled);
+    void enable_error_metrics(bool enabled);
     
     // Statistics
     uint64_t get_total_instructions_executed() const;
     uint64_t get_total_compute_units_consumed() const;
+    TransactionErrorMetrics get_error_metrics() const;
+    
+    // Rent operations
+    bool collect_rent(ProgramAccount& account, Slot current_slot);
+    bool validate_rent_exemption(const ProgramAccount& account) const;
 
 private:
     class Impl;

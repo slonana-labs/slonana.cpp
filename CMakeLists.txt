@@ -91,6 +91,8 @@ set(COMPREHENSIVE_TEST_SOURCES
     # New comprehensive test suites
     "${CMAKE_SOURCE_DIR}/tests/test_bpf_runtime_comprehensive.cpp"
     "${CMAKE_SOURCE_DIR}/tests/test_consensus_mechanism_comprehensive.cpp"
+    # SVM compatibility tests
+    "${CMAKE_SOURCE_DIR}/tests/test_svm_compatibility.cpp"
 )
 
 # Original simple test suite (for backwards compatibility)
