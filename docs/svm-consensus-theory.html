@@ -235,6 +235,93 @@
 
     <h2>3. SVM Consensus Protocol</h2>
 
+    <div style="border: 2px solid #333; padding: 20px; margin: 20px 0; background-color: #fafafa;">
+        <h3>ASCII Visualizations</h3>
+        
+        <h4>3.0.1 Blockchain Structure</h4>
+        <pre style="font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.3;">
+Genesis ──► Block1 ──► Block2 ──► Block3 ──► Block4
+   │           │          │          │          │
+   └─Hash─0    └─Hash─1   └─Hash─2   └─Hash─3   └─Hash─4
+   │           │          │          │          │
+   └─Txs: []   └─Txs: 5   └─Txs: 12  └─Txs: 8   └─Txs: 15
+        </pre>
+
+        <h4>3.0.2 Consensus Voting Process</h4>
+        <pre style="font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.3;">
+     Validator Network         Vote Aggregation
+    ┌─────┐ ┌─────┐ ┌─────┐        ┌─────────┐
+    │ V1  │ │ V2  │ │ V3  │ ───► │ Leader  │
+    │30%  │ │25%  │ │20%  │      │ Collect │
+    └─────┘ └─────┘ └─────┘        └─────────┘
+       │       │       │              │
+       ▼       ▼       ▼              ▼
+    [Vote]  [Vote]  [Vote]         ┌─────────┐
+                                   │ 2/3+    │
+    ┌─────┐ ┌─────┐                │ Stake   │
+    │ V4  │ │ V5  │                │ Reached │
+    │15%  │ │10%  │                └─────────┘
+    └─────┘ └─────┘                    │
+       │       │                       ▼
+       ▼       ▼                   FINALIZE
+    [Vote]  [Vote]
+        </pre>
+
+        <h4>3.0.3 Network Topology</h4>
+        <pre style="font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.3;">
+                    ┌───┐
+                 ┌──│ A │──┐
+                 │  └───┘  │
+               ┌─▼─┐     ┌─▼─┐
+           ┌───│ B │     │ C │───┐
+           │   └───┘     └───┘   │
+         ┌─▼─┐               ┌─▼─┐
+         │ D │   Full Mesh   │ E │
+         └─┬─┘   Network     └─┬─┘
+           │     (Gossip)      │
+         ┌─▼─┐               ┌─▼─┐
+         │ F │               │ G │
+         └───┘               └───┘
+         RPC                 RPC
+       Clients             Clients
+        </pre>
+
+        <h4>3.0.4 Performance Metrics</h4>
+        <pre style="font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.3;">
+TPS (Thousands)
+   65 ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ Slonana.cpp
+   50 ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ Solana Labs
+   15 ▓▓▓▓ Ethereum
+    5 ▓ Bitcoin
+    0 ┴───────────────────
+      
+Latency (ms)
+  400 ▓▓▓▓▓▓▓▓ Block Time
+  260 ▓▓▓▓▓ Finality
+  100 ▓▓ Network Delay
+   50 ▓ Signature Verify
+    0 ┴─────────────────
+        </pre>
+
+        <h4>3.0.5 Fork Choice Algorithm</h4>
+        <pre style="font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.3;">
+                Genesis
+                   │
+                   ▼
+                Block A
+               ╱       ╲
+              ▼         ▼
+          Block B     Block C
+         (Weight:     (Weight:
+          45%)         55%) ◄── Heaviest
+             │            │
+             ▼            ▼
+         Block D      Block E ◄── Selected
+        (Weight:     (Weight:    Chain Head
+         30%)         55%)
+        </pre>
+    </div>
+
     <h3>3.1 Vote Structure</h3>
 
     <div class="definition">
@@ -357,6 +444,66 @@ Output: Canonical head block
             </tr>
         </tbody>
     </table>
+
+    <div style="border: 2px solid #333; padding: 20px; margin: 20px 0; background-color: #fafafa;">
+        <h3>Additional SVM Visualizations</h3>
+        
+        <h4>7.0.1 Validator Stake Distribution</h4>
+        <pre style="font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.3;">
+    Stake Percentage
+                    ┌─────┐
+                 40%│█████│ Top Validator
+                    ├─────┤
+                 30%│████ │ Second Largest  
+                    ├─────┤
+                 20%│███  │ Third Largest
+                    ├─────┤
+                 10%│██   │ Others Combined
+                    └─────┘
+                     Total: 100% Stake
+        </pre>
+
+        <h4>7.0.2 Transaction Flow</h4>
+        <pre style="font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.3;">
+Client ──► Pool ──► Leader ──► Block
+  │         │         │         │
+  └─Tx──► ┌─▼─┐    ┌─▼─┐    ┌─▼─┐
+         │Mem│    │Val│    │Fin│
+         └───┘    └───┘    └───┘
+        </pre>
+
+        <h4>7.0.3 Byzantine Fault Model</h4>
+        <pre style="font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.3;">
+Total Validators: 100%
+┌─────────────────────┐
+│ Honest: 67%+ ✓      │
+├─────────────────────┤
+│ Byzantine: <33% ✗   │
+└─────────────────────┘
+Safety Threshold: 2/3
+        </pre>
+
+        <h4>7.0.4 Proof-of-History Sequence</h4>
+        <pre style="font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.3;">
+T0 ──► H(T0) ──► H(H(T0)) ──► H(H(H(T0))) ──► ...
+│         │          │             │
+Tx1      Tx2        Tx3           Tx4
+        </pre>
+
+        <h4>7.0.5 Economic Incentives Model</h4>
+        <pre style="font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.3;">
+Rewards  ┌─────┐ Penalties
+    ▲    │ ✓   │     ▼
+    │    │Stake│     │
+    │    └─────┘     │
+Honest Behavior ◄──►│
+Behavior            │
+    ▲               ▼
+    │           Slashing
+Economic
+Equilibrium
+        </pre>
+    </div>
 
     <h2>8. Conclusion</h2>
 

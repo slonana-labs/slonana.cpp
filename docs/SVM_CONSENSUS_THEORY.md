@@ -60,6 +60,91 @@ This work provides:
 
 ## 3. SVM Consensus Protocol
 
+### ASCII Visualizations
+
+#### Blockchain Structure
+```
+Genesis ──► Block1 ──► Block2 ──► Block3 ──► Block4
+   │           │          │          │          │
+   └─Hash─0    └─Hash─1   └─Hash─2   └─Hash─3   └─Hash─4
+   │           │          │          │          │
+   └─Txs: []   └─Txs: 5   └─Txs: 12  └─Txs: 8   └─Txs: 15
+```
+
+#### Consensus Voting Process
+```
+     Validator Network         Vote Aggregation
+    ┌─────┐ ┌─────┐ ┌─────┐        ┌─────────┐
+    │ V1  │ │ V2  │ │ V3  │ ───► │ Leader  │
+    │30%  │ │25%  │ │20%  │      │ Collect │
+    └─────┘ └─────┘ └─────┘        └─────────┘
+       │       │       │              │
+       ▼       ▼       ▼              ▼
+    [Vote]  [Vote]  [Vote]         ┌─────────┐
+                                   │ 2/3+    │
+    ┌─────┐ ┌─────┐                │ Stake   │
+    │ V4  │ │ V5  │                │ Reached │
+    │15%  │ │10%  │                └─────────┘
+    └─────┘ └─────┘                    │
+       │       │                       ▼
+       ▼       ▼                   FINALIZE
+    [Vote]  [Vote]
+```
+
+#### Network Topology
+```
+                    ┌───┐
+                 ┌──│ A │──┐
+                 │  └───┘  │
+               ┌─▼─┐     ┌─▼─┐
+           ┌───│ B │     │ C │───┐
+           │   └───┘     └───┘   │
+         ┌─▼─┐               ┌─▼─┐
+         │ D │   Full Mesh   │ E │
+         └─┬─┘   Network     └─┬─┘
+           │     (Gossip)      │
+         ┌─▼─┐               ┌─▼─┐
+         │ F │               │ G │
+         └───┘               └───┘
+         RPC                 RPC
+       Clients             Clients
+```
+
+#### Performance Metrics
+```
+TPS (Thousands)
+   65 ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ Slonana.cpp
+   50 ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ Solana Labs
+   15 ▓▓▓▓ Ethereum
+    5 ▓ Bitcoin
+    0 ┴───────────────────
+      
+Latency (ms)
+  400 ▓▓▓▓▓▓▓▓ Block Time
+  260 ▓▓▓▓▓ Finality
+  100 ▓▓ Network Delay
+   50 ▓ Signature Verify
+    0 ┴─────────────────
+```
+
+#### Fork Choice Algorithm
+```
+                Genesis
+                   │
+                   ▼
+                Block A
+               ╱       ╲
+              ▼         ▼
+          Block B     Block C
+         (Weight:     (Weight:
+          45%)         55%) ◄── Heaviest
+             │            │
+             ▼            ▼
+         Block D      Block E ◄── Selected
+        (Weight:     (Weight:    Chain Head
+         30%)         55%)
+```
+
 ### 3.1 Consensus Overview
 
 The SVM consensus protocol operates in discrete time slots, where each slot $t$ has a designated leader $L_t$ determined by stake-weighted pseudorandom selection.
@@ -140,6 +225,66 @@ Since $S_{\mathcal{B}} < \frac{S}{3}$, honest stake is $S_H > \frac{2S}{3}$. For
 After GST, messages between honest validators are delivered within $\Delta$. Given honest majority stake, the fork choice algorithm will converge on blocks proposed by honest leaders. Since leader selection is pseudorandom, an honest leader will be selected with probability $> \frac{2}{3}$ in each slot. □
 
 ---
+
+---
+
+## Additional SVM Visualizations
+
+#### Validator Stake Distribution
+```
+    Stake Percentage
+                    ┌─────┐
+                 40%│█████│ Top Validator
+                    ├─────┤
+                 30%│████ │ Second Largest  
+                    ├─────┤
+                 20%│███  │ Third Largest
+                    ├─────┤
+                 10%│██   │ Others Combined
+                    └─────┘
+                     Total: 100% Stake
+```
+
+#### Transaction Flow
+```
+Client ──► Pool ──► Leader ──► Block
+  │         │         │         │
+  └─Tx──► ┌─▼─┐    ┌─▼─┐    ┌─▼─┐
+         │Mem│    │Val│    │Fin│
+         └───┘    └───┘    └───┘
+```
+
+#### Byzantine Fault Model
+```
+Total Validators: 100%
+┌─────────────────────┐
+│ Honest: 67%+ ✓      │
+├─────────────────────┤
+│ Byzantine: <33% ✗   │
+└─────────────────────┘
+Safety Threshold: 2/3
+```
+
+#### Proof-of-History Sequence
+```
+T0 ──► H(T0) ──► H(H(T0)) ──► H(H(H(T0))) ──► ...
+│         │          │             │
+Tx1      Tx2        Tx3           Tx4
+```
+
+#### Economic Incentives Model
+```
+Rewards  ┌─────┐ Penalties
+    ▲    │ ✓   │     ▼
+    │    │Stake│     │
+    │    └─────┘     │
+Honest Behavior ◄──►│
+Behavior            │
+    ▲               ▼
+    │           Slashing
+Economic
+Equilibrium
+```
 
 ## 5. Game-Theoretic Analysis
 

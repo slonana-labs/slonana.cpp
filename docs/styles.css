@@ -1421,3 +1421,102 @@ body {
         page-break-inside: avoid;
     }
 }
+
+/* ASCII Charts Styling */
+.ascii-charts {
+    border: 3px solid #000;
+    padding: 20px;
+    background-color: #fff;
+    margin: 25px 0;
+}
+
+.ascii-charts h4 {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 20px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    text-align: center;
+    border-bottom: 2px solid #333;
+    padding-bottom: 10px;
+}
+
+.ascii-chart {
+    margin-bottom: 25px;
+    border: 1px solid #333;
+    background-color: #fafafa;
+    padding: 15px;
+}
+
+.ascii-chart h5 {
+    font-size: 12px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #000;
+    border-bottom: 1px solid #666;
+    padding-bottom: 5px;
+}
+
+.ascii-chart pre {
+    font-family: "Courier New", "Monaco", "Lucida Console", monospace;
+    font-size: 10px;
+    line-height: 1.2;
+    color: #000;
+    background-color: #fff;
+    border: 1px solid #999;
+    padding: 12px;
+    margin: 0;
+    white-space: pre;
+    overflow-x: auto;
+}
+
+.ascii-charts-sidebar {
+    border: 2px solid #000;
+    padding: 15px;
+    background-color: #fff;
+    margin-top: 20px;
+}
+
+.ascii-charts-sidebar .ascii-chart {
+    margin-bottom: 15px;
+    border: 1px solid #666;
+    background-color: #f9f9f9;
+    padding: 10px;
+}
+
+.ascii-charts-sidebar .ascii-chart:last-child {
+    margin-bottom: 0;
+}
+
+.ascii-charts-sidebar .ascii-chart h5 {
+    font-size: 11px;
+    margin-bottom: 8px;
+}
+
+.ascii-charts-sidebar .ascii-chart pre {
+    font-size: 9px;
+    padding: 8px;
+}
+
+/* Responsive ASCII Charts */
+@media (max-width: 768px) {
+    .ascii-chart pre {
+        font-size: 8px;
+        padding: 8px;
+    }
+    
+    .ascii-charts-sidebar .ascii-chart pre {
+        font-size: 7px;
+        padding: 6px;
+    }
+    
+    .ascii-charts {
+        padding: 15px;
+    }
+    
+    .ascii-chart {
+        padding: 10px;
+    }
+}
