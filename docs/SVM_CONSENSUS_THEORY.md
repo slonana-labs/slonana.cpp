@@ -1,4 +1,4 @@
-# The Mathematical Foundations of SVM Consensus: A Comprehensive Analysis
+# SVM Consensus: Mathematical Foundations
 
 ## Abstract
 
