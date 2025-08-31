@@ -260,6 +260,13 @@ setup_validator() {
         IDENTITY_FILE="$RESULTS_DIR/validator-keypair.json"
         log_verbose "Generating validator identity keypair: $IDENTITY_FILE"
         solana-keygen new --no-bip39-passphrase --silent --outfile "$IDENTITY_FILE"
+        
+        # Confirm validator keypair integrity
+        if ! jq empty "$IDENTITY_FILE" 2>/dev/null; then
+            log_error "Malformed keypair file: $IDENTITY_FILE"
+            exit 1
+        fi
+        log_verbose "✅ Validator keypair integrity verified"
     fi
 
     # Use built-in slonana snapshot commands for faster startup
