@@ -1,0 +1,11 @@
+{
+  "validator": "slonana",
+  "timestamp": "2025-08-31T05:40:18Z",
+  "metrics": {
+    "rpc_latency_ms": 7,
+    "memory_usage_mb": 10,
+    "cpu_usage_percent": 4.7,
+    "startup_time_seconds": 2.015839398,
+    "transaction_support": false
+  }
+}
