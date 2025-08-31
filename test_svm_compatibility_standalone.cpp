@@ -4,6 +4,7 @@
 #include "svm/nonce_info.h"
 #include "svm/transaction_balances.h"
 #include "svm/transaction_error_metrics.h"
+#include "svm/rollback_accounts.h"
 
 using namespace slonana::svm;
 
@@ -177,6 +178,40 @@ int main() {
         ASSERT_EQ(rate, 0.13); // 13 errors out of 100 transactions
         
         std::cout << "✓ TransactionErrorMetrics working correctly";
+    });
+    
+    // Test RollbackAccounts
+    runner.run_test("Rollback Accounts", []() {
+        // Create test accounts
+        PublicKey fee_payer(32, 1);
+        AccountInfo fee_payer_account;
+        fee_payer_account.pubkey = fee_payer;
+        fee_payer_account.lamports = 1000000;
+        fee_payer_account.data.resize(0);
+        fee_payer_account.rent_epoch = 100;
+        
+        // Create rollback for fee-only transaction
+        auto rollback = RollbackAccounts::create_fee_only_rollback(fee_payer, fee_payer_account, 5000);
+        
+        ASSERT_FALSE(rollback.is_empty());
+        ASSERT_FALSE(rollback.has_nonce_account());
+        ASSERT_EQ(rollback.get_fee_payer_address(), fee_payer);
+        ASSERT_EQ(rollback.get_fee_payer_rollback_account().lamports, 995000UL); // Original - fee
+        
+        // Test rollback validation
+        ASSERT_TRUE(rollback.validate());
+        
+        // Test rollback application
+        std::unordered_map<PublicKey, ProgramAccount> accounts;
+        ProgramAccount test_account;
+        test_account.pubkey = fee_payer;
+        test_account.lamports = 1000000; // Original balance
+        accounts[fee_payer] = test_account;
+        
+        rollback.apply_rollback(accounts);
+        ASSERT_EQ(accounts[fee_payer].lamports, 995000UL); // Should be reduced by fee
+        
+        std::cout << "✓ RollbackAccounts working correctly";
     });
     
     runner.print_summary();
