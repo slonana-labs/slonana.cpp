@@ -306,59 +306,68 @@ inject_initial_activity() {
         return 0
     fi
     
+    # Check if we have an identity file to use for activity
+    if [[ -z "$IDENTITY_FILE" ]] || [[ ! -f "$IDENTITY_FILE" ]]; then
+        log_warning "No validator identity file available, skipping activity injection"
+        return 0
+    fi
+    
     # Configure Solana CLI to use local validator
     export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
     solana config set --url "http://localhost:$RPC_PORT" > /dev/null 2>&1 || true
     
-    # Generate activity keypairs if not already created
-    local activity_sender="$RESULTS_DIR/activity-sender.json"
-    local activity_recipient="$RESULTS_DIR/activity-recipient.json"
+    # Generate temp keypair for recipient
+    local tmp_recipient="$RESULTS_DIR/tmp-recipient.json"
+    log_verbose "Generating temporary recipient keypair"
+    solana-keygen new --no-bip39-passphrase --silent --outfile "$tmp_recipient" 2>/dev/null || {
+        log_warning "Failed to generate recipient keypair"
+        return 0
+    }
     
-    if [[ ! -f "$activity_sender" ]]; then
-        log_verbose "Generating activity sender keypair"
-        solana-keygen new --no-bip39-passphrase --silent --outfile "$activity_sender" 2>/dev/null || true
+    local recipient_pubkey
+    recipient_pubkey=$(solana-keygen pubkey "$tmp_recipient" 2>/dev/null || echo "")
+    
+    if [[ -z "$recipient_pubkey" ]]; then
+        log_warning "Failed to extract recipient public key"
+        return 0
     fi
     
-    if [[ ! -f "$activity_recipient" ]]; then
-        log_verbose "Generating activity recipient keypair"  
-        solana-keygen new --no-bip39-passphrase --silent --outfile "$activity_recipient" 2>/dev/null || true
-    fi
-    
-    # Attempt to airdrop SOL for initial activity
-    log_verbose "Requesting initial airdrop for activity..."
+    # Fund the identity and send a transaction
+    log_verbose "Requesting airdrop to validator identity..."
     local airdrop_attempts=0
-    while [[ $airdrop_attempts -lt 3 ]]; do
-        if solana airdrop 1 --keypair "$activity_sender" > /dev/null 2>&1; then
-            log_verbose "Airdrop successful"
+    while [[ $airdrop_attempts -lt 5 ]]; do
+        if solana airdrop 100 --keypair "$IDENTITY_FILE" > /dev/null 2>&1; then
+            log_verbose "Airdrop successful to identity"
             break
         fi
         ((airdrop_attempts++))
         sleep 2
     done
     
-    # Attempt a simple transfer to create initial blockchain activity
-    if [[ -f "$activity_sender" && -f "$activity_recipient" ]]; then
-        local recipient_pubkey
-        recipient_pubkey=$(solana-keygen pubkey "$activity_recipient" 2>/dev/null || echo "")
-        
-        if [[ -n "$recipient_pubkey" ]]; then
-            log_verbose "Creating initial transaction to establish activity..."
-            solana transfer "$recipient_pubkey" 0.001 \
-                --keypair "$activity_sender" \
-                --allow-unfunded-recipient \
-                --fee-payer "$activity_sender" \
-                --no-wait > /dev/null 2>&1 || true
-            
-            sleep 2
-            
-            # Create one more transaction to ensure block creation
-            solana transfer "$recipient_pubkey" 0.001 \
-                --keypair "$activity_sender" \
-                --allow-unfunded-recipient \
-                --fee-payer "$activity_sender" \
-                --no-wait > /dev/null 2>&1 || true
-        fi
-    fi
+    # Create initial transaction to establish blockchain activity
+    log_verbose "Creating initial transaction to establish activity..."
+    solana transfer "$recipient_pubkey" 1 \
+        --keypair "$IDENTITY_FILE" \
+        --allow-unfunded-recipient \
+        --fee-payer "$IDENTITY_FILE" \
+        --no-wait > /dev/null 2>&1 || true
+    
+    sleep 2
+    
+    # Create additional transactions to ensure blocks are produced
+    for i in {1..3}; do
+        log_verbose "Creating activity transaction $i/3..."
+        solana transfer "$recipient_pubkey" 0.1 \
+            --keypair "$IDENTITY_FILE" \
+            --allow-unfunded-recipient \
+            --fee-payer "$IDENTITY_FILE" \
+            --no-wait > /dev/null 2>&1 || true
+        sleep 1
+    done
+    
+    # Give validator time to process transactions and create blocks
+    log_verbose "Allowing time for transaction processing and block creation..."
+    sleep 5
     
     log_success "Initial activity injection completed"
 }
