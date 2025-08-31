@@ -62,9 +62,8 @@ jobs:
 
     - name: Install Solana CLI
       run: |
-        echo "🔍 Installing Solana CLI (pinned version)..."
-        # Install and pin to specific version to avoid breaking changes
-        sh -c "$(curl -sSfL https://release.solana.com/v1.18.12/install)"
+        echo "🔍 Installing Solana CLI..."
+        sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
         echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
         
