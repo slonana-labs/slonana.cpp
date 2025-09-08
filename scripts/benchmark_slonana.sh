@@ -341,19 +341,21 @@ setup_bootstrap_fallback() {
     fi
 }
 
-# Inject initial activity to prevent idle validator shutdown
-inject_initial_activity() {
-    log_info "Injecting initial activity to prevent idle shutdown..."
+# Enhanced activity injection for CI environments  
+inject_enhanced_activity() {
+    log_info "Starting enhanced activity injection for CI environment..."
     
     # Check if Solana CLI tools are available
     if ! command -v solana &> /dev/null || ! command -v solana-keygen &> /dev/null; then
-        log_warning "Solana CLI tools not available, skipping activity injection"
+        log_warning "Solana CLI tools not available, using internal activity generation"
+        start_internal_activity_generator
         return 0
     fi
     
     # Check if we have an identity file to use for activity
     if [[ -z "$IDENTITY_FILE" ]] || [[ ! -f "$IDENTITY_FILE" ]]; then
-        log_warning "No validator identity file available, skipping activity injection"
+        log_warning "No validator identity file available, using internal activity generation"
+        start_internal_activity_generator
         return 0
     fi
     
@@ -361,27 +363,37 @@ inject_initial_activity() {
     export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
     solana config set --url "http://localhost:$RPC_PORT" > /dev/null 2>&1 || true
     
-    # Generate temp keypair for recipient
-    local tmp_recipient="$RESULTS_DIR/tmp-recipient.json"
-    log_verbose "Generating temporary recipient keypair"
-    solana-keygen new --no-bip39-passphrase --silent --outfile "$tmp_recipient" 2>/dev/null || {
-        log_warning "Failed to generate recipient keypair"
+    # Generate temp keypairs for activity
+    local activity_sender="$RESULTS_DIR/activity-sender.json"
+    local activity_recipient="$RESULTS_DIR/activity-recipient.json"
+    local activity_recipient2="$RESULTS_DIR/activity-recipient2.json"
+    
+    log_verbose "Generating activity keypairs..."
+    solana-keygen new --no-bip39-passphrase --silent --outfile "$activity_sender" 2>/dev/null || {
+        log_warning "Failed to generate activity keypairs, using internal generation"
+        start_internal_activity_generator
         return 0
     }
     
-    local recipient_pubkey
-    recipient_pubkey=$(solana-keygen pubkey "$tmp_recipient" 2>/dev/null || echo "")
+    solana-keygen new --no-bip39-passphrase --silent --outfile "$activity_recipient" 2>/dev/null || return 0
+    solana-keygen new --no-bip39-passphrase --silent --outfile "$activity_recipient2" 2>/dev/null || return 0
     
-    if [[ -z "$recipient_pubkey" ]]; then
-        log_warning "Failed to extract recipient public key"
+    local sender_pubkey recipient_pubkey recipient2_pubkey
+    sender_pubkey=$(solana-keygen pubkey "$activity_sender" 2>/dev/null || echo "")
+    recipient_pubkey=$(solana-keygen pubkey "$activity_recipient" 2>/dev/null || echo "")
+    recipient2_pubkey=$(solana-keygen pubkey "$activity_recipient2" 2>/dev/null || echo "")
+    
+    if [[ -z "$sender_pubkey" || -z "$recipient_pubkey" || -z "$recipient2_pubkey" ]]; then
+        log_warning "Failed to extract public keys, using internal activity generation"
+        start_internal_activity_generator
         return 0
     fi
     
-    # Fund the identity and send a transaction
-    log_verbose "Requesting airdrop to validator identity..."
+    # Initial funding phase
+    log_verbose "Funding activity accounts..."
     local airdrop_attempts=0
     while [[ $airdrop_attempts -lt 5 ]]; do
-        if solana airdrop 100 --keypair "$IDENTITY_FILE" > /dev/null 2>&1; then
+        if solana airdrop 1000 --keypair "$IDENTITY_FILE" > /dev/null 2>&1; then
             log_verbose "Airdrop successful to identity"
             break
         fi
@@ -389,9 +401,8 @@ inject_initial_activity() {
         sleep 2
     done
     
-    # Create initial transaction to establish blockchain activity
-    log_verbose "Creating initial transaction to establish activity..."
-    solana transfer "$recipient_pubkey" 1 \
+    # Fund the activity sender
+    solana transfer "$sender_pubkey" 100 \
         --keypair "$IDENTITY_FILE" \
         --allow-unfunded-recipient \
         --fee-payer "$IDENTITY_FILE" \
@@ -399,25 +410,112 @@ inject_initial_activity() {
     
     sleep 2
     
-    # Create additional transactions to ensure blocks are produced
-    for i in {1..3}; do
-        log_verbose "Creating activity transaction $i/3..."
-        solana transfer "$recipient_pubkey" 0.1 \
-            --keypair "$IDENTITY_FILE" \
-            --allow-unfunded-recipient \
-            --fee-payer "$IDENTITY_FILE" \
-            --no-wait > /dev/null 2>&1 || true
-        sleep 1
-    done
+    # Start background activity generator
+    log_info "Starting background activity generator for sustained operation..."
     
-    # Give validator time to process transactions and create blocks
-    log_verbose "Allowing time for transaction processing and block creation..."
-    sleep 5
+    {
+        local activity_round=0
+        while true; do
+            ((activity_round++))
+            
+            # Create diverse transaction types to maintain blockchain state
+            
+            # 1. Simple transfers
+            solana transfer "$recipient_pubkey" 0.001 \
+                --keypair "$activity_sender" \
+                --allow-unfunded-recipient \
+                --fee-payer "$activity_sender" \
+                --no-wait > /dev/null 2>&1 || true
+            
+            sleep 1
+            
+            # 2. Cross transfers  
+            solana transfer "$recipient2_pubkey" 0.001 \
+                --keypair "$activity_sender" \
+                --allow-unfunded-recipient \
+                --fee-payer "$activity_sender" \
+                --no-wait > /dev/null 2>&1 || true
+            
+            sleep 1
+            
+            # 3. Account creation transactions
+            if [[ $((activity_round % 5)) -eq 0 ]]; then
+                # Generate a new temporary account every 5 rounds
+                local temp_account="$RESULTS_DIR/temp-account-${activity_round}.json"
+                solana-keygen new --no-bip39-passphrase --silent --outfile "$temp_account" 2>/dev/null || true
+                local temp_pubkey
+                temp_pubkey=$(solana-keygen pubkey "$temp_account" 2>/dev/null || echo "")
+                if [[ -n "$temp_pubkey" ]]; then
+                    solana transfer "$temp_pubkey" 0.1 \
+                        --keypair "$activity_sender" \
+                        --allow-unfunded-recipient \
+                        --fee-payer "$activity_sender" \
+                        --no-wait > /dev/null 2>&1 || true
+                fi
+            fi
+            
+            # 4. Balance checks (RPC activity)
+            solana balance --keypair "$activity_sender" > /dev/null 2>&1 || true
+            
+            # Log activity progress
+            if [[ $((activity_round % 10)) -eq 0 ]]; then
+                echo "$(date '+%H:%M:%S') - Activity round $activity_round completed" >> "$RESULTS_DIR/activity.log"
+            fi
+            
+            # Wait between activity bursts (every 3 seconds)
+            sleep 3
+        done
+    } &
     
-    log_success "Initial activity injection completed"
+    local activity_pid=$!
+    echo "$activity_pid" > "$RESULTS_DIR/activity.pid"
+    
+    log_success "Enhanced activity generator started (PID: $activity_pid)"
+    log_info "Activity will continue throughout validator operation to prevent idle shutdown"
 }
 
-# Start validator
+# Internal activity generator for when Solana CLI is not available
+start_internal_activity_generator() {
+    log_info "Starting internal activity generator..."
+    
+    {
+        local activity_round=0
+        while true; do
+            ((activity_round++))
+            
+            # Generate internal RPC calls to maintain activity
+            curl -s -X POST "http://localhost:$RPC_PORT" \
+                -H "Content-Type: application/json" \
+                -d '{"jsonrpc":"2.0","id":1,"method":"getSlot"}' > /dev/null 2>&1 || true
+            
+            sleep 1
+            
+            curl -s -X POST "http://localhost:$RPC_PORT" \
+                -H "Content-Type: application/json" \
+                -d '{"jsonrpc":"2.0","id":2,"method":"getBlockHeight"}' > /dev/null 2>&1 || true
+            
+            sleep 1
+            
+            curl -s -X POST "http://localhost:$RPC_PORT" \
+                -H "Content-Type: application/json" \
+                -d '{"jsonrpc":"2.0","id":3,"method":"getVersion"}' > /dev/null 2>&1 || true
+            
+            # Create activity markers
+            if [[ $((activity_round % 10)) -eq 0 ]]; then
+                echo "$(date '+%H:%M:%S') - Internal activity round $activity_round" >> "$RESULTS_DIR/activity.log"
+            fi
+            
+            sleep 2
+        done
+    } &
+    
+    local activity_pid=$!
+    echo "$activity_pid" > "$RESULTS_DIR/activity.pid"
+    
+    log_success "Internal activity generator started (PID: $activity_pid)"
+}
+
+# Start validator in background
 start_validator() {
     # Skip validator startup if using placeholder results
     if [[ -z "$VALIDATOR_BIN" ]]; then
@@ -425,6 +523,25 @@ start_validator() {
         return 0
     fi
 
+    # Fix file descriptor limits for CI environments
+    log_info "Configuring system limits for validator operation..."
+    
+    # Increase file descriptor limits (CI environments often have low limits)
+    ulimit -n 65536 2>/dev/null || {
+        log_warning "Failed to set file descriptor limit to 65536, trying 4096..."
+        ulimit -n 4096 2>/dev/null || {
+            log_warning "Could not increase file descriptor limit, proceeding with system default"
+        }
+    }
+    
+    # Show current limits
+    log_verbose "Current file descriptor limit: $(ulimit -n)"
+    log_verbose "Current process limit: $(ulimit -u)"
+    
+    # Set CI environment variable for validator keep-alive mode
+    export SLONANA_CI_MODE=1
+    export CI=true
+    
     log_info "Starting Slonana validator..."
 
     log_verbose "Validator configuration:"
@@ -433,6 +550,7 @@ start_validator() {
     log_verbose "  Ledger Path: $LEDGER_DIR"
     log_verbose "  RPC Bind: 127.0.0.1:$RPC_PORT"
     log_verbose "  Gossip Bind: 127.0.0.1:$GOSSIP_PORT"
+    log_verbose "  CI Mode: Enabled (sustained activity)"
 
     # Prepare validator arguments
     local validator_args=()
@@ -445,10 +563,11 @@ start_validator() {
         --ledger-path "$LEDGER_DIR"
         --rpc-bind-address "127.0.0.1:$RPC_PORT"
         --gossip-bind-address "127.0.0.1:$GOSSIP_PORT"
+        --log-level info
     )
 
-    # Start validator in background
-    "$VALIDATOR_BIN" "${validator_args[@]}" &
+    # Start validator in background with enhanced logging
+    "$VALIDATOR_BIN" "${validator_args[@]}" > "$RESULTS_DIR/validator.log" 2>&1 &
 
     VALIDATOR_PID=$!
     log_verbose "Validator started with PID: $VALIDATOR_PID"
@@ -456,40 +575,63 @@ start_validator() {
     # Save PID for cleanup
     echo "$VALIDATOR_PID" > "$RESULTS_DIR/validator.pid"
 
-    # Wait for validator to start
+    # Wait for validator to start with enhanced readiness detection
     log_info "Waiting for validator to become ready..."
     local timeout=120
     local wait_time=0
 
     while [[ $wait_time -lt $timeout ]]; do
+        # Check if validator process is still running
+        if ! kill -0 "$VALIDATOR_PID" 2>/dev/null; then
+            log_error "Validator process died during startup"
+            log_error "Last validator log output:"
+            tail -20 "$RESULTS_DIR/validator.log" || true
+            return 1
+        fi
+        
+        # Test RPC health endpoint
         if curl -s "http://localhost:$RPC_PORT/health" > /dev/null 2>&1; then
             log_success "Validator is ready!"
             
-            # Ensure validator runs for at least 30 seconds to avoid premature shutdown
+            # Additional readiness verification
+            if curl -s -X POST "http://localhost:$RPC_PORT" \
+                -H "Content-Type: application/json" \
+                -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' > /dev/null 2>&1; then
+                log_success "RPC endpoint verified and responsive"
+            else
+                log_warning "Health endpoint responsive but RPC method testing failed"
+            fi
+            
+            # Ensure validator runs for minimum stability period
             log_info "Ensuring validator stability (minimum 30s runtime)..."
             sleep 30
             
             # Check if validator is still running after minimum runtime
-            if ! pgrep -f "$VALIDATOR_BIN" > /dev/null; then
+            if ! kill -0 "$VALIDATOR_PID" 2>/dev/null; then
                 log_error "Validator exited prematurely during stability check"
-                exit 4
+                log_error "Validator ran for less than 30 seconds - this indicates a startup issue"
+                log_error "Last validator log output:"
+                tail -30 "$RESULTS_DIR/validator.log" || true
+                return 1
             fi
             
             log_success "Validator is stable and ready for benchmarking"
             
-            # Inject local transactions to create activity (prevent 0 blocks/txs scenario)
-            inject_initial_activity
+            # Inject enhanced local transactions to create sustained activity
+            inject_enhanced_activity
             
             return 0
         fi
         sleep 5
         wait_time=$((wait_time + 5))
-        log_verbose "Waiting... ($wait_time/${timeout}s)"
+        log_verbose "Waiting... ($wait_time/${timeout}s) [PID: $VALIDATOR_PID]"
     done
 
     log_error "Validator failed to start within ${timeout}s timeout"
+    log_error "Final validator log output:"
+    tail -50 "$RESULTS_DIR/validator.log" || true
     cleanup_validator
-    exit 4
+    return 1
 }
 
 # Run performance benchmarks
@@ -743,26 +885,58 @@ EOF
     echo "=========================================="
 }
 
-# Cleanup validator process
+# Cleanup validator process and activity generators
 cleanup_validator() {
+    log_info "Cleaning up validator and background processes..."
+    
+    # Stop activity generator first
+    if [[ -f "$RESULTS_DIR/activity.pid" ]]; then
+        local activity_pid
+        activity_pid=$(cat "$RESULTS_DIR/activity.pid")
+        
+        if [[ -n "$activity_pid" ]] && kill -0 "$activity_pid" 2>/dev/null; then
+            log_verbose "Stopping activity generator (PID: $activity_pid)..."
+            kill "$activity_pid" 2>/dev/null || true
+            sleep 2
+            
+            # Force kill if still running
+            if kill -0 "$activity_pid" 2>/dev/null; then
+                kill -9 "$activity_pid" 2>/dev/null || true
+            fi
+        fi
+        
+        rm -f "$RESULTS_DIR/activity.pid"
+    fi
+    
+    # Stop validator process
     if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
         local pid
         pid=$(cat "$RESULTS_DIR/validator.pid")
         
         if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
             log_info "Stopping validator (PID: $pid)..."
-            kill "$pid" 2>/dev/null || true
+            
+            # Try graceful shutdown first
+            kill -TERM "$pid" 2>/dev/null || true
             sleep 5
             
-            # Force kill if still running
+            # Check if gracefully stopped
             if kill -0 "$pid" 2>/dev/null; then
-                log_warning "Force killing validator..."
-                kill -9 "$pid" 2>/dev/null || true
+                log_verbose "Graceful shutdown timeout, force killing validator..."
+                kill -KILL "$pid" 2>/dev/null || true
+                sleep 2
+            else
+                log_success "Validator stopped gracefully"
             fi
         fi
         
         rm -f "$RESULTS_DIR/validator.pid"
     fi
+    
+    # Clean up any remaining processes
+    pkill -f "slonana_validator" 2>/dev/null || true
+    
+    log_verbose "Cleanup completed"
 }
 
 # Trap cleanup on exit
