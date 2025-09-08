@@ -498,18 +498,115 @@ std::unique_ptr<IMetricsExporter> MonitoringFactory::create_prometheus_exporter(
 }
 
 std::unique_ptr<IMetricsExporter> MonitoringFactory::create_json_exporter() {
-    // JsonExporter class is defined in prometheus_exporter.cpp
-    // For now, return a simple stub implementation
-    class JsonExporterStub : public IMetricsExporter {
+    // Production-grade JSON metrics exporter with comprehensive formatting
+    class JsonMetricsExporter : public IMetricsExporter {
     public:
         std::string export_metrics(const IMetricsRegistry& registry) override {
-            return R"({"metrics":[],"timestamp":)" + std::to_string(std::time(nullptr)) + "}";
+            std::ostringstream json_output;
+            
+            // Start JSON object
+            json_output << "{\n";
+            json_output << "  \"timestamp\": " << std::time(nullptr) << ",\n";
+            json_output << "  \"metrics\": [\n";
+            
+            bool first_metric = true;
+            
+            // Get all metrics from registry
+            auto all_metrics = registry.get_all_metrics();
+            
+            for (const auto& metric : all_metrics) {
+                if (!first_metric) json_output << ",\n";
+                first_metric = false;
+                
+                json_output << "    {\n";
+                json_output << "      \"name\": \"" << escape_json_string(metric->get_name()) << "\",\n";
+                json_output << "      \"help\": \"" << escape_json_string(metric->get_help()) << "\",\n";
+                
+                // Convert MetricType enum to string
+                std::string type_str;
+                switch (metric->get_type()) {
+                    case MetricType::COUNTER: type_str = "counter"; break;
+                    case MetricType::GAUGE: type_str = "gauge"; break;
+                    case MetricType::HISTOGRAM: type_str = "histogram"; break;
+                    case MetricType::SUMMARY: type_str = "summary"; break;
+                    default: type_str = "unknown"; break;
+                }
+                json_output << "      \"type\": \"" << type_str << "\",\n";
+                
+                // Get metric values which include labels
+                auto values = metric->get_values();
+                json_output << "      \"values\": [\n";
+                bool first_value = true;
+                for (const auto& value : values) {
+                    if (!first_value) json_output << ",\n";
+                    first_value = false;
+                    
+                    json_output << "        {\n";
+                    json_output << "          \"value\": " << value.value << ",\n";
+                    json_output << "          \"timestamp\": " << value.timestamp.time_since_epoch().count() << ",\n";
+                    
+                    if (!value.labels.empty()) {
+                        json_output << "          \"labels\": {\n";
+                        bool first_label = true;
+                        for (const auto& [key, label_value] : value.labels) {
+                            if (!first_label) json_output << ",\n";
+                            first_label = false;
+                            json_output << "            \"" << escape_json_string(key) << "\": \"" 
+                                       << escape_json_string(label_value) << "\"";
+                        }
+                        json_output << "\n          }\n";
+                    } else {
+                        json_output << "          \"labels\": {}\n";
+                    }
+                    json_output << "        }";
+                }
+                json_output << "\n      ]\n";
+                json_output << "    }";
+            }
+            
+            // Close JSON structure
+            json_output << "\n  ],\n";
+            json_output << "  \"metadata\": {\n";
+            json_output << "    \"exporter\": \"slonana-json-exporter\",\n";
+            json_output << "    \"version\": \"1.0.0\",\n";
+            json_output << "    \"format_version\": \"1.0\",\n";
+            json_output << "    \"total_metrics\": " << all_metrics.size() << "\n";
+            json_output << "  }\n";
+            json_output << "}\n";
+            
+            return json_output.str();
         }
+        
         std::string get_content_type() const override {
-            return "application/json";
+            return "application/json; charset=utf-8";
+        }
+        
+    private:
+        std::string escape_json_string(const std::string& input) {
+            std::ostringstream escaped;
+            for (char c : input) {
+                switch (c) {
+                    case '"': escaped << "\\\""; break;
+                    case '\\': escaped << "\\\\"; break;
+                    case '\b': escaped << "\\b"; break;
+                    case '\f': escaped << "\\f"; break;
+                    case '\n': escaped << "\\n"; break;
+                    case '\r': escaped << "\\r"; break;
+                    case '\t': escaped << "\\t"; break;
+                    default:
+                        if (c < ' ' || c > '~') {
+                            escaped << "\\u" << std::hex << std::setfill('0') << std::setw(4) << static_cast<int>(c);
+                        } else {
+                            escaped << c;
+                        }
+                        break;
+                }
+            }
+            return escaped.str();
         }
     };
-    return std::make_unique<JsonExporterStub>();
+    
+    return std::make_unique<JsonMetricsExporter>();
 }
 
 // Global metrics registry

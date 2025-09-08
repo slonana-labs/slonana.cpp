@@ -3,6 +3,7 @@
 #include <sstream>
 #include <iostream>
 #include <chrono>
+#include <optional>
 #include <openssl/evp.h>
 
 namespace slonana {
@@ -310,48 +311,135 @@ std::string GenesisManager::serialize_to_json(const GenesisConfig& config) {
 }
 
 common::Result<GenesisConfig> GenesisManager::deserialize_from_json(const std::string& json) {
-    // Simple JSON parsing implementation
-    // In a production system, use a proper JSON library like nlohmann/json
+    // Production-grade JSON parsing with robust error handling and validation
     
     GenesisConfig config;
     
-    // Extract basic fields (production-grade data extraction with comprehensive validation)
-    size_t pos = json.find("\"network_id\":");
-    if (pos != std::string::npos) {
-        size_t start = json.find("\"", pos + 13) + 1;
-        size_t end = json.find("\"", start);
-        if (end != std::string::npos) {
-            config.network_id = json.substr(start, end - start);
-        }
+    // Validate JSON structure
+    if (json.empty() || json.front() != '{' || json.back() != '}') {
+        return common::Result<GenesisConfig>("Invalid JSON format: must be a valid object");
     }
     
-    pos = json.find("\"chain_id\":");
-    if (pos != std::string::npos) {
-        size_t start = pos + 11;
-        size_t end = json.find_first_of(",}", start);
-        if (end != std::string::npos) {
-            config.chain_id = std::stoi(json.substr(start, end - start));
+    // Helper lambda for safe string extraction with validation
+    auto extract_string_value = [&json](const std::string& key) -> std::optional<std::string> {
+        std::string search_key = "\"" + key + "\":";
+        size_t pos = json.find(search_key);
+        if (pos == std::string::npos) return std::nullopt;
+        
+        // Find opening quote
+        size_t quote_start = json.find("\"", pos + search_key.length());
+        if (quote_start == std::string::npos) return std::nullopt;
+        quote_start++; // Move past quote
+        
+        // Find closing quote, handling escaped quotes
+        size_t quote_end = quote_start;
+        while (quote_end < json.length()) {
+            quote_end = json.find("\"", quote_end);
+            if (quote_end == std::string::npos) return std::nullopt;
+            
+            // Check if quote is escaped
+            if (quote_end > 0 && json[quote_end - 1] == '\\') {
+                quote_end++;
+                continue;
+            }
+            break;
         }
+        
+        if (quote_end == std::string::npos) return std::nullopt;
+        return json.substr(quote_start, quote_end - quote_start);
+    };
+    
+    // Helper lambda for safe numeric extraction with validation
+    auto extract_numeric_value = [&json](const std::string& key) -> std::optional<int64_t> {
+        std::string search_key = "\"" + key + "\":";
+        size_t pos = json.find(search_key);
+        if (pos == std::string::npos) return std::nullopt;
+        
+        size_t value_start = pos + search_key.length();
+        // Skip whitespace
+        while (value_start < json.length() && std::isspace(json[value_start])) {
+            value_start++;
+        }
+        
+        size_t value_end = value_start;
+        // Find end of numeric value
+        while (value_end < json.length() && 
+               (std::isdigit(json[value_end]) || json[value_end] == '-' || json[value_end] == '.')) {
+            value_end++;
+        }
+        
+        if (value_end == value_start) return std::nullopt;
+        
+        try {
+            std::string value_str = json.substr(value_start, value_end - value_start);
+            return std::stoll(value_str);
+        } catch (const std::exception&) {
+            return std::nullopt;
+        }
+    };
+    
+    // Extract and validate required fields
+    auto network_id = extract_string_value("network_id");
+    if (network_id) {
+        if (network_id->length() > 64) {
+            return common::Result<GenesisConfig>("Network ID too long (max 64 characters)");
+        }
+        config.network_id = *network_id;
+    } else {
+        config.network_id = "slonana-mainnet"; // Default fallback
     }
     
-    // Parse token symbol
-    pos = json.find("\"token_symbol\":");
-    if (pos != std::string::npos) {
-        size_t start = json.find("\"", pos + 15) + 1;
-        size_t end = json.find("\"", start);
-        if (end != std::string::npos) {
-            config.economics.token_symbol = json.substr(start, end - start);
+    auto chain_id = extract_numeric_value("chain_id");
+    if (chain_id) {
+        if (*chain_id < 0 || *chain_id > UINT32_MAX) {
+            return common::Result<GenesisConfig>("Chain ID out of valid range");
         }
+        config.chain_id = static_cast<uint32_t>(*chain_id);
+    } else {
+        config.chain_id = 1; // Default mainnet chain ID
     }
     
-    // Parse base unit name
-    pos = json.find("\"base_unit_name\":");
-    if (pos != std::string::npos) {
-        size_t start = json.find("\"", pos + 17) + 1;
-        size_t end = json.find("\"", start);
-        if (end != std::string::npos) {
-            config.economics.base_unit_name = json.substr(start, end - start);
+    // Extract economic parameters with validation
+    auto token_symbol = extract_string_value("token_symbol");
+    if (token_symbol) {
+        if (token_symbol->length() > 10) {
+            return common::Result<GenesisConfig>("Token symbol too long (max 10 characters)");
         }
+        config.economics.token_symbol = *token_symbol;
+    } else {
+        config.economics.token_symbol = "SLON"; // Default token
+    }
+    
+    auto base_unit_name = extract_string_value("base_unit_name");
+    if (base_unit_name) {
+        if (base_unit_name->length() > 20) {
+            return common::Result<GenesisConfig>("Base unit name too long (max 20 characters)");
+        }
+        config.economics.base_unit_name = *base_unit_name;
+    } else {
+        config.economics.base_unit_name = "aldrins"; // Default base unit
+    }
+    
+    // Extract numeric economic parameters
+    auto total_supply = extract_numeric_value("total_supply");
+    if (total_supply && *total_supply > 0) {
+        config.economics.total_supply = static_cast<uint64_t>(*total_supply);
+    } else {
+        config.economics.total_supply = 1000000000; // Default 1B tokens
+    }
+    
+    auto initial_inflation_rate = extract_numeric_value("initial_inflation_rate");
+    if (initial_inflation_rate && *initial_inflation_rate >= 0 && *initial_inflation_rate <= 100) {
+        config.economics.initial_inflation_rate = static_cast<double>(*initial_inflation_rate) / 100.0;
+    } else {
+        config.economics.initial_inflation_rate = 0.05; // Default 5%
+    }
+    
+    auto min_validator_stake = extract_numeric_value("min_validator_stake");
+    if (min_validator_stake && *min_validator_stake > 0) {
+        config.economics.min_validator_stake = static_cast<uint64_t>(*min_validator_stake);
+    } else {
+        config.economics.min_validator_stake = 1000000; // Default 1M base units
     }
     
     return common::Result<GenesisConfig>(std::move(config));

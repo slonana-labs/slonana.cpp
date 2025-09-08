@@ -126,8 +126,16 @@ public:
     PublicKey program_id_;
     
     Impl() {
-        // Initialize with a known system program ID (all zeros for stub)
-        program_id_.resize(32, 0);
+        // Initialize with the official Solana system program ID
+        // System program ID is always 11111111111111111111111111111111 (32 bytes of 0x00)
+        program_id_.resize(32, 0x00);
+        
+        // This is the canonical system program ID used by all Solana networks
+        // It represents the native system program that handles:
+        // - Account creation
+        // - Lamports transfers
+        // - Account assignment to other programs
+        // - System instruction processing
     }
 };
 

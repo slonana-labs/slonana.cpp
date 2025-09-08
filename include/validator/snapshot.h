@@ -120,6 +120,19 @@ private:
     bool restore_account_to_ledger(const AccountSnapshot& account) const;
     void update_ledger_metadata(size_t total_accounts, size_t restored_accounts) const;
     void verify_ledger_consistency() const;
+    
+    // Production-ready account collection methods
+    std::string calculate_block_hash(uint64_t slot, const std::string& ledger_path) const;
+    bool collect_accounts_from_ledger(const std::string& ledger_path, uint64_t slot, 
+                                     std::vector<AccountSnapshot>& accounts, 
+                                     uint64_t& total_lamports) const;
+    bool create_minimal_account_set(std::vector<AccountSnapshot>& accounts, 
+                                   uint64_t& total_lamports) const;
+    bool create_production_test_accounts(uint64_t slot, std::vector<AccountSnapshot>& accounts, 
+                                        uint64_t& total_lamports) const;
+    bool collect_incremental_accounts(const std::string& ledger_path, uint64_t slot, 
+                                     uint64_t base_slot, std::vector<AccountSnapshot>& changed_accounts, 
+                                     uint64_t& total_lamports_change) const;
 };
 
 /**
