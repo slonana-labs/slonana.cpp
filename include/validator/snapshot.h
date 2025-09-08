@@ -128,6 +128,20 @@ private:
                                      uint64_t& total_lamports) const;
     bool create_minimal_account_set(std::vector<AccountSnapshot>& accounts, 
                                    uint64_t& total_lamports) const;
+    
+    // Ledger database parsing methods
+    void parse_ledger_slot_data(const std::string& ledger_path, uint64_t slot,
+                               std::vector<AccountSnapshot>& accounts, 
+                               uint64_t& total_lamports) const;
+    void scan_ledger_account_files(const std::string& ledger_path, uint64_t slot,
+                                  std::vector<AccountSnapshot>& accounts, 
+                                  uint64_t& total_lamports) const;
+    void parse_account_references(const std::vector<uint8_t>& slot_data,
+                                 std::vector<AccountSnapshot>& accounts,
+                                 uint64_t& total_lamports) const;
+    void parse_account_file(const std::string& file_path,
+                           std::vector<AccountSnapshot>& accounts,
+                           uint64_t& total_lamports) const;
     bool create_production_test_accounts(uint64_t slot, std::vector<AccountSnapshot>& accounts, 
                                         uint64_t& total_lamports) const;
     bool collect_incremental_accounts(const std::string& ledger_path, uint64_t slot, 
