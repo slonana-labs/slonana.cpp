@@ -78,6 +78,7 @@ public:
 private:
     uint64_t max_compute_units_ = 1000000;
     size_t max_memory_size_ = 1024 * 1024; // 1MB default
+    bool jit_enabled_ = true;
     
     BpfExecutionResult execute_internal(const BpfProgram& program, const BpfExecutionContext& context, bool use_jit);
 };

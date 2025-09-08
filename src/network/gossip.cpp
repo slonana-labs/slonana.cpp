@@ -5,6 +5,12 @@
 #include <mutex>
 #include <unordered_map>
 #include <chrono>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <errno.h>
+#include <cstring>
 
 namespace slonana {
 namespace network {
@@ -195,20 +201,92 @@ std::vector<uint8_t> GossipProtocol::serialize_network_message(const NetworkMess
 }
 
 bool GossipProtocol::send_message_to_peer_socket(const PublicKey& peer_id, const std::vector<uint8_t>& serialized_message) {
-    // Production implementation: Send message over TCP/UDP socket
+    // Production implementation: Send message over TCP socket
     try {
-        // In a real implementation, this would:
-        // 1. Look up peer's network address from peer_id
-        // 2. Create or reuse a socket connection
-        // 3. Send the serialized message over the socket
-        // 4. Handle network errors and timeouts
+        std::lock_guard<std::mutex> lock(impl_->peers_mutex_);
         
-        // For now, simulate successful network transmission
-        std::this_thread::sleep_for(std::chrono::milliseconds(1)); // Simulate network latency
+        auto& connection_info = impl_->peer_connections_[peer_id];
+        
+        // Create socket if not exists or connection lost
+        if (connection_info.socket_fd < 0 || !connection_info.is_connected) {
+            // Create TCP socket
+            connection_info.socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+            if (connection_info.socket_fd < 0) {
+                std::cerr << "Failed to create socket" << std::endl;
+                return false;
+            }
+            
+            // Set socket options for non-blocking and reuse
+            int opt = 1;
+            setsockopt(connection_info.socket_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+            
+            // Set timeout for send operations
+            struct timeval timeout;
+            timeout.tv_sec = 5;  // 5 second timeout
+            timeout.tv_usec = 0;
+            setsockopt(connection_info.socket_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+            
+            // For production, would resolve peer_id to actual IP/port from DHT or peer database
+            // For now, use localhost with port derived from peer_id hash
+            struct sockaddr_in server_addr;
+            memset(&server_addr, 0, sizeof(server_addr));
+            server_addr.sin_family = AF_INET;
+            server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+            
+            // Derive port from peer_id hash (8899-8999 range for testing)
+            uint32_t peer_hash = 0;
+            for (size_t i = 0; i < std::min(peer_id.size(), size_t(4)); ++i) {
+                peer_hash = (peer_hash << 8) | peer_id[i];
+            }
+            server_addr.sin_port = htons(8899 + (peer_hash % 100));
+            
+            // Attempt connection (non-blocking)
+            int result = connect(connection_info.socket_fd, (struct sockaddr*)&server_addr, sizeof(server_addr));
+            if (result < 0 && errno != EINPROGRESS) {
+                close(connection_info.socket_fd);
+                connection_info.socket_fd = -1;
+                return false;
+            }
+            
+            connection_info.is_connected = true;
+        }
+        
+        // Send message length first (4 bytes)
+        uint32_t message_length = htonl(serialized_message.size());
+        ssize_t sent = send(connection_info.socket_fd, &message_length, sizeof(message_length), MSG_NOSIGNAL);
+        if (sent != sizeof(message_length)) {
+            connection_info.is_connected = false;
+            close(connection_info.socket_fd);
+            connection_info.socket_fd = -1;
+            return false;
+        }
+        
+        // Send actual message data
+        size_t total_sent = 0;
+        while (total_sent < serialized_message.size()) {
+            sent = send(connection_info.socket_fd, 
+                       serialized_message.data() + total_sent, 
+                       serialized_message.size() - total_sent, 
+                       MSG_NOSIGNAL);
+            
+            if (sent <= 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    // Would block, try again after short delay
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    continue;
+                } else {
+                    // Connection error
+                    connection_info.is_connected = false;
+                    close(connection_info.socket_fd);
+                    connection_info.socket_fd = -1;
+                    return false;
+                }
+            }
+            
+            total_sent += sent;
+        }
         
         // Update connection tracking
-        std::lock_guard<std::mutex> lock(impl_->peers_mutex_);
-        auto& connection_info = impl_->peer_connections_[peer_id];
         connection_info.last_contact = std::chrono::steady_clock::now();
         connection_info.is_active = true;
         connection_info.bytes_sent += serialized_message.size();
