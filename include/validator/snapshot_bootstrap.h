@@ -100,6 +100,10 @@ private:
     
     // Progress reporting helpers
     void report_progress(const std::string& phase, uint64_t current = 0, uint64_t total = 0) const;
+    
+    // Additional helper methods for production implementation
+    std::string generate_slot_hash(uint64_t slot) const;
+    common::Result<bool> restore_ledger_from_snapshot(const std::string& extract_dir);
 };
 
 } // namespace validator
