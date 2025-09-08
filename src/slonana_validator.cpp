@@ -5,6 +5,8 @@
 #include <fstream>
 #include <random>
 #include <iomanip>
+#include <algorithm>
+#include <sstream>
 
 namespace slonana {
 
@@ -312,28 +314,60 @@ common::Result<bool> SolanaValidator::initialize_identity() {
     // Try to load existing identity
     std::ifstream keypair_file(identity_path);
     if (keypair_file.is_open()) {
-        std::string hex_data((std::istreambuf_iterator<char>(keypair_file)),
-                             std::istreambuf_iterator<char>());
+        std::string file_content((std::istreambuf_iterator<char>(keypair_file)),
+                                std::istreambuf_iterator<char>());
         keypair_file.close();
         
-        // Enhanced validation
-        if (hex_data.length() >= 64) { // At least 32 bytes * 2 hex chars per byte
+        // Try to parse as Solana CLI JSON format first
+        if (file_content.front() == '[' && file_content.back() == ']') {
+            std::cout << "🔑 Loading Solana CLI format keypair..." << std::endl;
+            try {
+                // Parse JSON array format: [byte1, byte2, ..., byte64]
+                // Extract numbers from the JSON array
+                std::vector<uint8_t> keypair_bytes;
+                std::istringstream iss(file_content.substr(1, file_content.length() - 2)); // Remove [ ]
+                std::string token;
+                
+                while (std::getline(iss, token, ',')) {
+                    // Remove whitespace
+                    token.erase(std::remove_if(token.begin(), token.end(), ::isspace), token.end());
+                    if (!token.empty()) {
+                        int byte_val = std::stoi(token);
+                        if (byte_val >= 0 && byte_val <= 255) {
+                            keypair_bytes.push_back(static_cast<uint8_t>(byte_val));
+                        }
+                    }
+                }
+                
+                if (keypair_bytes.size() >= 32) {
+                    // Use first 32 bytes as public key (Solana convention)
+                    impl_->validator_identity_.resize(32);
+                    std::copy(keypair_bytes.begin(), keypair_bytes.begin() + 32, impl_->validator_identity_.begin());
+                    std::cout << "✅ Successfully loaded Solana CLI format identity from " << identity_path << std::endl;
+                    return common::Result<bool>(true);
+                } else {
+                    std::cout << "⚠️ Invalid Solana CLI keypair file (insufficient bytes: " << keypair_bytes.size() << ")" << std::endl;
+                }
+            } catch (const std::exception& e) {
+                std::cout << "⚠️ Failed to parse Solana CLI keypair: " << e.what() << std::endl;
+            }
+        }
+        // Try to parse as hex format (legacy)
+        else if (file_content.length() >= 64) {
+            std::cout << "🔑 Loading hex format keypair..." << std::endl;
             impl_->validator_identity_.resize(32);
             try {
                 for (size_t i = 0; i < 32; ++i) {
-                    std::string byte_str = hex_data.substr(i * 2, 2);
+                    std::string byte_str = file_content.substr(i * 2, 2);
                     impl_->validator_identity_[i] = static_cast<uint8_t>(std::stoul(byte_str, nullptr, 16));
                 }
-                std::cout << "✅ Successfully loaded validator identity from " << identity_path << std::endl;
+                std::cout << "✅ Successfully loaded hex format identity from " << identity_path << std::endl;
                 return common::Result<bool>(true);
             } catch (const std::exception& e) {
-                std::cout << "⚠️ Failed to parse identity file: " << e.what() << std::endl;
-                // Fall through to generate new identity
+                std::cout << "⚠️ Failed to parse hex format keypair: " << e.what() << std::endl;
             }
         } else {
-            std::cout << "⚠️ Invalid identity file format (expected 64+ hex chars, got " 
-                     << hex_data.length() << ")" << std::endl;
-            // Fall through to generate new identity
+            std::cout << "⚠️ Invalid identity file format (too short: " << file_content.length() << " chars)" << std::endl;
         }
     }
     
@@ -350,15 +384,27 @@ common::Result<bool> SolanaValidator::initialize_identity() {
         impl_->validator_identity_[i] = dis(gen);
     }
     
-    // Save the generated identity to file for persistence
+    // Save the generated identity to file in Solana CLI compatible format
     std::ofstream out_file(identity_path);
     if (out_file.is_open()) {
-        for (size_t i = 0; i < 32; ++i) {
-            out_file << std::hex << std::setfill('0') << std::setw(2) 
-                     << static_cast<int>(impl_->validator_identity_[i]);
+        // Generate a full 64-byte keypair (32 private + 32 public)
+        std::vector<uint8_t> full_keypair(64);
+        std::copy(impl_->validator_identity_.begin(), impl_->validator_identity_.end(), full_keypair.begin());
+        
+        // Generate additional 32 bytes for private key part (simplified)
+        for (size_t i = 32; i < 64; ++i) {
+            full_keypair[i] = dis(gen);
         }
+        
+        // Save in JSON array format compatible with Solana CLI
+        out_file << "[";
+        for (size_t i = 0; i < 64; ++i) {
+            out_file << static_cast<int>(full_keypair[i]);
+            if (i < 63) out_file << ",";
+        }
+        out_file << "]";
         out_file.close();
-        std::cout << "✅ Saved new identity to " << identity_path << std::endl;
+        std::cout << "✅ Saved new identity to " << identity_path << " (Solana CLI format)" << std::endl;
         
         // Verify the saved file can be read back
         std::ifstream verify_file(identity_path);
@@ -366,8 +412,8 @@ common::Result<bool> SolanaValidator::initialize_identity() {
             std::string verify_data((std::istreambuf_iterator<char>(verify_file)),
                                    std::istreambuf_iterator<char>());
             verify_file.close();
-            if (verify_data.length() == 64) {
-                std::cout << "✅ Identity file verification successful" << std::endl;
+            if (verify_data.front() == '[' && verify_data.back() == ']') {
+                std::cout << "✅ Identity file verification successful (Solana CLI format)" << std::endl;
             } else {
                 std::cout << "⚠️ Identity file verification failed" << std::endl;
             }

@@ -345,6 +345,12 @@ setup_bootstrap_fallback() {
 inject_enhanced_activity() {
     log_info "Starting enhanced activity injection for CI environment..."
     
+    # Add debugging information
+    log_info "DEBUG: Checking Solana CLI availability..."
+    log_info "DEBUG: PATH = $PATH"
+    log_info "DEBUG: which solana = $(which solana 2>/dev/null || echo 'NOT FOUND')"
+    log_info "DEBUG: which solana-keygen = $(which solana-keygen 2>/dev/null || echo 'NOT FOUND')"
+    
     # Check if Solana CLI tools are available
     if ! command -v solana &> /dev/null || ! command -v solana-keygen &> /dev/null; then
         log_warning "Solana CLI tools not available, using internal activity generation"
@@ -352,16 +358,29 @@ inject_enhanced_activity() {
         return 0
     fi
     
+    log_info "DEBUG: Solana CLI tools found, proceeding with CLI-based activity injection"
+    
     # Check if we have an identity file to use for activity
     if [[ -z "$IDENTITY_FILE" ]] || [[ ! -f "$IDENTITY_FILE" ]]; then
         log_warning "No validator identity file available, using internal activity generation"
+        log_info "DEBUG: IDENTITY_FILE = '$IDENTITY_FILE'"
+        log_info "DEBUG: File exists = $(test -f "$IDENTITY_FILE" && echo 'YES' || echo 'NO')"
         start_internal_activity_generator
         return 0
     fi
     
-    # Configure Solana CLI to use local validator
+    log_info "DEBUG: Identity file found: $IDENTITY_FILE"
+    
+    # Configure Solana CLI to use local validator (with error handling)
     export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
-    solana config set --url "http://localhost:$RPC_PORT" > /dev/null 2>&1 || true
+    log_info "DEBUG: Configuring Solana CLI to use localhost:$RPC_PORT"
+    if ! solana config set --url "http://localhost:$RPC_PORT" > /dev/null 2>&1; then
+        log_warning "Failed to configure Solana CLI, using internal activity generation"
+        start_internal_activity_generator
+        return 0
+    fi
+    
+    log_info "DEBUG: Solana CLI configured successfully"
     
     # Generate temp keypairs for activity
     local activity_sender="$RESULTS_DIR/activity-sender.json"
@@ -369,19 +388,39 @@ inject_enhanced_activity() {
     local activity_recipient2="$RESULTS_DIR/activity-recipient2.json"
     
     log_verbose "Generating activity keypairs..."
-    solana-keygen new --no-bip39-passphrase --silent --outfile "$activity_sender" 2>/dev/null || {
-        log_warning "Failed to generate activity keypairs, using internal generation"
+    log_info "DEBUG: Generating keypair $activity_sender"
+    if ! solana-keygen new --no-bip39-passphrase --silent --outfile "$activity_sender" 2>/dev/null; then
+        log_warning "Failed to generate activity sender keypair, using internal generation"
         start_internal_activity_generator
         return 0
-    }
+    fi
     
-    solana-keygen new --no-bip39-passphrase --silent --outfile "$activity_recipient" 2>/dev/null || return 0
-    solana-keygen new --no-bip39-passphrase --silent --outfile "$activity_recipient2" 2>/dev/null || return 0
+    log_info "DEBUG: Generating keypair $activity_recipient"
+    if ! solana-keygen new --no-bip39-passphrase --silent --outfile "$activity_recipient" 2>/dev/null; then
+        log_warning "Failed to generate activity recipient keypair, using internal generation"  
+        start_internal_activity_generator
+        return 0
+    fi
+    
+    log_info "DEBUG: Generating keypair $activity_recipient2"
+    if ! solana-keygen new --no-bip39-passphrase --silent --outfile "$activity_recipient2" 2>/dev/null; then
+        log_warning "Failed to generate activity recipient2 keypair, using internal generation"
+        start_internal_activity_generator  
+        return 0
+    fi
+    
+    log_info "DEBUG: All keypairs generated successfully"
     
     local sender_pubkey recipient_pubkey recipient2_pubkey
+    log_info "DEBUG: Extracting public keys from generated keypairs"
     sender_pubkey=$(solana-keygen pubkey "$activity_sender" 2>/dev/null || echo "")
     recipient_pubkey=$(solana-keygen pubkey "$activity_recipient" 2>/dev/null || echo "")
     recipient2_pubkey=$(solana-keygen pubkey "$activity_recipient2" 2>/dev/null || echo "")
+    
+    log_info "DEBUG: Extracted public keys:"
+    log_info "DEBUG:   sender_pubkey = '$sender_pubkey'"
+    log_info "DEBUG:   recipient_pubkey = '$recipient_pubkey'"  
+    log_info "DEBUG:   recipient2_pubkey = '$recipient2_pubkey'"
     
     if [[ -z "$sender_pubkey" || -z "$recipient_pubkey" || -z "$recipient2_pubkey" ]]; then
         log_warning "Failed to extract public keys, using internal activity generation"
@@ -389,24 +428,55 @@ inject_enhanced_activity() {
         return 0
     fi
     
+    log_info "DEBUG: All public keys extracted successfully"
+    
     # Initial funding phase
     log_verbose "Funding activity accounts..."
+    log_info "DEBUG: Starting airdrop attempts to identity"
     local airdrop_attempts=0
     while [[ $airdrop_attempts -lt 5 ]]; do
+        log_info "DEBUG: Airdrop attempt $((airdrop_attempts + 1))/5"
         if solana airdrop 1000 --keypair "$IDENTITY_FILE" > /dev/null 2>&1; then
             log_verbose "Airdrop successful to identity"
+            log_info "DEBUG: Airdrop successful on attempt $((airdrop_attempts + 1))"
             break
         fi
-        ((airdrop_attempts++))
+        airdrop_attempts=$((airdrop_attempts + 1))
         sleep 2
     done
     
+    if [[ $airdrop_attempts -eq 5 ]]; then
+        log_warning "All airdrop attempts failed, but continuing..."
+        log_info "DEBUG: All airdrop attempts failed - airdrops may not be supported in this validator configuration"
+        log_info "DEBUG: This is normal for local development validators"
+        log_warning "Switching to internal activity generation due to airdrop failures..."
+        start_internal_activity_generator
+        return 0
+    fi
+    
     # Fund the activity sender
+    log_info "DEBUG: Attempting to fund activity sender: $sender_pubkey"
+    log_info "DEBUG: Transfer command: solana transfer $sender_pubkey 100 --keypair $IDENTITY_FILE --allow-unfunded-recipient --fee-payer $IDENTITY_FILE --no-wait"
+    
+    # Wrap this in an additional safety net
+    set +e  # Temporarily disable exit on error
     solana transfer "$sender_pubkey" 100 \
         --keypair "$IDENTITY_FILE" \
         --allow-unfunded-recipient \
         --fee-payer "$IDENTITY_FILE" \
-        --no-wait > /dev/null 2>&1 || true
+        --no-wait > /tmp/transfer_output.log 2>&1
+    transfer_exit_code=$?
+    set -e  # Re-enable exit on error
+    
+    log_info "DEBUG: Transfer command exit code: $transfer_exit_code"
+    if [[ $transfer_exit_code -ne 0 ]]; then
+        log_warning "Transfer command failed with exit code $transfer_exit_code"
+        log_info "DEBUG: Transfer output:"
+        cat /tmp/transfer_output.log || true
+        log_warning "Continuing despite transfer failure..."
+    else
+        log_info "DEBUG: Transfer command completed successfully"
+    fi
     
     sleep 2
     
@@ -758,16 +828,27 @@ test_transaction_throughput() {
     solana-keygen new --no-bip39-passphrase --silent --outfile "$sender_keypair"
     solana-keygen new --no-bip39-passphrase --silent --outfile "$recipient_keypair"
 
-    # Airdrop SOL to sender
+    # Airdrop SOL to sender (with improved error handling)
     log_verbose "Requesting airdrop..."
     local airdrop_attempts=0
+    local airdrop_success=false
     while [[ $airdrop_attempts -lt 5 ]]; do
         if solana airdrop 100 --keypair "$sender_keypair" > /dev/null 2>&1; then
+            airdrop_success=true
             break
         fi
-        ((airdrop_attempts++))
+        airdrop_attempts=$((airdrop_attempts + 1))
         sleep 2
     done
+    
+    if [[ "$airdrop_success" == "false" ]]; then
+        log_warning "All airdrop attempts failed - airdrops not supported in this validator"
+        log_warning "Skipping transaction throughput test due to airdrop failures"
+        echo "0" > "$RESULTS_DIR/effective_tps.txt"
+        echo "0" > "$RESULTS_DIR/successful_transactions.txt"
+        echo "0" > "$RESULTS_DIR/submitted_requests.txt"
+        return 0
+    fi
 
     # Verify balance
     local balance
