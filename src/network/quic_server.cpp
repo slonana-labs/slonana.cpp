@@ -269,9 +269,9 @@ bool QuicServer::initialize(uint16_t port) {
     listener_ = std::make_unique<QuicListener>(port);
     
     // Initialize OpenSSL for TLS support
-    SSL_library_init();
-    SSL_load_error_strings();
-    OpenSSL_add_all_algorithms();
+    OPENSSL_init_ssl(0, NULL);
+    OPENSSL_init_crypto(0, NULL);
+    
     
     initialized_ = true;
     return true;
