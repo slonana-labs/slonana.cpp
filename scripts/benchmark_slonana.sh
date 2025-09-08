@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# Use less strict error handling to prevent premature script termination
+set -eo pipefail
 
 # Slonana Validator Benchmark Script
 # Automated benchmarking script for Slonana C++ validator
@@ -866,6 +867,27 @@ test_rpc_performance() {
     log_success "RPC latency test completed: ${avg_latency_ms}ms average"
 }
 
+# Check validator health
+check_validator_health() {
+    # Check if validator process is running
+    if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
+        local validator_pid
+        validator_pid=$(cat "$RESULTS_DIR/validator.pid" 2>/dev/null) || return 1
+        if [[ -n "$validator_pid" ]] && kill -0 "$validator_pid" 2>/dev/null; then
+            # Check if RPC is responding
+            if curl -s -f "http://localhost:$RPC_PORT/health" > /dev/null 2>&1; then
+                return 0
+            elif curl -s -X POST "http://localhost:$RPC_PORT" \
+                -H "Content-Type: application/json" \
+                -d '{"jsonrpc":"2.0","id":1,"method":"getHealth","params":[]}' \
+                > /dev/null 2>&1; then
+                return 0
+            fi
+        fi
+    fi
+    return 1
+}
+
 # Test transaction throughput
 test_transaction_throughput() {
     log_info "Testing transaction throughput..."
@@ -873,6 +895,15 @@ test_transaction_throughput() {
     # Check if Solana CLI tools are available
     if ! command -v solana &> /dev/null; then
         log_warning "Solana CLI not available, skipping transaction throughput test"
+        echo "0" > "$RESULTS_DIR/effective_tps.txt"
+        echo "0" > "$RESULTS_DIR/successful_transactions.txt"
+        echo "0" > "$RESULTS_DIR/submitted_requests.txt"
+        return 0
+    fi
+    
+    # Check validator health before starting transaction test
+    if ! check_validator_health; then
+        log_warning "Validator not healthy, skipping transaction throughput test"
         echo "0" > "$RESULTS_DIR/effective_tps.txt"
         echo "0" > "$RESULTS_DIR/successful_transactions.txt"
         echo "0" > "$RESULTS_DIR/submitted_requests.txt"
@@ -957,8 +988,30 @@ test_transaction_throughput() {
     local balance=$(get_balance_rpc "$sender_pubkey_rpc")
     log_info "DEBUG: Sender balance after airdrop: $balance lamports"
     
-    if (( $(echo "$balance < 10" | bc -l) )); then
-        log_warning "Insufficient balance for throughput test: ${balance} SOL"
+    # Convert lamports to SOL for comparison (1 SOL = 1000000000 lamports)
+    local balance_sol=0
+    if command -v bc &> /dev/null && [[ -n "$balance" && "$balance" != "0" ]]; then
+        balance_sol=$(echo "scale=2; $balance / 1000000000" | bc -l 2>/dev/null || echo "0")
+    elif [[ -n "$balance" && "$balance" != "0" ]]; then
+        # Fallback calculation without bc
+        balance_sol=$((balance / 1000000000))
+    fi
+    
+    # Check if we have sufficient balance (at least 1 SOL)
+    local has_sufficient_balance=false
+    if command -v bc &> /dev/null; then
+        if (( $(echo "$balance_sol >= 1" | bc -l 2>/dev/null || echo "0") )); then
+            has_sufficient_balance=true
+        fi
+    else
+        # Fallback check without bc
+        if [[ "$balance" -gt 1000000000 ]]; then
+            has_sufficient_balance=true
+        fi
+    fi
+    
+    if [[ "$has_sufficient_balance" != "true" ]]; then
+        log_warning "Insufficient balance for throughput test: ${balance_sol} SOL (${balance} lamports)"
         echo "0" > "$RESULTS_DIR/effective_tps.txt"
         echo "0" > "$RESULTS_DIR/successful_transactions.txt"
         echo "0" > "$RESULTS_DIR/submitted_requests.txt"
@@ -967,11 +1020,20 @@ test_transaction_throughput() {
 
     log_verbose "Starting transaction throughput test for ${TEST_DURATION}s..."
 
-    # Run transaction test
+    # Run transaction test with enhanced error handling
     local txn_count=0
     local success_count=0
-    local start_time=$(date +%s)
+    local start_time
     local recipient_pubkey
+    
+    # Safely get start time
+    start_time=$(date +%s) || {
+        log_error "Failed to get start time"
+        echo "0" > "$RESULTS_DIR/effective_tps.txt"
+        echo "0" > "$RESULTS_DIR/successful_transactions.txt"
+        echo "0" > "$RESULTS_DIR/submitted_requests.txt"
+        return 0
+    }
     
     # Extract recipient public key safely
     if command -v solana-keygen &> /dev/null; then
@@ -991,9 +1053,37 @@ test_transaction_throughput() {
         log_info "DEBUG: Generated recipient pubkey for RPC: $recipient_pubkey"
     fi
 
-    while [[ $(($(date +%s) - start_time)) -lt $TEST_DURATION ]]; do
+    # Enhanced transaction test loop with better error handling
+    log_info "DEBUG: Starting transaction loop for ${TEST_DURATION} seconds..."
+    local end_time=$((start_time + TEST_DURATION))
+    
+    while true; do
+        local current_time
+        current_time=$(date +%s) || {
+            log_warning "Failed to get current time, ending transaction test"
+            break
+        }
+        
+        # Check if we've reached the end time
+        if [[ $current_time -ge $end_time ]]; then
+            log_info "DEBUG: Transaction test duration completed"
+            break
+        fi
+        
+        # Send a batch of transactions with error handling
         for ((i=1; i<=5; i++)); do
-            if solana transfer "$recipient_pubkey" 0.001 \
+            # Check if validator is still running
+            if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
+                local validator_pid
+                validator_pid=$(cat "$RESULTS_DIR/validator.pid" 2>/dev/null) || true
+                if [[ -n "$validator_pid" ]] && ! kill -0 "$validator_pid" 2>/dev/null; then
+                    log_warning "Validator process no longer running, ending transaction test"
+                    break 2
+                fi
+            fi
+            
+            # Attempt transfer with timeout protection
+            if timeout 10s solana transfer "$recipient_pubkey" 0.001 \
                 --keypair "$sender_keypair" \
                 --allow-unfunded-recipient \
                 --fee-payer "$sender_keypair" \
@@ -1002,12 +1092,24 @@ test_transaction_throughput() {
             fi
             ((txn_count++))
         done
-        sleep 0.2
+        
+        # Brief pause between batches
+        sleep 0.2 || break
     done
+    
+    log_info "DEBUG: Transaction test completed. Sent: $txn_count, Successful: $success_count"
 
-    local actual_duration=$(($(date +%s) - start_time))
+    # Calculate results safely
+    local end_time_actual
+    end_time_actual=$(date +%s) || end_time_actual=$((start_time + TEST_DURATION))
+    local actual_duration=$((end_time_actual - start_time))
     actual_duration=${actual_duration:-1}  # Prevent division by zero
-    local effective_tps=$((success_count / actual_duration))
+    
+    # Ensure we don't divide by zero
+    local effective_tps=0
+    if [[ $actual_duration -gt 0 ]]; then
+        effective_tps=$((success_count / actual_duration))
+    fi
 
     # Save results
     echo "$effective_tps" > "$RESULTS_DIR/effective_tps.txt"
