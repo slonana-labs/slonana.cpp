@@ -38,6 +38,7 @@ struct Lockout {
      */
     bool is_locked_out_at_slot(uint64_t other_slot) const {
         // A slot is locked out if it's within the lockout period but after the voted slot
+        // Compatible with Agave: lockout prevents votes on slots within the lockout period
         return other_slot > slot && other_slot <= slot + lockout_period();
     }
     

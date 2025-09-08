@@ -52,6 +52,11 @@ bool Tower::is_slot_locked_out(uint64_t slot) const {
 void Tower::record_vote(uint64_t slot) {
     std::lock_guard<std::mutex> lock(tower_mutex_);
     
+    // Input validation
+    if (slot == 0) {
+        throw std::invalid_argument("Cannot vote on slot 0");
+    }
+    
     // Check if voting is allowed (without acquiring lock again)
     if (slot < root_slot_ || slot <= last_vote_slot_) {
         throw std::runtime_error("Cannot vote on slot " + std::to_string(slot) + " - violates Tower BFT rules");

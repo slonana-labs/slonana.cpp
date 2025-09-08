@@ -68,15 +68,29 @@ bool Shred::sign(const std::vector<uint8_t>& private_key) {
     // In a real implementation, this would use Ed25519 signing
     std::memset(header_.signature, 0, 64);
     
-    // Simple hash as signature placeholder
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-    SHA256_Update(&ctx, private_key.data(), private_key.size());
-    SHA256_Update(&ctx, &header_.variant, sizeof(header_) - 64); // Exclude signature field
-    SHA256_Update(&ctx, payload_.data(), payload_.size());
+    // Simple hash as signature placeholder (using modern OpenSSL API)
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    if (!ctx) {
+        return false;
+    }
+    
+    if (EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) != 1) {
+        EVP_MD_CTX_free(ctx);
+        return false;
+    }
+    
+    EVP_DigestUpdate(ctx, private_key.data(), private_key.size());
+    EVP_DigestUpdate(ctx, &header_.variant, sizeof(header_) - 64); // Exclude signature field
+    EVP_DigestUpdate(ctx, payload_.data(), payload_.size());
     
     uint8_t hash[32];
-    SHA256_Final(hash, &ctx);
+    unsigned int hash_len;
+    if (EVP_DigestFinal_ex(ctx, hash, &hash_len) != 1) {
+        EVP_MD_CTX_free(ctx);
+        return false;
+    }
+    
+    EVP_MD_CTX_free(ctx);
     
     // Copy hash to signature (first 32 bytes)
     std::memcpy(header_.signature, hash, 32);

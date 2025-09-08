@@ -226,22 +226,32 @@ TurbineTree::TreeStats TurbineTree::get_stats() const {
 }
 
 bool TurbineTree::update_node_stake(const TurbineNode& node, uint32_t new_stake) {
-    std::lock_guard<std::mutex> lock(tree_mutex_);
+    std::vector<TurbineNode> current_nodes;
     
-    // Find and update the node
-    for (auto& n : nodes_) {
-        if (n == node) {
-            n.stake_weight = new_stake;
-            
-            // Rebuild tree with new stakes
-            auto current_nodes = nodes_;
-            lock.~lock_guard(); // Release lock before recursive call
-            construct_tree(current_nodes);
-            return true;
+    {
+        std::lock_guard<std::mutex> lock(tree_mutex_);
+        
+        // Find and update the node
+        bool found = false;
+        for (auto& n : nodes_) {
+            if (n == node) {
+                n.stake_weight = new_stake;
+                found = true;
+                break;
+            }
         }
+        
+        if (!found) {
+            return false;
+        }
+        
+        // Copy nodes for rebuild
+        current_nodes = nodes_;
     }
     
-    return false;
+    // Rebuild tree with new stakes (lock is released)
+    construct_tree(current_nodes);
+    return true;
 }
 
 bool TurbineTree::remove_node(const TurbineNode& node) {
@@ -506,18 +516,23 @@ uint64_t hash_node(const TurbineNode& node, uint64_t seed) {
 }
 
 bool validate_node(const TurbineNode& node) {
-    // Check pubkey size
+    // Check pubkey size (must be exactly 32 bytes for Ed25519)
     if (node.pubkey.size() != 32) {
         return false;
     }
     
-    // Check address is not empty
-    if (node.address.empty()) {
+    // Check address is not empty and reasonable
+    if (node.address.empty() || node.address.length() > 255) {
         return false;
     }
     
-    // Check port is reasonable
-    if (node.port == 0) {
+    // Check port is in valid range (1-65535)
+    if (node.port == 0 || node.port > 65535) {
+        return false;
+    }
+    
+    // Check stake weight is reasonable (not zero for active validators)
+    if (node.stake_weight == 0) {
         return false;
     }
     
