@@ -11,6 +11,10 @@
 #include <queue>
 #include <unordered_map>
 #include <chrono>
+#include <atomic>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <openssl/ssl.h>
 
 namespace slonana {
 namespace network {
@@ -36,13 +40,20 @@ public:
     size_t bytes_sent() const { return bytes_sent_; }
     size_t bytes_received() const { return bytes_received_; }
     
+    // Static helper for QUIC protocol
+    static void encode_varint_static(std::vector<uint8_t>& buffer, uint64_t value);
+    
 private:
     StreamId stream_id_;
     bool closed_;
     size_t bytes_sent_;
     size_t bytes_received_;
     std::queue<std::vector<uint8_t>> pending_data_;
+    std::vector<uint8_t> outbound_buffer_;
     mutable std::mutex mutex_;
+    
+    // Helper methods
+    void encode_varint(std::vector<uint8_t>& buffer, uint64_t value);
 };
 
 /**
@@ -85,8 +96,19 @@ private:
     std::unordered_map<QuicStream::StreamId, std::shared_ptr<QuicStream>> streams_;
     mutable std::mutex streams_mutex_;
     
+    // Socket and TLS
+    int socket_fd_;
+    struct sockaddr_in server_addr_;
+    SSL_CTX* tls_ctx_;
+    SSL* tls_ssl_;
+    
     // Internal connection management
     void handle_connection_events();
+    bool perform_quic_handshake();
+    void process_quic_packet(const uint8_t* data, size_t length);
+    void send_pending_packets();
+    void handle_connection_maintenance();
+    void cleanup_tls();
     std::thread event_thread_;
     bool should_stop_;
 };
@@ -163,6 +185,11 @@ private:
     // Connection pool management
     void cleanup_expired_connections();
     std::string generate_connection_id(const std::string& address, uint16_t port);
+    
+    // Production QUIC methods
+    void update_congestion_control();
+    void handle_retransmissions();
+    void update_connection_stats();
 };
 
 } // namespace network

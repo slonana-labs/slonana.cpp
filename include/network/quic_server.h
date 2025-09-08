@@ -12,6 +12,9 @@
 #include <atomic>
 #include <unordered_map>
 #include <unordered_set>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <openssl/ssl.h>
 
 namespace slonana {
 namespace network {
@@ -35,6 +38,13 @@ private:
     std::thread listener_thread_;
     
     void listen_loop();
+    
+    // QUIC packet handlers
+    void handle_initial_packet(const uint8_t* data, size_t length, const struct sockaddr_in& client_addr);
+    void handle_0rtt_packet(const uint8_t* data, size_t length, const struct sockaddr_in& client_addr);
+    void handle_handshake_packet(const uint8_t* data, size_t length, const struct sockaddr_in& client_addr);
+    void handle_retry_packet(const uint8_t* data, size_t length, const struct sockaddr_in& client_addr);
+    void handle_1rtt_packet(const uint8_t* data, size_t length, const struct sockaddr_in& client_addr);
 };
 
 /**
@@ -54,6 +64,9 @@ public:
     
     // Stream handling
     std::shared_ptr<QuicStream> accept_stream();
+    std::shared_ptr<QuicStream> get_stream(QuicStream::StreamId stream_id);
+    std::shared_ptr<QuicStream> create_stream();
+    void close_stream(QuicStream::StreamId stream_id);
     void handle_stream_data(QuicStream::StreamId stream_id, const std::vector<uint8_t>& data);
     
     // Session properties
@@ -76,6 +89,12 @@ private:
     mutable std::mutex streams_mutex_;
     
     QuicStream::StreamId next_stream_id_;
+    size_t bytes_received_;
+    std::string connection_id_;
+    std::function<void(const std::vector<uint8_t>&, const std::string&)> data_callback_;
+    
+    // Helper methods
+    void send_ack_frame(QuicStream::StreamId stream_id, size_t data_length);
 };
 
 /**
@@ -164,6 +183,11 @@ private:
     std::string cert_file_;
     std::string key_file_;
     bool tls_verification_enabled_;
+    SSL_CTX* tls_ctx_;
+    
+    // Client validation
+    std::vector<std::string> client_blacklist_;
+    std::vector<std::string> client_whitelist_;
     
     // Statistics
     std::atomic<size_t> total_bytes_sent_;
@@ -191,6 +215,14 @@ private:
     // Security and validation
     bool validate_client_certificate(const std::string& client_address);
     bool rate_limit_check(const std::string& client_address);
+    
+    // Production QUIC methods  
+    void handle_connection_events();
+    void process_stream_events();
+    void update_congestion_control(); 
+    void handle_retransmissions();
+    void update_server_stats();
+    void encode_varint(std::vector<uint8_t>& buffer, uint64_t value);
     
     // Connection tracking
     std::unordered_set<std::string> active_client_addresses_;
