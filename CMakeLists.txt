@@ -309,6 +309,15 @@ target_include_directories(slonana_hardware_wallet_tests PRIVATE "${CMAKE_SOURCE
 target_compile_definitions(slonana_hardware_wallet_tests PRIVATE STANDALONE_HARDWARE_WALLET_TESTS)
 add_test(NAME hardware_wallet_tests COMMAND slonana_hardware_wallet_tests)
 
+# Tower BFT test suite (Agave Phase 1)
+add_executable(slonana_tower_bft_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_tower_bft.cpp"
+)
+target_link_libraries(slonana_tower_bft_tests slonana_core)
+target_include_directories(slonana_tower_bft_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_tower_bft_tests PRIVATE STANDALONE_TOWER_BFT_TESTS)
+add_test(NAME tower_bft_tests COMMAND slonana_tower_bft_tests)
+
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")
 target_link_libraries(slonana-genesis slonana_core OpenSSL::SSL OpenSSL::Crypto)
