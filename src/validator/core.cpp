@@ -288,11 +288,16 @@ ValidatorCore::ValidatorCore(
     , fork_choice_(std::make_unique<ForkChoice>())
     , block_validator_(std::make_unique<BlockValidator>(ledger_))
     , validator_identity_(validator_identity)
+    , banking_stage_(std::make_unique<banking::BankingStage>())
+    , quic_server_(std::make_unique<network::QuicServer>())
+    , quic_client_(std::make_unique<network::QuicClient>())
+    , quic_enabled_(false)
     , impl_(std::make_unique<Impl>()) {
 }
 
 ValidatorCore::~ValidatorCore() {
     stop();
+    disable_quic_networking();
 }
 
 common::Result<bool> ValidatorCore::start() {
@@ -305,6 +310,20 @@ common::Result<bool> ValidatorCore::start() {
     // Check if Proof of History is initialized before accessing it
     if (!consensus::GlobalProofOfHistory::is_initialized()) {
         return common::Result<bool>("GlobalProofOfHistory not initialized. Initialize it before starting ValidatorCore.");
+    }
+    
+    // Initialize and start banking stage
+    if (!banking_stage_->initialize()) {
+        return common::Result<bool>("Failed to initialize banking stage");
+    }
+    
+    if (!banking_stage_->start()) {
+        return common::Result<bool>("Failed to start banking stage");
+    }
+    
+    // Initialize QUIC client
+    if (!quic_client_->initialize()) {
+        return common::Result<bool>("Failed to initialize QUIC client");
     }
     
     // Access the already initialized Proof of History instance
@@ -328,6 +347,16 @@ common::Result<bool> ValidatorCore::start() {
 void ValidatorCore::stop() {
     if (impl_->running_) {
         std::cout << "Stopping validator core" << std::endl;
+        
+        // Stop banking stage
+        if (banking_stage_) {
+            banking_stage_->stop();
+        }
+        
+        // Stop QUIC client
+        if (quic_client_) {
+            quic_client_->shutdown();
+        }
         
         // Just stop the running flag - PoH will be shut down by the main validator
         impl_->running_ = false;
@@ -478,6 +507,66 @@ std::string ValidatorCore::get_slot_leader(Slot slot) const {
     leader_stream << "validator_" << std::hex << (slot_hash % 1000);
     
     return leader_stream.str();
+}
+
+void ValidatorCore::process_transaction(std::shared_ptr<ledger::Transaction> transaction) {
+    if (!impl_->running_ || !banking_stage_) {
+        return;
+    }
+    
+    banking_stage_->submit_transaction(transaction);
+}
+
+void ValidatorCore::process_transactions(std::vector<std::shared_ptr<ledger::Transaction>> transactions) {
+    if (!impl_->running_ || !banking_stage_) {
+        return;
+    }
+    
+    banking_stage_->submit_transactions(transactions);
+}
+
+bool ValidatorCore::enable_quic_networking(uint16_t port) {
+    if (quic_enabled_) {
+        return true;
+    }
+    
+    if (!quic_server_->initialize(port)) {
+        return false;
+    }
+    
+    if (!quic_server_->start()) {
+        return false;
+    }
+    
+    quic_enabled_ = true;
+    return true;
+}
+
+bool ValidatorCore::disable_quic_networking() {
+    if (!quic_enabled_) {
+        return true;
+    }
+    
+    if (quic_server_) {
+        quic_server_->shutdown();
+    }
+    
+    quic_enabled_ = false;
+    return true;
+}
+
+banking::BankingStage::Statistics ValidatorCore::get_transaction_statistics() const {
+    if (banking_stage_) {
+        return banking_stage_->get_statistics();
+    }
+    return {};
+}
+
+network::QuicServer::Statistics ValidatorCore::get_quic_statistics() const {
+    if (quic_server_ && quic_enabled_) {
+        return quic_server_->get_statistics();
+    }
+    return {};
 }
 
 } // namespace validator

@@ -37,6 +37,7 @@ file(GLOB_RECURSE CORE_SOURCES
     "${SRC_DIR}/security/*.cpp"
     "${SRC_DIR}/cluster/*.cpp"
     "${SRC_DIR}/genesis/*.cpp"
+    "${SRC_DIR}/banking/*.cpp"
     "${SRC_DIR}/slonana_validator.cpp"
 )
 
@@ -167,6 +168,16 @@ add_test(NAME wallet_tests COMMAND slonana_wallet_tests)
 add_test(NAME monitoring_tests COMMAND slonana_monitoring_tests)
 add_test(NAME consensus_timing_tests COMMAND slonana_consensus_timing_tests)
 add_test(NAME proof_of_history_tests COMMAND slonana_proof_of_history_tests)
+
+# Agave Phase 1 test suite
+add_executable(slonana_agave_phase1_tests 
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_agave_phase1_tasks.cpp"
+)
+target_link_libraries(slonana_agave_phase1_tests slonana_core OpenSSL::SSL OpenSSL::Crypto)
+target_include_directories(slonana_agave_phase1_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_agave_phase1_tests PRIVATE STANDALONE_AGAVE_TESTS)
+add_test(NAME agave_phase1_tests COMMAND slonana_agave_phase1_tests)
 
 # Enhanced test suites (if comprehensive testing is enabled)
 if(ENABLE_COMPREHENSIVE_TESTING)
