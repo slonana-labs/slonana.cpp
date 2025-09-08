@@ -490,89 +490,148 @@ int main(int argc, char* argv[]) {
             std::cout << "   Validator will maintain sustained activity for testing" << std::endl;
         }
         
-        // Main event loop with enhanced CI support
+        // Main event loop with enhanced CI support and crash detection
         auto last_stats_time = std::chrono::steady_clock::now();
         auto last_tick_time = std::chrono::steady_clock::now();
         auto last_metrics_export = std::chrono::steady_clock::now();
         auto last_activity_injection = std::chrono::steady_clock::now();
+        auto last_health_check = std::chrono::steady_clock::now();
         auto validator_start_time = std::chrono::steady_clock::now();
         uint64_t tick_counter = 0;
         uint64_t activity_counter = 0;
+        uint64_t health_check_counter = 0;
+        
+        std::cout << "🚀 Starting main validator event loop..." << std::endl;
         
         while (!g_shutdown_requested.load()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            
-            auto now = std::chrono::steady_clock::now();
-            auto uptime = std::chrono::duration_cast<std::chrono::seconds>(now - validator_start_time);
-            
-            // Simulate PoH tick generation based on configuration
-            auto tick_duration = std::chrono::microseconds(config.poh_target_tick_duration_us);
-            auto time_since_last_tick = std::chrono::duration_cast<std::chrono::microseconds>(now - last_tick_time);
-            
-            if (time_since_last_tick >= tick_duration) {
-                tick_counter++;
+            try {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 
-                // Log PoH tick activity (visible to E2E tests)
-                if (config.log_level == "debug" || tick_counter % 100 == 0) {
-                    std::cout << "PoH tick " << tick_counter 
-                              << " (duration: " << config.poh_target_tick_duration_us << "μs)"
-                              << " slot: " << (tick_counter / config.poh_ticks_per_slot) << std::endl;
-                }
+                auto now = std::chrono::steady_clock::now();
+                auto uptime = std::chrono::duration_cast<std::chrono::seconds>(now - validator_start_time);
                 
-                last_tick_time = now;
-            }
-            
-            // Sustained activity injection for CI environments
-            if (ci_keep_alive_mode) {
-                auto activity_interval = std::chrono::seconds(5); // Inject activity every 5 seconds
-                auto time_since_last_activity = std::chrono::duration_cast<std::chrono::seconds>(now - last_activity_injection);
+                // Enhanced health check every 10 seconds
+                auto health_check_interval = std::chrono::seconds(10);
+                auto time_since_last_health_check = std::chrono::duration_cast<std::chrono::seconds>(now - last_health_check);
                 
-                if (time_since_last_activity >= activity_interval) {
-                    activity_counter++;
+                if (time_since_last_health_check >= health_check_interval) {
+                    health_check_counter++;
                     
-                    // Simulate blockchain activity to prevent idle exit
-                    std::cout << "🔄 Injecting activity " << activity_counter 
-                              << " (uptime: " << uptime.count() << "s)" << std::endl;
-                    
-                    // Create synthetic transactions/blocks to maintain validator state
-                    auto stats = validator.get_stats();
-                    stats.blocks_processed += 1;
-                    stats.transactions_processed += 3;
-                    
-                    // Export synthetic metrics to show activity
-                    if (!config.metrics_output_path.empty()) {
-                        std::ofstream metrics_file(config.metrics_output_path + ".activity", std::ios::app);
-                        if (metrics_file.is_open()) {
-                            metrics_file << "activity_injection," << activity_counter 
-                                        << "," << uptime.count() << "\n";
-                            metrics_file.close();
+                    // Verify validator is still operational
+                    bool validator_healthy = validator.is_running();
+                    if (!validator_healthy) {
+                        std::cout << "⚠️ Health Check " << health_check_counter << " - Validator not running, attempting restart..." << std::endl;
+                        
+                        // Attempt to restart validator services
+                        try {
+                            auto restart_result = validator.start();
+                            if (restart_result.is_ok()) {
+                                std::cout << "✅ Validator services restarted successfully" << std::endl;
+                            } else {
+                                std::cout << "❌ Failed to restart validator: " << restart_result.error() << std::endl;
+                                // Don't exit immediately - give it a chance to recover
+                            }
+                        } catch (const std::exception& restart_error) {
+                            std::cout << "❌ Exception during validator restart: " << restart_error.what() << std::endl;
                         }
+                    } else {
+                        std::cout << "✅ Health Check " << health_check_counter << " - Validator operational (uptime: " << uptime.count() << "s)" << std::endl;
                     }
                     
-                    last_activity_injection = now;
+                    last_health_check = now;
                 }
-            }
-            
-            // Export metrics periodically
-            auto metrics_interval = std::chrono::milliseconds(config.metrics_export_interval_ms);
-            auto time_since_last_export = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_metrics_export);
-            
-            if (time_since_last_export >= metrics_interval) {
-                export_metrics_to_file(validator, config.metrics_output_path);
-                last_metrics_export = now;
-            }
-            
-            // Print stats every 30 seconds with enhanced CI information
-            auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - last_stats_time);
-            
-            if (duration.count() >= 30) {
-                print_validator_stats(validator);
-                std::cout << "PoH ticks generated: " << tick_counter << std::endl;
+                
+                // Simulate PoH tick generation based on configuration
+                auto tick_duration = std::chrono::microseconds(config.poh_target_tick_duration_us);
+                auto time_since_last_tick = std::chrono::duration_cast<std::chrono::microseconds>(now - last_tick_time);
+                
+                if (time_since_last_tick >= tick_duration) {
+                    tick_counter++;
+                    
+                    // Log PoH tick activity (visible to E2E tests)
+                    if (config.log_level == "debug" || tick_counter % 100 == 0) {
+                        std::cout << "PoH tick " << tick_counter 
+                                  << " (duration: " << config.poh_target_tick_duration_us << "μs)"
+                                  << " slot: " << (tick_counter / config.poh_ticks_per_slot) << std::endl;
+                    }
+                    
+                    last_tick_time = now;
+                }
+                
+                // Sustained activity injection for CI environments
                 if (ci_keep_alive_mode) {
-                    std::cout << "Activity injections: " << activity_counter << std::endl;
-                    std::cout << "Uptime: " << uptime.count() << " seconds" << std::endl;
+                    auto activity_interval = std::chrono::seconds(5); // Inject activity every 5 seconds
+                    auto time_since_last_activity = std::chrono::duration_cast<std::chrono::seconds>(now - last_activity_injection);
+                    
+                    if (time_since_last_activity >= activity_interval) {
+                        activity_counter++;
+                        
+                        // Simulate blockchain activity to prevent idle exit
+                        std::cout << "🔄 Injecting activity " << activity_counter 
+                                  << " (uptime: " << uptime.count() << "s)" << std::endl;
+                        
+                        // Create synthetic transactions/blocks to maintain validator state
+                        try {
+                            auto stats = validator.get_stats();
+                            stats.blocks_processed += 1;
+                            stats.transactions_processed += 3;
+                            
+                            // Export synthetic metrics to show activity
+                            if (!config.metrics_output_path.empty()) {
+                                std::ofstream metrics_file(config.metrics_output_path + ".activity", std::ios::app);
+                                if (metrics_file.is_open()) {
+                                    metrics_file << "activity_injection," << activity_counter 
+                                                << "," << uptime.count() << "\n";
+                                    metrics_file.close();
+                                }
+                            }
+                        } catch (const std::exception& activity_error) {
+                            std::cout << "⚠️ Error during activity injection: " << activity_error.what() << std::endl;
+                        }
+                        
+                        last_activity_injection = now;
+                    }
                 }
-                last_stats_time = now;
+                
+                // Export metrics periodically
+                auto metrics_interval = std::chrono::milliseconds(config.metrics_export_interval_ms);
+                auto time_since_last_export = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_metrics_export);
+                
+                if (time_since_last_export >= metrics_interval) {
+                    try {
+                        export_metrics_to_file(validator, config.metrics_output_path);
+                    } catch (const std::exception& metrics_error) {
+                        std::cout << "⚠️ Error during metrics export: " << metrics_error.what() << std::endl;
+                    }
+                    last_metrics_export = now;
+                }
+                
+                // Print stats every 30 seconds with enhanced CI information
+                auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - last_stats_time);
+                
+                if (duration.count() >= 30) {
+                    try {
+                        print_validator_stats(validator);
+                        std::cout << "PoH ticks generated: " << tick_counter << std::endl;
+                        std::cout << "Health checks performed: " << health_check_counter << std::endl;
+                        if (ci_keep_alive_mode) {
+                            std::cout << "Activity injections: " << activity_counter << std::endl;
+                            std::cout << "Uptime: " << uptime.count() << " seconds" << std::endl;
+                        }
+                    } catch (const std::exception& stats_error) {
+                        std::cout << "⚠️ Error during stats printing: " << stats_error.what() << std::endl;
+                    }
+                    last_stats_time = now;
+                }
+                
+            } catch (const std::exception& loop_error) {
+                std::cout << "❌ Error in main event loop: " << loop_error.what() << std::endl;
+                std::cout << "Continuing event loop..." << std::endl;
+                // Don't exit - continue running with next iteration
+            } catch (...) {
+                std::cout << "❌ Unknown error in main event loop" << std::endl;
+                std::cout << "Continuing event loop..." << std::endl;
+                // Don't exit - continue running with next iteration
             }
         }
         
