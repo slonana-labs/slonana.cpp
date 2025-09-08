@@ -390,8 +390,8 @@ jobs:
         echo "Current ulimit -n: $(ulimit -n)"
         echo "Current ulimit -u: $(ulimit -u)"
         
-        # Try to increase file descriptor limit
-        ulimit -n 65536 2>/dev/null || ulimit -n 4096 2>/dev/null || echo "Using system default"
+        # Try to increase file descriptor limit to match validator requirements
+        ulimit -n 1000000 2>/dev/null || ulimit -n 65536 2>/dev/null || ulimit -n 4096 2>/dev/null || echo "Using system default"
         echo "Updated ulimit -n: $(ulimit -n)"
         
         # Set environment variables for CI mode

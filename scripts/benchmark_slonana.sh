@@ -655,10 +655,14 @@ start_validator() {
     log_info "Configuring system limits for validator operation..."
     
     # Increase file descriptor limits (CI environments often have low limits)
-    ulimit -n 65536 2>/dev/null || {
-        log_warning "Failed to set file descriptor limit to 65536, trying 4096..."
-        ulimit -n 4096 2>/dev/null || {
-            log_warning "Could not increase file descriptor limit, proceeding with system default"
+    # Set to 1000000 to match validator's requirements and prevent blockstore warnings
+    ulimit -n 1000000 2>/dev/null || {
+        log_warning "Failed to set file descriptor limit to 1000000, trying 65536..."
+        ulimit -n 65536 2>/dev/null || {
+            log_warning "Failed to set file descriptor limit to 65536, trying 4096..."
+            ulimit -n 4096 2>/dev/null || {
+                log_warning "Could not increase file descriptor limit, proceeding with system default"
+            }
         }
     }
     
