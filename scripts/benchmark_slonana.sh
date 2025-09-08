@@ -884,22 +884,50 @@ test_transaction_throughput() {
         log_info "DEBUG: Solana CLI not available, using RPC-only mode"
     fi
 
-    # Generate keypairs (simulate keypair files for RPC testing)
+    # Generate keypairs (with validation and regeneration)
     local sender_keypair="$RESULTS_DIR/sender-keypair.json"
     local recipient_keypair="$RESULTS_DIR/recipient-keypair.json"
 
-    # Create mock keypair files and generate corresponding public keys
-    echo '["mock_sender_keypair_for_rpc_testing"]' > "$sender_keypair"
-    echo '["mock_recipient_keypair_for_rpc_testing"]' > "$recipient_keypair"
-    
-    log_info "DEBUG: Created mock keypair files for RPC testing"
+    # Validate or regenerate sender keypair
+    if command -v solana-keygen &> /dev/null; then
+        log_info "DEBUG: Validating/regenerating sender keypair..."
+        solana-keygen verify "$sender_keypair" 2>/dev/null || \
+            solana-keygen new --no-bip39-passphrase -o "$sender_keypair" --force
+        
+        # Validate or regenerate recipient keypair
+        log_info "DEBUG: Validating/regenerating recipient keypair..."
+        solana-keygen verify "$recipient_keypair" 2>/dev/null || \
+            solana-keygen new --no-bip39-passphrase -o "$recipient_keypair" --force
+            
+        log_info "DEBUG: Created valid Solana keypair files"
+    else
+        # Create mock keypair files for RPC testing when CLI tools not available
+        echo '["mock_sender_keypair_for_rpc_testing"]' > "$sender_keypair"
+        echo '["mock_recipient_keypair_for_rpc_testing"]' > "$recipient_keypair"
+        log_info "DEBUG: Created mock keypair files for RPC testing (CLI tools not available)"
+    fi
 
     # Airdrop SOL to sender using RPC (with improved error handling)
     log_verbose "Requesting airdrop via RPC..."
     
     # Generate public key for sender from keypair file
-    local sender_pubkey_rpc=$(generate_pubkey_from_string "$sender_keypair")
-    log_info "DEBUG: Generated sender pubkey for RPC: $sender_pubkey_rpc"
+    local sender_pubkey_rpc
+    if command -v solana-keygen &> /dev/null; then
+        log_info "DEBUG: Extracting sender pubkey using Solana CLI..."
+        if ! sender_pubkey_rpc=$(solana-keygen pubkey "$sender_keypair" 2>/dev/null); then
+            log_error "Failed to extract sender pubkey from: $sender_keypair"
+            log_warning "Skipping transaction throughput test due to keypair issues"
+            echo "0" > "$RESULTS_DIR/effective_tps.txt"
+            echo "0" > "$RESULTS_DIR/successful_transactions.txt"
+            echo "0" > "$RESULTS_DIR/submitted_requests.txt"
+            return 0
+        fi
+        log_info "DEBUG: Extracted sender pubkey: $sender_pubkey_rpc"
+    else
+        # Generate deterministic pubkey for RPC-only mode
+        sender_pubkey_rpc=$(generate_pubkey_from_string "$sender_keypair")
+        log_info "DEBUG: Generated sender pubkey for RPC: $sender_pubkey_rpc"
+    fi
     
     local airdrop_attempts=0
     local airdrop_success=false
@@ -940,7 +968,24 @@ test_transaction_throughput() {
     local success_count=0
     local start_time=$(date +%s)
     local recipient_pubkey
-    recipient_pubkey=$(solana-keygen pubkey "$recipient_keypair")
+    
+    # Extract recipient public key safely
+    if command -v solana-keygen &> /dev/null; then
+        log_info "DEBUG: Extracting recipient pubkey using Solana CLI..."
+        if ! recipient_pubkey=$(solana-keygen pubkey "$recipient_keypair" 2>/dev/null); then
+            log_error "Failed to extract recipient pubkey from: $recipient_keypair"
+            log_warning "Skipping transaction throughput test due to keypair issues"
+            echo "0" > "$RESULTS_DIR/effective_tps.txt"
+            echo "0" > "$RESULTS_DIR/successful_transactions.txt"
+            echo "0" > "$RESULTS_DIR/submitted_requests.txt"
+            return 0
+        fi
+        log_info "DEBUG: Extracted recipient pubkey: $recipient_pubkey"
+    else
+        # Generate deterministic pubkey for RPC-only mode
+        recipient_pubkey=$(generate_pubkey_from_string "$recipient_keypair")
+        log_info "DEBUG: Generated recipient pubkey for RPC: $recipient_pubkey"
+    fi
 
     while [[ $(($(date +%s) - start_time)) -lt $TEST_DURATION ]]; do
         for ((i=1; i<=5; i++)); do
