@@ -747,7 +747,6 @@ RpcResponse SolanaRpcServer::get_balance(const RpcRequest& request) {
     RpcResponse response;
     response.id = request.id;
     response.id_is_number = request.id_is_number;
-    response.id_is_number = request.id_is_number;
     
     try {
         std::string address = extract_first_param(request.params);
@@ -756,9 +755,22 @@ RpcResponse SolanaRpcServer::get_balance(const RpcRequest& request) {
         }
         
         if (account_manager_) {
-            PublicKey pubkey(address.begin(), address.end());
-            auto account_info = account_manager_->get_account(pubkey);
+            // Convert address string to PublicKey using deterministic hash-based approach
+            PublicKey pubkey(32, 0); // Initialize vector with 32 zeros
             
+            std::hash<std::string> hasher;
+            auto hash_val = hasher(address);
+            
+            // Create a deterministic conversion from address string to 32-byte public key
+            for (size_t i = 0; i < 32; ++i) {
+                uint8_t byte_val = static_cast<uint8_t>((hash_val >> ((i * 8) % 64)) & 0xFF);
+                if (i < address.length()) {
+                    byte_val ^= static_cast<uint8_t>(address[i]);
+                }
+                pubkey[i] = byte_val;
+            }
+            
+            auto account_info = account_manager_->get_account(pubkey);
             uint64_t balance = account_info.has_value() ? account_info.value().lamports : 0;
             
             std::ostringstream oss;
@@ -2882,11 +2894,90 @@ RpcResponse SolanaRpcServer::request_airdrop(const RpcRequest& request) {
             return create_error_response(request.id, -32602, "Invalid params", request.id_is_number);
         }
         
-        // Generate airdrop transaction signature
+        std::cout << "RPC: Processing airdrop request for address: " << address << " amount: " << amount_str << std::endl;
+        
+        // Parse amount (in lamports)
+        uint64_t airdrop_amount = 0;
+        try {
+            airdrop_amount = std::stoull(amount_str);
+        } catch (const std::exception& e) {
+            std::cout << "RPC: Failed to parse airdrop amount: " << amount_str << std::endl;
+            return create_error_response(request.id, -32602, "Invalid amount", request.id_is_number);
+        }
+        
+        // Convert address string to PublicKey using deterministic hash-based approach
+        // This provides a consistent mapping from address strings to 32-byte public keys
+        PublicKey recipient_pubkey(32, 0); // Initialize vector with 32 zeros
+        
+        std::hash<std::string> hasher;
+        auto hash_val = hasher(address);
+        
+        // Use a safer approach for key generation
+        for (size_t i = 0; i < 32; ++i) {
+            // Create a deterministic but safe conversion
+            uint8_t byte_val = static_cast<uint8_t>((hash_val >> ((i * 8) % 64)) & 0xFF);
+            if (i < address.length()) {
+                byte_val ^= static_cast<uint8_t>(address[i]);
+            }
+            recipient_pubkey[i] = byte_val;
+        }
+        
+        // Implement actual airdrop functionality using account manager
+        if (account_manager_) {
+            std::cout << "RPC: Executing airdrop using account manager..." << std::endl;
+            
+            // Check if account exists
+            auto existing_account = account_manager_->get_account(recipient_pubkey);
+            
+            if (existing_account.has_value()) {
+                // Update existing account balance
+                std::cout << "RPC: Updating existing account balance from " << existing_account->lamports << " to " << (existing_account->lamports + airdrop_amount) << std::endl;
+                existing_account->lamports += airdrop_amount;
+                auto update_result = account_manager_->update_account(*existing_account);
+                
+                if (!update_result.is_ok()) {
+                    std::cout << "RPC: Failed to update account balance" << std::endl;
+                    return create_error_response(request.id, -32603, "Failed to update account", request.id_is_number);
+                }
+            } else {
+                // Create new account with airdrop amount
+                std::cout << "RPC: Creating new account with balance: " << airdrop_amount << std::endl;
+                svm::ProgramAccount new_account;
+                new_account.pubkey = recipient_pubkey;
+                new_account.lamports = airdrop_amount;
+                new_account.program_id = {}; // System program (all zeros)
+                new_account.owner = {}; // System program owns user accounts
+                new_account.executable = false;
+                new_account.rent_epoch = 0;
+                new_account.data.clear(); // No data for basic account
+                
+                auto create_result = account_manager_->create_account(new_account);
+                if (!create_result.is_ok()) {
+                    std::cout << "RPC: Failed to create new account" << std::endl;
+                    return create_error_response(request.id, -32603, "Failed to create account", request.id_is_number);
+                }
+            }
+            
+            // Commit the changes
+            auto commit_result = account_manager_->commit_changes();
+            if (!commit_result.is_ok()) {
+                std::cout << "RPC: Failed to commit account changes" << std::endl;
+                return create_error_response(request.id, -32603, "Failed to commit changes", request.id_is_number);
+            }
+            
+            std::cout << "RPC: Airdrop completed successfully" << std::endl;
+        } else {
+            std::cout << "RPC: Account manager not available, using mock airdrop" << std::endl;
+        }
+        
+        // Generate transaction signature
         std::string signature = process_transaction_submission(request);
         response.result = "\"" + signature + "\"";
         
+        std::cout << "RPC: Airdrop transaction signature: " << signature << std::endl;
+        
     } catch (const std::exception& e) {
+        std::cout << "RPC: Exception in airdrop processing: " << e.what() << std::endl;
         return create_error_response(request.id, -32603, "Internal error", request.id_is_number);
     }
     
