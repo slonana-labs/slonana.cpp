@@ -52,6 +52,12 @@ public:
 private:
     class Impl;
     std::unique_ptr<Impl> impl_;
+    
+    // Production-grade fork choice helper methods
+    uint64_t calculate_consensus_weight(const ledger::Block& block) const;
+    void update_consensus_weights() const;
+    Hash select_best_fork_head() const;
+    bool is_ancestor(const Hash& potential_ancestor, const Hash& descendant) const;
 };
 
 /**
