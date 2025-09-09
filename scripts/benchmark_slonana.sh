@@ -984,9 +984,37 @@ test_transaction_throughput() {
         return 0
     fi
 
+    # Wait for airdrop to be processed
+    log_info "DEBUG: Waiting for airdrop to be processed..."
+    sleep 5
+    
     # Verify balance using RPC
     local balance=$(get_balance_rpc "$sender_pubkey_rpc")
     log_info "DEBUG: Sender balance after airdrop: $balance lamports"
+    
+    # Also verify balance using CLI if available
+    if command -v solana &> /dev/null; then
+        log_info "DEBUG: Verifying balance using Solana CLI..."
+        local cli_balance_output
+        cli_balance_output=$(solana balance "$sender_keypair" 2>&1) || cli_balance_output="CLI balance check failed"
+        log_info "DEBUG: CLI balance output: $cli_balance_output"
+        
+        # Extract CLI pubkey for comparison
+        local cli_pubkey
+        cli_pubkey=$(solana-keygen pubkey "$sender_keypair" 2>/dev/null) || cli_pubkey="unknown"
+        log_info "DEBUG: CLI pubkey from keypair: $cli_pubkey"
+        log_info "DEBUG: RPC pubkey used for airdrop: $sender_pubkey_rpc"
+        
+        if [[ "$cli_pubkey" != "$sender_pubkey_rpc" ]]; then
+            log_warning "DEBUG: Pubkey mismatch detected! CLI: $cli_pubkey, RPC: $sender_pubkey_rpc"
+            # Try additional airdrop to CLI pubkey if different
+            if [[ "$cli_pubkey" != "unknown" ]]; then
+                log_info "DEBUG: Attempting additional airdrop to CLI pubkey..."
+                request_airdrop_rpc "$cli_pubkey" 100000000000 || true
+                sleep 3
+            fi
+        fi
+    fi
     
     # Convert lamports to SOL for comparison (1 SOL = 1000000000 lamports)
     local balance_sol=0
@@ -1012,10 +1040,29 @@ test_transaction_throughput() {
     
     if [[ "$has_sufficient_balance" != "true" ]]; then
         log_warning "Insufficient balance for throughput test: ${balance_sol} SOL (${balance} lamports)"
-        echo "0" > "$RESULTS_DIR/effective_tps.txt"
-        echo "0" > "$RESULTS_DIR/successful_transactions.txt"
-        echo "0" > "$RESULTS_DIR/submitted_requests.txt"
-        return 0
+        log_warning "DEBUG: Attempting emergency airdrop to ensure sufficient funds..."
+        
+        # Try multiple airdrop attempts with different amounts
+        local emergency_attempts=0
+        while [[ $emergency_attempts -lt 3 ]]; do
+            if request_airdrop_rpc "$sender_pubkey_rpc" 200000000000; then  # 200 SOL
+                sleep 5
+                balance=$(get_balance_rpc "$sender_pubkey_rpc")
+                log_info "DEBUG: Balance after emergency airdrop $((emergency_attempts + 1)): $balance lamports"
+                if [[ "$balance" -gt 1000000000 ]]; then
+                    has_sufficient_balance=true
+                    break
+                fi
+            fi
+            emergency_attempts=$((emergency_attempts + 1))
+        done
+        
+        if [[ "$has_sufficient_balance" != "true" ]]; then
+            echo "0" > "$RESULTS_DIR/effective_tps.txt"
+            echo "0" > "$RESULTS_DIR/successful_transactions.txt"
+            echo "0" > "$RESULTS_DIR/submitted_requests.txt"
+            return 0
+        fi
     fi
 
     log_verbose "Starting transaction throughput test for ${TEST_DURATION}s..."
@@ -1047,11 +1094,23 @@ test_transaction_throughput() {
             return 0
         fi
         log_info "DEBUG: Extracted recipient pubkey: $recipient_pubkey"
+        
+        # Fund recipient account to ensure it exists and can receive transfers
+        log_info "DEBUG: Funding recipient account..."
+        request_airdrop_rpc "$recipient_pubkey" 1000000000 || true  # 1 SOL to recipient
+        sleep 2
+        
         log_info "DEBUG: About to proceed to transaction loop setup..."
     else
         # Generate deterministic pubkey for RPC-only mode
         recipient_pubkey=$(generate_pubkey_from_string "$recipient_keypair")
         log_info "DEBUG: Generated recipient pubkey for RPC: $recipient_pubkey"
+        
+        # Fund recipient account to ensure it exists and can receive transfers
+        log_info "DEBUG: Funding recipient account..."
+        request_airdrop_rpc "$recipient_pubkey" 1000000000 || true  # 1 SOL to recipient
+        sleep 2
+        
         log_info "DEBUG: About to proceed to transaction loop setup..."
     fi
 
@@ -1141,10 +1200,26 @@ test_transaction_throughput() {
             fi
             log_info "DEBUG: Validator check passed, sending transaction..."
             
+            # Check balance before each transfer attempt
+            if [[ $((i % 10)) -eq 1 ]]; then  # Check every 10th transaction
+                local current_balance
+                if command -v solana &> /dev/null; then
+                    current_balance=$(solana balance "$sender_keypair" 2>/dev/null | grep -o '[0-9.]*' | head -1) || current_balance="unknown"
+                    log_info "DEBUG: Current CLI balance: $current_balance SOL"
+                fi
+            fi
+            
             # Attempt transfer with timeout protection and enhanced error isolation
             log_info "DEBUG: Attempting solana transfer..."
-            local transfer_output transfer_result
-            transfer_output=$(timeout 10s solana transfer "$recipient_pubkey" 0.001 \
+            local transfer_output transfer_result transfer_amount="0.001"
+            
+            # Try with a smaller amount if we detect insufficient funds
+            if [[ $success_count -eq 0 && $txn_count -gt 10 ]]; then
+                transfer_amount="0.0001"  # Use smaller amount as fallback
+                log_info "DEBUG: Using smaller transfer amount due to no successful transactions: $transfer_amount SOL"
+            fi
+            
+            transfer_output=$(timeout 10s solana transfer "$recipient_pubkey" "$transfer_amount" \
                 --keypair "$sender_keypair" \
                 --allow-unfunded-recipient \
                 --fee-payer "$sender_keypair" \
@@ -1158,6 +1233,17 @@ test_transaction_throughput() {
             else
                 log_info "DEBUG: Transaction failed (exit code: $transfer_result)"
                 log_info "DEBUG: Transfer output: $transfer_output"
+                
+                # If insufficient funds detected, try emergency funding
+                if [[ "$transfer_output" == *"insufficient funds"* ]]; then
+                    log_warning "DEBUG: Insufficient funds detected, attempting emergency funding..."
+                    local sender_pubkey_emergency
+                    sender_pubkey_emergency=$(solana-keygen pubkey "$sender_keypair" 2>/dev/null) || true
+                    if [[ -n "$sender_pubkey_emergency" ]]; then
+                        request_airdrop_rpc "$sender_pubkey_emergency" 50000000000 || true  # 50 SOL emergency
+                        sleep 2
+                    fi
+                fi
             fi
             
             # Safe arithmetic increment
