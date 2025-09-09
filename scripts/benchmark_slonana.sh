@@ -1070,22 +1070,43 @@ test_transaction_throughput() {
     fi
     
     log_info "DEBUG: end_time calculated successfully = '$end_time'"
+    log_info "DEBUG: About to enter transaction loop..."
     
+    # Add additional debugging for the loop entry
+    set +e  # Temporarily disable exit on error for debugging
+    log_info "DEBUG: Testing date command before loop..."
+    local test_time
+    test_time=$(date +%s 2>&1) && log_info "DEBUG: date command works: $test_time" || log_error "DEBUG: date command failed: $test_time"
+    set -e  # Re-enable exit on error
+    
+    log_info "DEBUG: Starting while loop execution..."
     while true; do
+        log_info "DEBUG: Loop iteration started"
+        log_info "DEBUG: Loop iteration started"
         local current_time
+        log_info "DEBUG: About to call date +%s..."
         current_time=$(date +%s) || {
             log_warning "Failed to get current time, ending transaction test"
+            log_error "DEBUG: date +%s command failed"
             break
         }
+        log_info "DEBUG: Got current_time = '$current_time'"
+        log_info "DEBUG: Got current_time = '$current_time'"
         
         # Check if we've reached the end time
+        log_info "DEBUG: Checking if $current_time >= $end_time..."
         if [[ $current_time -ge $end_time ]]; then
             log_info "DEBUG: Transaction test duration completed"
             break
         fi
+        log_info "DEBUG: Time check passed, continuing with transactions..."
+        log_info "DEBUG: Time check passed, continuing with transactions..."
         
         # Send a batch of transactions with error handling
+        log_info "DEBUG: Starting transaction batch..."
         for ((i=1; i<=5; i++)); do
+            log_info "DEBUG: Transaction $i/5..."
+            log_info "DEBUG: Transaction $i/5..."
             # Check if validator is still running
             if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
                 local validator_pid
@@ -1095,20 +1116,33 @@ test_transaction_throughput() {
                     break 2
                 fi
             fi
+            log_info "DEBUG: Validator check passed, sending transaction..."
+            log_info "DEBUG: Validator check passed, sending transaction..."
             
             # Attempt transfer with timeout protection
+            log_info "DEBUG: Attempting solana transfer..."
             if timeout 10s solana transfer "$recipient_pubkey" 0.001 \
                 --keypair "$sender_keypair" \
                 --allow-unfunded-recipient \
                 --fee-payer "$sender_keypair" \
                 --no-wait > /dev/null 2>&1; then
                 ((success_count++))
+                log_info "DEBUG: Transaction successful"
+            else
+                log_info "DEBUG: Transaction failed"
             fi
             ((txn_count++))
+            log_info "DEBUG: Transaction count: $txn_count, Success count: $success_count"
         done
+        log_info "DEBUG: Transaction batch completed"
         
         # Brief pause between batches
-        sleep 0.2 || break
+        log_info "DEBUG: Sleeping 0.2 seconds..."
+        sleep 0.2 || {
+            log_warning "DEBUG: Sleep command failed, breaking loop"
+            break
+        }
+        log_info "DEBUG: Sleep completed, continuing loop..."
     done
     
     log_info "DEBUG: Transaction test completed. Sent: $txn_count, Successful: $success_count"
