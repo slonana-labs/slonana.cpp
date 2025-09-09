@@ -1047,15 +1047,29 @@ test_transaction_throughput() {
             return 0
         fi
         log_info "DEBUG: Extracted recipient pubkey: $recipient_pubkey"
+        log_info "DEBUG: About to proceed to transaction loop setup..."
     else
         # Generate deterministic pubkey for RPC-only mode
         recipient_pubkey=$(generate_pubkey_from_string "$recipient_keypair")
         log_info "DEBUG: Generated recipient pubkey for RPC: $recipient_pubkey"
+        log_info "DEBUG: About to proceed to transaction loop setup..."
     fi
 
     # Enhanced transaction test loop with better error handling
     log_info "DEBUG: Starting transaction loop for ${TEST_DURATION} seconds..."
-    local end_time=$((start_time + TEST_DURATION))
+    log_info "DEBUG: start_time = '$start_time', TEST_DURATION = '$TEST_DURATION'"
+    
+    # Safely calculate end time with error handling
+    local end_time
+    if ! end_time=$((start_time + TEST_DURATION)) 2>/dev/null; then
+        log_error "Failed to calculate end time: start_time='$start_time' TEST_DURATION='$TEST_DURATION'"
+        echo "0" > "$RESULTS_DIR/effective_tps.txt"
+        echo "0" > "$RESULTS_DIR/successful_transactions.txt"
+        echo "0" > "$RESULTS_DIR/submitted_requests.txt"
+        return 0
+    fi
+    
+    log_info "DEBUG: end_time calculated successfully = '$end_time'"
     
     while true; do
         local current_time
