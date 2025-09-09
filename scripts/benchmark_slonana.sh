@@ -910,13 +910,37 @@ test_transaction_throughput() {
         return 0
     fi
 
-    # Configure Solana CLI if available
+    # Configure Solana CLI if available with comprehensive validation
     export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
     if command -v solana >/dev/null 2>&1; then
-        solana config set --url "http://localhost:$RPC_PORT" > /dev/null 2>&1 || true
-        log_info "DEBUG: Configured Solana CLI for RPC endpoint"
+        log_info "DEBUG: Configuring and validating Solana CLI..."
+        
+        # Configure the RPC endpoint
+        if ! solana config set --url "http://localhost:$RPC_PORT" > /dev/null 2>&1; then
+            log_error "Failed to configure Solana CLI RPC endpoint"
+            echo "0" > "$RESULTS_DIR/effective_tps.txt"
+            echo "0" > "$RESULTS_DIR/successful_transactions.txt"
+            echo "0" > "$RESULTS_DIR/submitted_requests.txt"
+            return 0
+        fi
+        
+        # Verify the configuration
+        local current_rpc_url
+        current_rpc_url=$(solana config get | grep "RPC URL" | awk '{print $3}' 2>/dev/null) || current_rpc_url="unknown"
+        log_info "DEBUG: Solana CLI configured for RPC endpoint: $current_rpc_url"
+        
+        # Test connectivity to the RPC endpoint
+        if ! timeout 10s solana cluster-version >/dev/null 2>&1; then
+            log_warning "Solana CLI cannot connect to RPC endpoint - transaction tests may fail"
+        else
+            log_info "DEBUG: Solana CLI connectivity to RPC endpoint verified"
+        fi
     else
-        log_info "DEBUG: Solana CLI not available, using RPC-only mode"
+        log_warning "Solana CLI not available, skipping transaction throughput test"
+        echo "0" > "$RESULTS_DIR/effective_tps.txt"
+        echo "0" > "$RESULTS_DIR/successful_transactions.txt"
+        echo "0" > "$RESULTS_DIR/submitted_requests.txt"
+        return 0
     fi
 
     # Generate keypairs (with validation and regeneration)
@@ -992,63 +1016,93 @@ test_transaction_throughput() {
     local balance=$(get_balance_rpc "$sender_pubkey_rpc")
     log_info "DEBUG: Sender balance after airdrop: $balance lamports"
     
-    # Ensure RPC and CLI operations use the same account by synchronizing pubkeys
+    # Critical fix: Always ensure RPC and CLI operations use the exact same account
     if command -v solana &> /dev/null; then
-        log_info "DEBUG: Synchronizing RPC and CLI account usage..."
+        log_info "DEBUG: Ensuring RPC and CLI account synchronization..."
         
-        # Extract CLI pubkey for comparison and synchronization
+        # Extract the CLI pubkey that will actually be used by solana transfer
         local cli_pubkey
         cli_pubkey=$(solana-keygen pubkey "$sender_keypair" 2>/dev/null) || cli_pubkey="unknown"
-        log_info "DEBUG: CLI pubkey from keypair: $cli_pubkey"
-        log_info "DEBUG: RPC pubkey used for airdrop: $sender_pubkey_rpc"
         
-        # Critical fix: Always use the CLI pubkey for both RPC and CLI operations
-        if [[ "$cli_pubkey" != "unknown" && "$cli_pubkey" != "$sender_pubkey_rpc" ]]; then
-            log_info "DEBUG: Synchronizing accounts - using CLI pubkey for all operations"
-            sender_pubkey_rpc="$cli_pubkey"
+        if [[ "$cli_pubkey" == "unknown" ]]; then
+            log_error "Cannot extract pubkey from CLI keypair file: $sender_keypair"
+            echo "0" > "$RESULTS_DIR/effective_tps.txt"
+            echo "0" > "$RESULTS_DIR/successful_transactions.txt"
+            echo "0" > "$RESULTS_DIR/submitted_requests.txt"
+            return 0
+        fi
+        
+        log_info "DEBUG: CLI pubkey that will be used for transfers: $cli_pubkey"
+        log_info "DEBUG: Original RPC pubkey from airdrop: $sender_pubkey_rpc"
+        
+        # Critical synchronization: Always force both RPC and CLI to use the CLI pubkey
+        # This ensures the account that receives airdrops is the same one used for transfers
+        sender_pubkey_rpc="$cli_pubkey"
+        log_info "DEBUG: Synchronized - both RPC and CLI will use: $sender_pubkey_rpc"
+        
+        # Fund the synchronized account with multiple funding attempts
+        log_info "DEBUG: Funding the synchronized account with robust retry logic..."
+        local funding_attempts=0
+        local funding_successful=false
+        
+        while [[ $funding_attempts -lt 5 ]]; do
+            funding_attempts=$((funding_attempts + 1))
+            log_info "DEBUG: Funding attempt $funding_attempts/5 for account: $sender_pubkey_rpc"
             
-            # Re-fund the correct CLI account with multiple attempts
-            log_info "DEBUG: Funding the CLI account that will be used for transfers..."
-            local sync_attempts=0
-            while [[ $sync_attempts -lt 3 ]]; do
-                if request_airdrop_rpc "$sender_pubkey_rpc" 150000000000; then  # 150 SOL to ensure sufficient funds
-                    log_info "DEBUG: Sync airdrop attempt $((sync_attempts + 1)) successful"
-                    sleep 3
-                    break
+            if request_airdrop_rpc "$sender_pubkey_rpc" 200000000000; then  # 200 SOL to ensure sufficient funds
+                log_info "DEBUG: Airdrop successful on attempt $funding_attempts"
+                sleep 5  # Allow time for the airdrop to be processed
+                
+                # Verify the funding was successful using both RPC and CLI
+                local rpc_balance=$(get_balance_rpc "$sender_pubkey_rpc")
+                log_info "DEBUG: RPC balance after funding: $rpc_balance lamports"
+                
+                # Check CLI balance
+                local cli_balance_output
+                cli_balance_output=$(timeout 10s solana balance "$sender_keypair" 2>&1) || cli_balance_output="CLI balance check failed"
+                log_info "DEBUG: CLI balance check output: $cli_balance_output"
+                
+                # Extract numerical balance for verification
+                local cli_balance_sol
+                cli_balance_sol=$(echo "$cli_balance_output" | grep -o '[0-9.]*' | head -1) || cli_balance_sol="0"
+                log_info "DEBUG: Extracted CLI balance: $cli_balance_sol SOL"
+                
+                # Convert RPC balance to SOL for comparison
+                local rpc_balance_sol=0
+                if [[ -n "$rpc_balance" && "$rpc_balance" != "0" ]]; then
+                    if command -v bc &> /dev/null; then
+                        rpc_balance_sol=$(echo "scale=2; $rpc_balance / 1000000000" | bc -l 2>/dev/null || echo "0")
+                    else
+                        rpc_balance_sol=$((rpc_balance / 1000000000))
+                    fi
                 fi
-                sync_attempts=$((sync_attempts + 1))
-                sleep 2
-            done
+                log_info "DEBUG: RPC balance converted: $rpc_balance_sol SOL"
+                
+                # Check if we have sufficient funds (at least 50 SOL to be safe)
+                if [[ "$rpc_balance" -gt 50000000000 && "$cli_balance_sol" != "0" ]]; then
+                    funding_successful=true
+                    log_info "DEBUG: Funding verification successful - both RPC and CLI show funds"
+                    break
+                else
+                    log_warning "DEBUG: Funding verification failed - RPC: $rpc_balance_sol SOL, CLI: $cli_balance_sol SOL"
+                fi
+            else
+                log_warning "DEBUG: Airdrop failed on attempt $funding_attempts"
+            fi
+            
+            sleep 3
+        done
+        
+        if [[ "$funding_successful" != "true" ]]; then
+            log_error "Failed to establish synchronized funding after $funding_attempts attempts"
+            echo "0" > "$RESULTS_DIR/effective_tps.txt"
+            echo "0" > "$RESULTS_DIR/successful_transactions.txt"
+            echo "0" > "$RESULTS_DIR/submitted_requests.txt"
+            return 0
         fi
         
-        # Verify both RPC balance and CLI balance match
-        log_info "DEBUG: Verifying synchronized balance..."
-        local rpc_balance=$(get_balance_rpc "$sender_pubkey_rpc")
-        local cli_balance_output
-        cli_balance_output=$(solana balance "$sender_keypair" 2>&1) || cli_balance_output="CLI balance check failed"
-        log_info "DEBUG: RPC balance: $rpc_balance lamports"
-        log_info "DEBUG: CLI balance output: $cli_balance_output"
-        
-        # Extract numerical balance from CLI output for comparison
-        local cli_balance_sol
-        cli_balance_sol=$(echo "$cli_balance_output" | grep -o '[0-9.]*' | head -1) || cli_balance_sol="0"
-        log_info "DEBUG: Extracted CLI balance: $cli_balance_sol SOL"
-        
-        # Convert RPC balance to SOL for comparison
-        local rpc_balance_sol=0
-        if command -v bc &> /dev/null && [[ -n "$rpc_balance" && "$rpc_balance" != "0" ]]; then
-            rpc_balance_sol=$(echo "scale=2; $rpc_balance / 1000000000" | bc -l 2>/dev/null || echo "0")
-        elif [[ -n "$rpc_balance" && "$rpc_balance" != "0" ]]; then
-            rpc_balance_sol=$((rpc_balance / 1000000000))
-        fi
-        log_info "DEBUG: RPC balance converted: $rpc_balance_sol SOL"
-        
-        # Check if balances are reasonably close (within 10% or 1 SOL difference)
-        local balance_diff=0
-        if command -v bc &> /dev/null; then
-            balance_diff=$(echo "$rpc_balance_sol - $cli_balance_sol" | bc -l 2>/dev/null | tr -d '-' || echo "0")
-            log_info "DEBUG: Balance difference: $balance_diff SOL"
-        fi
+        log_success "Account synchronization and funding completed successfully"
+        log_info "DEBUG: Account $sender_pubkey_rpc is funded and verified for both RPC and CLI operations"
     fi
     
     # Convert lamports to SOL for comparison (1 SOL = 1000000000 lamports)
@@ -1269,19 +1323,66 @@ test_transaction_throughput() {
                 log_info "DEBUG: Transaction failed (exit code: $transfer_result)"
                 log_info "DEBUG: Transfer output: $transfer_output"
                 
-                # If insufficient funds detected, try emergency funding using synchronized pubkey
+                # If insufficient funds detected, try comprehensive emergency funding
                 if [[ "$transfer_output" == *"insufficient funds"* ]]; then
-                    log_warning "DEBUG: Insufficient funds detected, attempting emergency funding..."
-                    # Use the already synchronized pubkey from above instead of extracting again
-                    if [[ -n "$sender_pubkey_rpc" ]]; then
-                        log_info "DEBUG: Requesting airdrop for $sender_pubkey_rpc amount 50000000000 via RPC"
-                        request_airdrop_rpc "$sender_pubkey_rpc" 50000000000 || true  # 50 SOL emergency
-                        sleep 3
+                    log_warning "DEBUG: Insufficient funds detected, attempting comprehensive emergency funding..."
+                    
+                    # Re-extract the CLI pubkey to ensure we're funding the correct account
+                    local emergency_cli_pubkey
+                    emergency_cli_pubkey=$(solana-keygen pubkey "$sender_keypair" 2>/dev/null) || emergency_cli_pubkey="unknown"
+                    
+                    if [[ "$emergency_cli_pubkey" != "unknown" ]]; then
+                        log_info "DEBUG: Emergency funding for CLI account: $emergency_cli_pubkey"
                         
-                        # Verify the emergency funding was successful
-                        local emergency_balance
-                        emergency_balance=$(get_balance_rpc "$sender_pubkey_rpc" 2>/dev/null || echo "0")
-                        log_info "DEBUG: Balance after emergency funding: $emergency_balance lamports"
+                        # Multiple emergency funding attempts with verification
+                        local emergency_attempts=0
+                        while [[ $emergency_attempts -lt 3 ]]; do
+                            emergency_attempts=$((emergency_attempts + 1))
+                            log_info "DEBUG: Emergency funding attempt $emergency_attempts/3"
+                            
+                            if request_airdrop_rpc "$emergency_cli_pubkey" 100000000000; then  # 100 SOL emergency
+                                sleep 5
+                                
+                                # Verify funding with both RPC and CLI
+                                local emergency_rpc_balance
+                                emergency_rpc_balance=$(get_balance_rpc "$emergency_cli_pubkey" 2>/dev/null || echo "0")
+                                
+                                local emergency_cli_balance
+                                emergency_cli_balance=$(timeout 10s solana balance "$sender_keypair" 2>&1 | grep -o '[0-9.]*' | head -1) || emergency_cli_balance="0"
+                                
+                                log_info "DEBUG: Emergency funding result - RPC: $emergency_rpc_balance lamports, CLI: $emergency_cli_balance SOL"
+                                
+                                # If CLI shows funds, break out of emergency funding loop
+                                if [[ "$emergency_cli_balance" != "0" && "$emergency_rpc_balance" -gt 10000000000 ]]; then
+                                    log_info "DEBUG: Emergency funding successful, continuing transactions"
+                                    break
+                                fi
+                            else
+                                log_warning "DEBUG: Emergency airdrop failed on attempt $emergency_attempts"
+                            fi
+                            
+                            sleep 2
+                        done
+                        
+                        if [[ $emergency_attempts -eq 3 ]]; then
+                            log_error "All emergency funding attempts failed - account synchronization issue persists"
+                            # Add diagnostic information
+                            log_info "DEBUG: Diagnostic - CLI pubkey: $emergency_cli_pubkey"
+                            log_info "DEBUG: Diagnostic - RPC pubkey: $sender_pubkey_rpc"
+                            log_info "DEBUG: Diagnostic - Keypair file: $sender_keypair"
+                            
+                            # Check keypair file integrity
+                            if [[ -f "$sender_keypair" ]]; then
+                                log_info "DEBUG: Keypair file exists and size: $(wc -c < "$sender_keypair") bytes"
+                                if command -v jq &> /dev/null; then
+                                    jq . "$sender_keypair" >/dev/null 2>&1 && log_info "DEBUG: Keypair file is valid JSON" || log_error "DEBUG: Keypair file is NOT valid JSON"
+                                fi
+                            else
+                                log_error "DEBUG: Keypair file does not exist: $sender_keypair"
+                            fi
+                        fi
+                    else
+                        log_error "DEBUG: Cannot extract CLI pubkey for emergency funding"
                     fi
                 fi
             fi
