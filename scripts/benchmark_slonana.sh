@@ -1061,7 +1061,7 @@ test_transaction_throughput() {
     
     # Safely calculate end time with error handling
     local end_time
-    if ! end_time=$((start_time + TEST_DURATION)) 2>/dev/null; then
+    if ! end_time=$(( start_time + TEST_DURATION )) 2>/dev/null; then
         log_error "Failed to calculate end time: start_time='$start_time' TEST_DURATION='$TEST_DURATION'"
         echo "0" > "$RESULTS_DIR/effective_tps.txt"
         echo "0" > "$RESULTS_DIR/successful_transactions.txt"
@@ -1072,6 +1072,23 @@ test_transaction_throughput() {
     log_info "DEBUG: end_time calculated successfully = '$end_time'"
     log_info "DEBUG: About to enter transaction loop..."
     
+    # Test solana command availability before starting loop
+    log_info "DEBUG: Testing solana command availability..."
+    if ! command -v solana &>/dev/null; then
+        log_error "DEBUG: solana command not found in PATH"
+        log_info "DEBUG: PATH = $PATH"
+        echo "0" > "$RESULTS_DIR/effective_tps.txt"
+        echo "0" > "$RESULTS_DIR/successful_transactions.txt"
+        echo "0" > "$RESULTS_DIR/submitted_requests.txt"
+        return 0
+    fi
+    
+    # Test basic solana connectivity
+    log_info "DEBUG: Testing solana config..."
+    if ! solana config get 2>/dev/null; then
+        log_warning "DEBUG: solana config appears to have issues"
+    fi
+    
     # Add additional debugging for the loop entry
     set +e  # Temporarily disable exit on error for debugging
     log_info "DEBUG: Testing date command before loop..."
@@ -1080,17 +1097,23 @@ test_transaction_throughput() {
     set -e  # Re-enable exit on error
     
     log_info "DEBUG: Starting while loop execution..."
+    
+    # Enhanced error isolation for the entire transaction loop
+    set +e  # Disable exit on error for the transaction loop
+    
     while true; do
-        log_info "DEBUG: Loop iteration started"
         log_info "DEBUG: Loop iteration started"
         local current_time
         log_info "DEBUG: About to call date +%s..."
-        current_time=$(date +%s) || {
+        current_time=$(date +%s 2>&1)
+        local date_result=$?
+        
+        if [[ $date_result -ne 0 ]]; then
             log_warning "Failed to get current time, ending transaction test"
-            log_error "DEBUG: date +%s command failed"
+            log_error "DEBUG: date +%s command failed with exit code: $date_result, output: $current_time"
             break
-        }
-        log_info "DEBUG: Got current_time = '$current_time'"
+        fi
+        
         log_info "DEBUG: Got current_time = '$current_time'"
         
         # Check if we've reached the end time
@@ -1100,13 +1123,13 @@ test_transaction_throughput() {
             break
         fi
         log_info "DEBUG: Time check passed, continuing with transactions..."
-        log_info "DEBUG: Time check passed, continuing with transactions..."
         
         # Send a batch of transactions with error handling
         log_info "DEBUG: Starting transaction batch..."
-        for ((i=1; i<=5; i++)); do
+        local i
+        for i in 1 2 3 4 5; do
             log_info "DEBUG: Transaction $i/5..."
-            log_info "DEBUG: Transaction $i/5..."
+            
             # Check if validator is still running
             if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
                 local validator_pid
@@ -1117,46 +1140,56 @@ test_transaction_throughput() {
                 fi
             fi
             log_info "DEBUG: Validator check passed, sending transaction..."
-            log_info "DEBUG: Validator check passed, sending transaction..."
             
-            # Attempt transfer with timeout protection
+            # Attempt transfer with timeout protection and enhanced error isolation
             log_info "DEBUG: Attempting solana transfer..."
-            if timeout 10s solana transfer "$recipient_pubkey" 0.001 \
+            local transfer_output transfer_result
+            transfer_output=$(timeout 10s solana transfer "$recipient_pubkey" 0.001 \
                 --keypair "$sender_keypair" \
                 --allow-unfunded-recipient \
                 --fee-payer "$sender_keypair" \
-                --no-wait > /dev/null 2>&1; then
-                ((success_count++))
+                --no-wait 2>&1)
+            transfer_result=$?
+            
+            if [[ $transfer_result -eq 0 ]]; then
+                # Safe arithmetic increment
+                success_count=$(( success_count + 1 )) 2>/dev/null || success_count=$((success_count + 1))
                 log_info "DEBUG: Transaction successful"
             else
-                log_info "DEBUG: Transaction failed"
+                log_info "DEBUG: Transaction failed (exit code: $transfer_result)"
+                log_info "DEBUG: Transfer output: $transfer_output"
             fi
-            ((txn_count++))
+            
+            # Safe arithmetic increment
+            txn_count=$(( txn_count + 1 )) 2>/dev/null || txn_count=$((txn_count + 1))
             log_info "DEBUG: Transaction count: $txn_count, Success count: $success_count"
         done
         log_info "DEBUG: Transaction batch completed"
         
         # Brief pause between batches
         log_info "DEBUG: Sleeping 0.2 seconds..."
-        sleep 0.2 || {
+        if ! sleep 0.2; then
             log_warning "DEBUG: Sleep command failed, breaking loop"
             break
-        }
+        fi
         log_info "DEBUG: Sleep completed, continuing loop..."
     done
+    
+    set -e  # Re-enable exit on error after transaction loop
     
     log_info "DEBUG: Transaction test completed. Sent: $txn_count, Successful: $success_count"
 
     # Calculate results safely
     local end_time_actual
-    end_time_actual=$(date +%s) || end_time_actual=$((start_time + TEST_DURATION))
-    local actual_duration=$((end_time_actual - start_time))
+    end_time_actual=$(date +%s 2>/dev/null) || end_time_actual=$((start_time + TEST_DURATION))
+    local actual_duration
+    actual_duration=$(( end_time_actual - start_time )) 2>/dev/null || actual_duration=$TEST_DURATION
     actual_duration=${actual_duration:-1}  # Prevent division by zero
     
-    # Ensure we don't divide by zero
+    # Ensure we don't divide by zero and handle arithmetic safely
     local effective_tps=0
-    if [[ $actual_duration -gt 0 ]]; then
-        effective_tps=$((success_count / actual_duration))
+    if [[ $actual_duration -gt 0 ]] && [[ $success_count -ge 0 ]]; then
+        effective_tps=$(( success_count / actual_duration )) 2>/dev/null || effective_tps=0
     fi
 
     # Save results
