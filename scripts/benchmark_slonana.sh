@@ -717,15 +717,39 @@ start_validator() {
     export SLONANA_CI_MODE=1
     export CI=true
     
-    # Clear any processes using the RPC port to prevent conflicts
-    log_verbose "Clearing port $RPC_PORT to prevent conflicts..."
+    # **CRITICAL FIX**: Enhanced port conflict prevention
+    log_info "🔧 Clearing port $RPC_PORT and $GOSSIP_PORT to prevent conflicts..."
+    
+    # Clear RPC port (8899)
     if command -v fuser >/dev/null 2>&1; then
-        fuser -k "$RPC_PORT/tcp" >/dev/null 2>&1 || true
+        log_verbose "Using fuser to clear ports..."
+        fuser -k "${RPC_PORT}/tcp" >/dev/null 2>&1 || true
+        fuser -k "${GOSSIP_PORT}/tcp" >/dev/null 2>&1 || true
     elif command -v lsof >/dev/null 2>&1; then
-        local existing_pid=$(lsof -ti :"$RPC_PORT" 2>/dev/null || true)
-        if [[ -n "$existing_pid" ]]; then
-            log_verbose "Killing existing process on port $RPC_PORT (PID: $existing_pid)"
-            kill -9 "$existing_pid" 2>/dev/null || true
+        log_verbose "Using lsof to clear ports..."
+        local existing_rpc_pid=$(lsof -ti :"$RPC_PORT" 2>/dev/null || true)
+        local existing_gossip_pid=$(lsof -ti :"$GOSSIP_PORT" 2>/dev/null || true)
+        
+        if [[ -n "$existing_rpc_pid" ]]; then
+            log_info "Killing existing process on RPC port $RPC_PORT (PID: $existing_rpc_pid)"
+            kill -9 "$existing_rpc_pid" 2>/dev/null || true
+        fi
+        
+        if [[ -n "$existing_gossip_pid" ]]; then
+            log_info "Killing existing process on gossip port $GOSSIP_PORT (PID: $existing_gossip_pid)"
+            kill -9 "$existing_gossip_pid" 2>/dev/null || true
+        fi
+    fi
+    
+    # Wait a moment for ports to be fully released
+    sleep 2
+    
+    # Verify ports are actually free
+    if command -v netstat >/dev/null 2>&1; then
+        if netstat -tulpn 2>/dev/null | grep -q ":${RPC_PORT} "; then
+            log_warning "⚠️  Port $RPC_PORT still appears to be in use after cleanup"
+        else
+            log_verbose "✅ Port $RPC_PORT is free"
         fi
     fi
     
@@ -739,26 +763,30 @@ start_validator() {
     log_verbose "  Gossip Bind: 127.0.0.1:$GOSSIP_PORT"
     log_verbose "  CI Mode: Enabled (sustained activity)"
 
-    # Prepare validator arguments - FIXED: Use correct CLI format matching actual validator interface
+    # **ENHANCED VALIDATOR ARGUMENTS**: Use explicit format matching actual CLI interface
     local validator_args=()
     
-    # The validator defaults to "validator" command, so no need to explicitly add it
-    # unless we want to be explicit about it
-    
-    # Add required arguments with correct format matching --help output
+    # Core required arguments
     validator_args+=(--ledger-path "$LEDGER_DIR")
     
     if [[ -n "$IDENTITY_FILE" ]]; then
         validator_args+=(--identity "$IDENTITY_FILE")
     fi
     
-    # Use correct format matching actual CLI interface: combined address:port format
+    # **EXPLICIT RPC BINDING**: Ensure RPC is available at expected address/port
+    # Note: The validator uses --rpc-bind-address with combined address:port format
     validator_args+=(--rpc-bind-address "127.0.0.1:$RPC_PORT")
     validator_args+=(--gossip-bind-address "127.0.0.1:$GOSSIP_PORT")
-    validator_args+=(--log-level info)
     
-    # Add network ID to help with proper initialization
+    # **ENHANCED CONFIGURATION**: Additional args for better CI reliability
+    validator_args+=(--log-level info)
     validator_args+=(--network-id devnet)
+    validator_args+=(--allow-stale-rpc)  # Allow RPC before fully caught up (helps with CI timeouts)
+    
+    log_info "🚀 Starting validator with explicit RPC binding:"
+    log_info "   RPC Endpoint: 127.0.0.1:$RPC_PORT"
+    log_info "   Gossip Endpoint: 127.0.0.1:$GOSSIP_PORT"
+    log_verbose "   Full arguments: ${validator_args[*]}"
 
     # Start validator in background with enhanced logging
     "$VALIDATOR_BIN" "${validator_args[@]}" > "$RESULTS_DIR/validator.log" 2>&1 &
@@ -769,63 +797,130 @@ start_validator() {
     # Save PID for cleanup
     echo "$VALIDATOR_PID" > "$RESULTS_DIR/validator.pid"
 
-    # Wait for validator to start with enhanced readiness detection
-    log_info "Waiting for validator to become ready..."
-    local timeout=120
+    # **ENHANCED READINESS DETECTION**: Improved timeout and diagnostics
+    log_info "⏳ Waiting for validator to become ready (timeout: ${timeout}s)..."
+    log_info "🔍 This will test: health endpoint → JSON-RPC methods → CLI connectivity"
+    
+    local timeout=180  # Increased timeout for CI environments that may be slower
     local wait_time=0
 
     while [[ $wait_time -lt $timeout ]]; do
         # Check if validator process is still running
         if ! kill -0 "$VALIDATOR_PID" 2>/dev/null; then
-            log_error "Validator process died during startup"
-            log_error "Last validator log output:"
+            log_error "❌ Validator process died during startup (PID: $VALIDATOR_PID)"
+            log_error "🔍 Common causes:"
+            log_error "    - Port binding conflicts"
+            log_error "    - Missing dependencies" 
+            log_error "    - Invalid configuration"
+            log_error "    - Insufficient permissions"
+            log_error ""
+            log_error "📋 Last validator log output:"
             tail -20 "$RESULTS_DIR/validator.log" || true
             return 1
         fi
         
-        # Test RPC health endpoint
-        if curl -s "http://localhost:$RPC_PORT/health" > /dev/null 2>&1; then
-            log_success "Validator is ready!"
+        # **STEP 1**: Test basic health endpoint (should respond with HTTP 200)
+        if curl -s --max-time 5 "http://localhost:$RPC_PORT/health" > /dev/null 2>&1; then
+            log_verbose "✅ Health endpoint responsive"
             
-            # Additional readiness verification
-            if curl -s -X POST "http://localhost:$RPC_PORT" \
+            # **STEP 2**: Test JSON-RPC method availability  
+            if curl -s --max-time 5 -X POST "http://localhost:$RPC_PORT" \
                 -H "Content-Type: application/json" \
-                -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' > /dev/null 2>&1; then
-                log_success "RPC endpoint verified and responsive"
+                -d '{"jsonrpc":"2.0","id":1,"method":"getVersion"}' \
+                | grep -q '"result"' 2>/dev/null; then
+                log_verbose "✅ JSON-RPC methods responsive"
+                
+                # **STEP 3**: Test CLI connectivity (if available)
+                if command -v solana >/dev/null 2>&1; then
+                    log_verbose "🔍 Testing CLI connectivity..."
+                    if timeout 10s solana --url "http://localhost:$RPC_PORT" cluster-version >/dev/null 2>&1; then
+                        log_success "✅ Validator RPC is fully ready for all operations!"
+                        break
+                    else
+                        log_verbose "⏳ CLI connectivity not ready yet..."
+                    fi
+                else
+                    log_success "✅ Validator RPC is ready (CLI not available for testing)"
+                    break
+                fi
             else
-                log_warning "Health endpoint responsive but RPC method testing failed"
+                log_verbose "⏳ JSON-RPC methods not ready yet..."
             fi
-            
-            # Ensure validator runs for minimum stability period
-            log_info "Ensuring validator stability (minimum 30s runtime)..."
-            sleep 30
-            
-            # Check if validator is still running after minimum runtime
-            if ! kill -0 "$VALIDATOR_PID" 2>/dev/null; then
-                log_error "Validator exited prematurely during stability check"
-                log_error "Validator ran for less than 30 seconds - this indicates a startup issue"
-                log_error "Last validator log output:"
-                tail -30 "$RESULTS_DIR/validator.log" || true
-                return 1
-            fi
-            
-            log_success "Validator is stable and ready for benchmarking"
-            
-            # Inject enhanced local transactions to create sustained activity
-            inject_enhanced_activity
-            
-            return 0
+        else
+            log_verbose "⏳ Health endpoint not ready yet..."
         fi
-        sleep 5
-        wait_time=$((wait_time + 5))
-        log_verbose "Waiting... ($wait_time/${timeout}s) [PID: $VALIDATOR_PID]"
+        
+        sleep 3
+        wait_time=$((wait_time + 3))
+        
+        # Show progress every 15 seconds
+        if [[ $((wait_time % 15)) -eq 0 ]]; then
+            log_info "🔍 Still waiting for validator readiness... (${wait_time}/${timeout}s)"
+            log_verbose "   Validator PID: $VALIDATOR_PID ($(if kill -0 "$VALIDATOR_PID" 2>/dev/null; then echo "running"; else echo "dead"; fi))"
+        fi
     done
 
-    log_error "Validator failed to start within ${timeout}s timeout"
-    log_error "Final validator log output:"
-    tail -50 "$RESULTS_DIR/validator.log" || true
-    cleanup_validator
-    return 1
+    # **FAIL FAST**: Exit if validator RPC never became ready  
+    if [[ $wait_time -ge $timeout ]]; then
+        log_error "❌ Validator RPC never became available within ${timeout}s"
+        log_error ""
+        log_error "🔍 Diagnostic Information:"
+        log_error "   • Expected RPC endpoint: http://localhost:$RPC_PORT"
+        log_error "   • Expected health endpoint: http://localhost:$RPC_PORT/health"
+        
+        # Check validator process status
+        if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
+            local validator_pid
+            validator_pid=$(cat "$RESULTS_DIR/validator.pid" 2>/dev/null) || validator_pid="unknown"
+            if [[ -n "$validator_pid" ]] && kill -0 "$validator_pid" 2>/dev/null; then
+                log_error "   • Validator process: Running (PID: $validator_pid)"
+                log_error "   • Issue: Process running but RPC not responding"
+            else
+                log_error "   • Validator process: Dead or not found"
+                log_error "   • Issue: Process failed to start or crashed"
+            fi
+        fi
+        
+        # Check port binding
+        if command -v netstat >/dev/null 2>&1; then
+            local port_status=$(netstat -tulpn 2>/dev/null | grep ":$RPC_PORT " || echo "No process binding to port $RPC_PORT")
+            log_error "   • Port $RPC_PORT status: $port_status"
+        fi
+        
+        log_error ""
+        log_error "🛠️  Common fixes:"
+        log_error "   1. Increase timeout if validator needs more startup time"
+        log_error "   2. Check for port conflicts: netstat -tulpn | grep $RPC_PORT"
+        log_error "   3. Verify validator arguments match CLI interface" 
+        log_error "   4. Check validator logs for startup errors"
+        log_error ""
+        log_error "📋 Final validator log output:"
+        tail -30 "$RESULTS_DIR/validator.log" || true
+        
+        cleanup_validator
+        return 1
+    fi
+    
+    # **ENHANCED STABILITY CHECK**: Ensure validator runs stable for minimum period
+    log_info "🔒 Ensuring validator stability (minimum 30s runtime)..."
+    sleep 30
+    
+    # Check if validator is still running after minimum runtime
+    if ! kill -0 "$VALIDATOR_PID" 2>/dev/null; then
+        log_error "❌ Validator exited prematurely during stability check"
+        log_error "🔍 Validator ran for less than 30 seconds - this indicates a startup issue"
+        log_error "📋 Last validator log output:"
+        tail -30 "$RESULTS_DIR/validator.log" || true
+        return 1
+    fi
+    
+    log_success "✅ Validator is stable and ready for benchmarking"
+    log_info "🎯 Validator successfully bound to RPC endpoint: http://localhost:$RPC_PORT"
+    
+    # **START ACTIVITY INJECTION**: Create sustained activity for CI environment
+    inject_enhanced_activity
+    
+    return 0
 }
 
 # Run performance benchmarks
