@@ -226,6 +226,7 @@ private:
   std::string process_transaction_submission(const RpcRequest &request) const;
   std::string compute_block_hash(const std::vector<uint8_t> &block_data) const;
   std::string encode_base58(const std::vector<uint8_t> &data) const;
+  std::vector<uint8_t> decode_base58(const std::string &encoded) const;
   std::string
   compute_signature_hash(const std::vector<uint8_t> &signature_base) const;
 

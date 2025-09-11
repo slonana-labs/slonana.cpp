@@ -994,22 +994,24 @@ RpcResponse SolanaRpcServer::get_balance(const RpcRequest &request) {
     }
 
     if (account_manager_) {
-      // Convert address string to PublicKey using deterministic hash-based
-      // approach
-      PublicKey pubkey(32, 0); // Initialize vector with 32 zeros
-
-      std::hash<std::string> hasher;
-      auto hash_val = hasher(address);
-
-      // Create a deterministic conversion from address string to 32-byte public
-      // key
-      for (size_t i = 0; i < 32; ++i) {
-        uint8_t byte_val =
-            static_cast<uint8_t>((hash_val >> ((i * 8) % 64)) & 0xFF);
-        if (i < address.length()) {
-          byte_val ^= static_cast<uint8_t>(address[i]);
+      // Try to decode the address as base58 first (proper Solana address format)
+      PublicKey pubkey = decode_base58(address);
+      
+      // Ensure we have a 32-byte public key (standard Solana pubkey size)
+      if (pubkey.size() != 32) {
+        pubkey.resize(32);
+        // If decoding failed or resulted in wrong size, use hash-based fallback
+        if (pubkey.size() < 32) {
+          std::hash<std::string> hasher;
+          auto hash_val = hasher(address);
+          for (size_t i = 0; i < 32; ++i) {
+            uint8_t byte_val = static_cast<uint8_t>((hash_val >> ((i * 8) % 64)) & 0xFF);
+            if (i < address.length()) {
+              byte_val ^= static_cast<uint8_t>(address[i]);
+            }
+            pubkey[i] = byte_val;
+          }
         }
-        pubkey[i] = byte_val;
       }
 
       auto account_info = account_manager_->get_account(pubkey);
@@ -2778,6 +2780,76 @@ std::string SolanaRpcServer::compute_signature_hash(
   return encode_base58(hash_vector);
 }
 
+std::vector<uint8_t> SolanaRpcServer::decode_base58(const std::string &encoded) const {
+  // Base58 decoding implementation for Solana address compatibility
+  if (encoded.empty()) {
+    return {};
+  }
+
+  // Base58 alphabet used by Bitcoin and Solana
+  static const char base58_alphabet[] = 
+    "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  
+  // Create lookup table for base58 characters
+  static std::vector<int> base58_map(256, -1);
+  static bool map_initialized = false;
+  if (!map_initialized) {
+    for (int i = 0; i < 58; ++i) {
+      base58_map[static_cast<unsigned char>(base58_alphabet[i])] = i;
+    }
+    map_initialized = true;
+  }
+  
+  // Convert from base58 to big integer
+  std::vector<uint8_t> result(1, 0);
+  
+  for (char c : encoded) {
+    int digit = base58_map[static_cast<unsigned char>(c)];
+    if (digit == -1) {
+      // Invalid character, fallback to hash-based conversion for compatibility
+      std::hash<std::string> hasher;
+      auto hash_val = hasher(encoded);
+      std::vector<uint8_t> fallback_result(32, 0);
+      for (size_t i = 0; i < 32; ++i) {
+        uint8_t byte_val = static_cast<uint8_t>((hash_val >> ((i * 8) % 64)) & 0xFF);
+        if (i < encoded.length()) {
+          byte_val ^= static_cast<uint8_t>(encoded[i]);
+        }
+        fallback_result[i] = byte_val;
+      }
+      return fallback_result;
+    }
+    
+    uint32_t carry = digit;
+    for (size_t j = 0; j < result.size(); ++j) {
+      carry += static_cast<uint32_t>(result[j]) * 58;
+      result[j] = carry & 0xFF;
+      carry >>= 8;
+    }
+    
+    while (carry > 0) {
+      result.push_back(carry & 0xFF);
+      carry >>= 8;
+    }
+  }
+  
+  // Handle leading zeros
+  size_t leading_zeros = 0;
+  for (char c : encoded) {
+    if (c == base58_alphabet[0]) {
+      leading_zeros++;
+    } else {
+      break;
+    }
+  }
+  
+  // Reverse result and add leading zeros
+  std::reverse(result.begin(), result.end());
+  result.insert(result.begin(), leading_zeros, 0);
+  
+  return result;
+}
+
 // Additional Account Methods Implementation
 RpcResponse
 SolanaRpcServer::get_account_info_and_context(const RpcRequest &request) {
@@ -3450,23 +3522,25 @@ RpcResponse SolanaRpcServer::request_airdrop(const RpcRequest &request) {
                                    request.id_is_number);
     }
 
-    // Convert address string to PublicKey using deterministic hash-based
-    // approach This provides a consistent mapping from address strings to
-    // 32-byte public keys
-    PublicKey recipient_pubkey(32, 0); // Initialize vector with 32 zeros
-
-    std::hash<std::string> hasher;
-    auto hash_val = hasher(address);
-
-    // Use a safer approach for key generation
-    for (size_t i = 0; i < 32; ++i) {
-      // Create a deterministic but safe conversion
-      uint8_t byte_val =
-          static_cast<uint8_t>((hash_val >> ((i * 8) % 64)) & 0xFF);
-      if (i < address.length()) {
-        byte_val ^= static_cast<uint8_t>(address[i]);
+    // Convert address string to PublicKey using proper base58 decoding
+    // This ensures compatibility with Solana CLI tools and addresses
+    PublicKey recipient_pubkey = decode_base58(address);
+    
+    // Ensure we have a 32-byte public key (standard Solana pubkey size)
+    if (recipient_pubkey.size() != 32) {
+      recipient_pubkey.resize(32);
+      // If decoding failed, use hash-based fallback for compatibility
+      if (recipient_pubkey.size() < 32) {
+        std::hash<std::string> hasher;
+        auto hash_val = hasher(address);
+        for (size_t i = 0; i < 32; ++i) {
+          uint8_t byte_val = static_cast<uint8_t>((hash_val >> ((i * 8) % 64)) & 0xFF);
+          if (i < address.length()) {
+            byte_val ^= static_cast<uint8_t>(address[i]);
+          }
+          recipient_pubkey[i] = byte_val;
+        }
       }
-      recipient_pubkey[i] = byte_val;
     }
 
     // Implement actual airdrop functionality using account manager
