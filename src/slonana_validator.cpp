@@ -324,7 +324,8 @@ common::Result<bool> SolanaValidator::initialize_identity() {
     // Create directory if it doesn't exist (simplified for this implementation)
     int result = std::system(("mkdir -p " + dir_path).c_str());
     if (result != 0) {
-      std::cerr << "Warning: Failed to create directory " << dir_path << std::endl;
+      std::cerr << "Warning: Failed to create directory " << dir_path
+                << std::endl;
     }
   }
 

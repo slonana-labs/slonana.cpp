@@ -780,9 +780,8 @@ start_validator() {
     fi
     
     # **EXPLICIT RPC BINDING**: Force validator to bind on localhost only
-    # Use separate port and bind address arguments to ensure CLI compatibility
-    validator_args+=(--rpc-port "$RPC_PORT")
-    validator_args+=(--rpc-bind-address "127.0.0.1")
+    # Use combined address format as expected by the actual CLI interface
+    validator_args+=(--rpc-bind-address "127.0.0.1:$RPC_PORT")
     validator_args+=(--gossip-bind-address "127.0.0.1:$GOSSIP_PORT")
     
     # **ENHANCED CONFIGURATION**: Additional args for better CI reliability
@@ -790,9 +789,9 @@ start_validator() {
     validator_args+=(--network-id devnet)
     validator_args+=(--allow-stale-rpc)  # Allow RPC before fully caught up (helps with CI timeouts)
     
-    log_info "🚀 Starting validator with explicit localhost-only RPC binding:"
-    log_info "   RPC Port: $RPC_PORT (bind: 127.0.0.1 only)"
-    log_info "   Gossip Endpoint: 127.0.0.1:$GOSSIP_PORT"
+    log_info "🚀 Starting validator with correct CLI arguments:"
+    log_info "   RPC Bind Address: 127.0.0.1:$RPC_PORT"
+    log_info "   Gossip Bind Address: 127.0.0.1:$GOSSIP_PORT"
     log_verbose "   Full arguments: ${validator_args[*]}"
 
     # Start validator in background with enhanced logging
