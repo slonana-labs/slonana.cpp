@@ -978,16 +978,15 @@ test_transaction_throughput() {
         log_info "DEBUG: Created mock keypair files for RPC testing (CLI tools not available)"
     fi
 
-    # **CRITICAL FIX**: Pre-flight funding validation with hard fail-fast logic
-    # This addresses the "insufficient funds" errors by ensuring accounts are properly funded upfront
-    # AND prevents endless loops by failing fast when funding consistently fails
-    log_info "🔧 Pre-flight funding validation for test accounts..."
+    # **CRITICAL FIX**: Pre-flight funding with CLI-compatible method 
+    # This addresses the CLI-RPC state synchronization issue by using CLI funding instead of RPC-only
+    log_info "🔧 Pre-flight funding using CLI for state synchronization..."
     
     # Generate public key for sender from keypair file  
-    local sender_pubkey_rpc
+    local sender_pubkey_cli
     if command -v solana-keygen &> /dev/null; then
         log_info "DEBUG: Extracting sender pubkey using Solana CLI..."
-        if ! sender_pubkey_rpc=$(solana-keygen pubkey "$sender_keypair" 2>/dev/null); then
+        if ! sender_pubkey_cli=$(solana-keygen pubkey "$sender_keypair" 2>/dev/null); then
             log_error "Failed to extract sender pubkey from: $sender_keypair"
             log_warning "Skipping transaction throughput test due to keypair issues"
             echo "0" > "$RESULTS_DIR/effective_tps.txt"
@@ -995,43 +994,52 @@ test_transaction_throughput() {
             echo "0" > "$RESULTS_DIR/submitted_requests.txt"
             return 0
         fi
-        log_info "DEBUG: Extracted sender pubkey: $sender_pubkey_rpc"
+        log_info "DEBUG: Extracted sender pubkey: $sender_pubkey_cli"
     else
-        # Generate deterministic pubkey for RPC-only mode
-        sender_pubkey_rpc=$(generate_pubkey_from_string "$sender_keypair")
-        log_info "DEBUG: Generated sender pubkey for RPC: $sender_pubkey_rpc"
+        log_error "solana-keygen not available - cannot proceed with transaction test"
+        echo "0" > "$RESULTS_DIR/effective_tps.txt"
+        echo "0" > "$RESULTS_DIR/successful_transactions.txt"
+        echo "0" > "$RESULTS_DIR/submitted_requests.txt"
+        return 0
     fi
     
-    # **ENHANCED PRE-FLIGHT FUNDING**: Fund account with hard retry limits and validation
-    log_info "💰 Pre-flight: Fund Solana account and validate..."
-    local MIN_BAL_LAMPORTS=10000000000  # 10 SOL minimum required
+    # **CRITICAL FIX**: Use CLI airdrop instead of RPC to ensure CLI sees the funding
+    log_info "💰 Pre-flight: Fund account using CLI airdrop for state consistency..."
+    local MIN_BAL_SOL=10  # 10 SOL minimum required
     local MAX_FUNDING_TRIES=6
     local funding_attempt=0
     local funding_validated=false
     
     for funding_attempt in $(seq 1 $MAX_FUNDING_TRIES); do
-        log_info "🔄 Funding attempt $funding_attempt/$MAX_FUNDING_TRIES - requesting 1000 SOL airdrop..."
+        log_info "🔄 CLI funding attempt $funding_attempt/$MAX_FUNDING_TRIES - requesting 100 SOL..."
         
-        # Attempt airdrop
-        if request_airdrop_rpc "$sender_pubkey_rpc" 1000000000000; then  # 1000 SOL
-            log_info "✅ Airdrop request successful, waiting for confirmation..."
-            sleep 5
+        # Use CLI airdrop instead of RPC to ensure CLI state consistency
+        if timeout 30s solana airdrop 100 "$sender_pubkey_cli" --url "http://localhost:$RPC_PORT" 2>/dev/null; then
+            log_info "✅ CLI airdrop successful, validating balance..."
+            sleep 3
             
-            # **CRITICAL**: Validate funding actually worked by checking balance
-            local current_balance
-            current_balance=$(get_balance_rpc "$sender_pubkey_rpc")
-            log_info "📊 Balance validation: $current_balance lamports ($(($current_balance / 1000000000)) SOL)"
+            # Validate using CLI balance check (this ensures CLI sees the funding)
+            local current_balance_output current_balance_sol=0
+            current_balance_output=$(timeout 15s solana balance "$sender_keypair" --url "http://localhost:$RPC_PORT" 2>&1) || current_balance_output="Balance check failed"
+            
+            # Extract SOL amount from balance output (format: "X.XXX SOL")
+            if [[ "$current_balance_output" =~ ([0-9]+\.?[0-9]*)[[:space:]]*SOL ]]; then
+                current_balance_sol="${BASH_REMATCH[1]}"
+                current_balance_sol=${current_balance_sol%.*}  # Remove decimals for integer comparison
+            fi
+            
+            log_info "📊 CLI balance validation: $current_balance_sol SOL (from: $current_balance_output)"
             
             # Check if balance meets minimum requirements
-            if [[ "$current_balance" -ge "$MIN_BAL_LAMPORTS" ]]; then
-                log_info "✅ Pre-flight funding validation PASSED: $(($current_balance / 1000000000)) SOL available"
+            if [[ "$current_balance_sol" -ge "$MIN_BAL_SOL" ]]; then
+                log_info "✅ Pre-flight CLI funding validation PASSED: $current_balance_sol SOL available"
                 funding_validated=true
                 break
             else
-                log_warning "⚠️  Balance below minimum: $(($current_balance / 1000000000)) SOL < $(($MIN_BAL_LAMPORTS / 1000000000)) SOL, retrying..."
+                log_warning "⚠️  Balance below minimum: $current_balance_sol SOL < $MIN_BAL_SOL SOL, retrying..."
             fi
         else
-            log_warning "❌ Airdrop attempt $funding_attempt failed"
+            log_warning "❌ CLI airdrop attempt $funding_attempt failed"
         fi
         
         # Progressive backoff between attempts
@@ -1044,9 +1052,9 @@ test_transaction_throughput() {
     
     # **FAIL FAST**: Hard abort if funding validation failed after max attempts
     if [[ "$funding_validated" != "true" ]]; then
-        log_error "❌ PRE-FLIGHT FUNDING FAILED after $MAX_FUNDING_TRIES attempts"
-        log_error "❌ Account $sender_pubkey_rpc could not be funded sufficiently"
-        log_error "❌ This indicates validator RPC is not accepting airdrops or is unavailable"
+        log_error "❌ PRE-FLIGHT CLI FUNDING FAILED after $MAX_FUNDING_TRIES attempts"
+        log_error "❌ Account $sender_pubkey_cli could not be funded via CLI airdrop"
+        log_error "❌ This indicates validator is not accepting CLI airdrops or is unavailable"
         log_error "❌ ABORTING transaction throughput test to prevent endless loops"
         
         # Write failure results and exit immediately
@@ -1055,50 +1063,18 @@ test_transaction_throughput() {
         echo "0" > "$RESULTS_DIR/submitted_requests.txt"
         
         # Create failure marker for debugging
-        echo "Pre-flight funding validation failed after $MAX_FUNDING_TRIES attempts" > "$RESULTS_DIR/funding_failure.txt"
+        echo "Pre-flight CLI funding validation failed after $MAX_FUNDING_TRIES attempts" > "$RESULTS_DIR/funding_failure.txt"
         
         return 0
     fi
     
-    log_info "✅ Pre-flight funding validation completed successfully"
+    log_info "✅ Pre-flight CLI funding validation completed successfully"
     
-    # **CRITICAL**: Simplified CLI-RPC account synchronization
-    if command -v solana &> /dev/null; then
-        log_info "🔄 CLI-RPC account synchronization check..."
-        
-        # The CLI pubkey should match the RPC pubkey since we extracted it from the same keypair file
-        local cli_pubkey
-        cli_pubkey=$(solana-keygen pubkey "$sender_keypair" 2>/dev/null) || cli_pubkey="unknown"
-        
-        if [[ "$cli_pubkey" != "$sender_pubkey_rpc" ]]; then
-            log_error "❌ CLI-RPC pubkey mismatch: CLI=$cli_pubkey, RPC=$sender_pubkey_rpc"
-            echo "0" > "$RESULTS_DIR/effective_tps.txt"
-            echo "0" > "$RESULTS_DIR/successful_transactions.txt"
-            echo "0" > "$RESULTS_DIR/submitted_requests.txt"
-            return 0
-        fi
-        
-        log_info "✅ CLI-RPC pubkey consistency verified: $cli_pubkey"
-        
-        # Simple CLI cache refresh - just query balance once to refresh cache
-        log_info "🔄 Simple CLI cache refresh..."
-        timeout 15s solana balance "$sender_keypair" >/dev/null 2>&1 || true
-        
-        local cli_balance_output
-        cli_balance_output=$(timeout 15s solana balance "$sender_keypair" 2>&1) || cli_balance_output="CLI check failed"
-        log_info "DEBUG: CLI balance after cache refresh: $cli_balance_output"
-    fi
-    
-    # Pre-funded balance verification (we already validated this above)
-    local balance=$(get_balance_rpc "$sender_pubkey_rpc")
-    local balance_sol=0
-    if command -v bc &> /dev/null && [[ -n "$balance" && "$balance" != "0" ]]; then
-        balance_sol=$(echo "scale=2; $balance / 1000000000" | bc -l 2>/dev/null || echo "0")
-    elif [[ -n "$balance" && "$balance" != "0" ]]; then
-        balance_sol=$((balance / 1000000000))
-    fi
-    
-    log_info "DEBUG: Pre-test balance verification: ${balance_sol} SOL (${balance} lamports)"
+    # Pre-funded balance verification using CLI (consistent with funding method)
+    log_info "🔍 Pre-test balance verification using CLI..."
+    local pre_test_balance_output
+    pre_test_balance_output=$(timeout 15s solana balance "$sender_keypair" --url "http://localhost:$RPC_PORT" 2>&1) || pre_test_balance_output="Balance check failed"
+    log_info "DEBUG: Pre-test CLI balance: $pre_test_balance_output"
 
     log_verbose "Starting transaction throughput test for ${TEST_DURATION}s..."
 
@@ -1131,8 +1107,8 @@ test_transaction_throughput() {
         log_info "DEBUG: Extracted recipient pubkey: $recipient_pubkey"
         
         # Fund recipient account to ensure it exists and can receive transfers
-        log_info "DEBUG: Funding recipient account..."
-        request_airdrop_rpc "$recipient_pubkey" 1000000000 || true  # 1 SOL to recipient
+        log_info "DEBUG: Funding recipient account using CLI..."
+        timeout 20s solana airdrop 1 "$recipient_pubkey" --url "http://localhost:$RPC_PORT" 2>/dev/null || true
         sleep 2
         
         log_info "DEBUG: About to proceed to transaction loop setup..."
@@ -1141,8 +1117,8 @@ test_transaction_throughput() {
         recipient_pubkey=$(generate_pubkey_from_string "$recipient_keypair")
         log_info "DEBUG: Generated recipient pubkey for RPC: $recipient_pubkey"
         
-        # Fund recipient account to ensure it exists and can receive transfers
-        log_info "DEBUG: Funding recipient account..."
+        # Fund recipient account to ensure it exists and can receive transfers (fallback to RPC for mock mode)
+        log_info "DEBUG: Funding recipient account using RPC (fallback mode)..."
         request_airdrop_rpc "$recipient_pubkey" 1000000000 || true  # 1 SOL to recipient
         sleep 2
         
@@ -1268,12 +1244,11 @@ test_transaction_throughput() {
                 log_info "DEBUG: Transaction failed (exit code: $transfer_result)"
                 log_info "DEBUG: Transfer output: $transfer_output"
                 
-                # If insufficient funds detected, try LIMITED emergency funding
+                # If insufficient funds detected, try LIMITED emergency funding using CLI
                 if [[ "$transfer_output" == *"insufficient funds"* ]]; then
-                    log_warning "DEBUG: Insufficient funds detected, attempting LIMITED emergency funding..."
+                    log_warning "DEBUG: Insufficient funds detected, attempting LIMITED emergency funding using CLI..."
                     
                     # **CRITICAL FIX**: Hard limit on emergency funding attempts to prevent endless loops
-                    local emergency_funding_attempts_key="emergency_attempts_$$"
                     local emergency_attempts_file="$RESULTS_DIR/emergency_attempts.txt"
                     
                     # Track total emergency attempts across the entire test
@@ -1285,7 +1260,7 @@ test_transaction_throughput() {
                     # **FAIL FAST**: Maximum 3 emergency funding attempts per test
                     if [[ $total_emergency_attempts -ge 3 ]]; then
                         log_error "❌ MAXIMUM EMERGENCY FUNDING ATTEMPTS REACHED ($total_emergency_attempts/3)"
-                        log_error "❌ Persistent funding failures indicate RPC/validator issues"
+                        log_error "❌ Persistent funding failures indicate CLI/validator issues"
                         log_error "❌ ABORTING transaction test to prevent endless loops"
                         
                         # Write abort marker and exit transaction loop immediately
@@ -1297,31 +1272,33 @@ test_transaction_throughput() {
                     total_emergency_attempts=$((total_emergency_attempts + 1))
                     echo "$total_emergency_attempts" > "$emergency_attempts_file"
                     
-                    log_info "DEBUG: Emergency funding attempt $total_emergency_attempts/3 for account: $sender_pubkey_rpc"
+                    log_info "DEBUG: Emergency funding attempt $total_emergency_attempts/3 for CLI account: $sender_pubkey_cli"
                     
-                    # Single emergency airdrop attempt (no retries to prevent loops)
-                    if request_airdrop_rpc "$sender_pubkey_rpc" 100000000000; then  # 100 SOL emergency
-                        log_info "DEBUG: Emergency airdrop completed, waiting for confirmation..."
-                        sleep 5
+                    # **CRITICAL FIX**: Use CLI airdrop for emergency funding to ensure CLI consistency
+                    if timeout 30s solana airdrop 50 "$sender_pubkey_cli" --url "http://localhost:$RPC_PORT" 2>/dev/null; then
+                        log_info "DEBUG: Emergency CLI airdrop completed, waiting for confirmation..."
+                        sleep 3
                         
-                        # Verify emergency funding worked
-                        local emergency_balance
-                        emergency_balance=$(get_balance_rpc "$sender_pubkey_rpc")
-                        log_info "DEBUG: Post-emergency balance: $emergency_balance lamports"
+                        # Verify emergency funding worked using CLI
+                        local emergency_balance_output emergency_balance_sol=0
+                        emergency_balance_output=$(timeout 15s solana balance "$sender_keypair" --url "http://localhost:$RPC_PORT" 2>&1) || emergency_balance_output="Emergency balance check failed"
                         
-                        if [[ "$emergency_balance" -gt 10000000000 ]]; then  # At least 10 SOL
-                            log_info "✅ Emergency funding successful: $(($emergency_balance / 1000000000)) SOL"
-                            
-                            # Simple CLI cache refresh (no complex retry logic)
-                            if command -v solana &> /dev/null; then
-                                timeout 10s solana balance "$sender_keypair" >/dev/null 2>&1 || true
-                            fi
+                        # Extract SOL amount from balance output
+                        if [[ "$emergency_balance_output" =~ ([0-9]+\.?[0-9]*)[[:space:]]*SOL ]]; then
+                            emergency_balance_sol="${BASH_REMATCH[1]}"
+                            emergency_balance_sol=${emergency_balance_sol%.*}  # Remove decimals for integer comparison
+                        fi
+                        
+                        log_info "DEBUG: Post-emergency CLI balance: $emergency_balance_sol SOL (from: $emergency_balance_output)"
+                        
+                        if [[ "$emergency_balance_sol" -gt 5 ]]; then  # At least 5 SOL
+                            log_info "✅ Emergency CLI funding successful: $emergency_balance_sol SOL"
                         else
-                            log_error "❌ Emergency funding failed - balance still insufficient"
-                            log_error "❌ This indicates RPC airdrop is not working"
+                            log_error "❌ Emergency CLI funding failed - balance still insufficient: $emergency_balance_sol SOL"
+                            log_error "❌ This indicates CLI airdrop is not working"
                         fi
                     else
-                        log_error "❌ Emergency airdrop request failed - RPC may be unresponsive"
+                        log_error "❌ Emergency CLI airdrop request failed - validator may be unresponsive"
                     fi
                 fi
             fi
