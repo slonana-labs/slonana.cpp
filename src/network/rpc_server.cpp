@@ -3648,8 +3648,18 @@ RpcResponse SolanaRpcServer::request_airdrop(const RpcRequest &request) {
       airdrop_block.timestamp = std::chrono::duration_cast<std::chrono::seconds>(
                                   std::chrono::system_clock::now().time_since_epoch())
                                   .count();
+      
+      // Get parent hash, or use genesis hash for first block
       airdrop_block.parent_hash = ledger_manager_->get_latest_block_hash();
+      if (airdrop_block.parent_hash.empty()) {
+        // Use genesis hash for first block
+        airdrop_block.parent_hash.resize(32, 0);
+        airdrop_block.parent_hash[0] = 0x01; // Mark as genesis parent
+      }
+      
       airdrop_block.transactions.push_back(*airdrop_transaction);
+      
+      // Compute block hash (required for validation)
       airdrop_block.block_hash = airdrop_block.compute_hash();
       
       auto store_result = ledger_manager_->store_block(airdrop_block);
