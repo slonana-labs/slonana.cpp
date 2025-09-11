@@ -1699,7 +1699,7 @@ RpcResponse SolanaRpcServer::get_version(const RpcRequest &request) {
   response.id_is_number = request.id_is_number;
 
   response.result =
-      "{\"solana-core\":\"1.17.0\",\"feature-set\":\"3746818610\"}";
+      "{\"solana-core\":\"1.17.0\",\"feature-set\":3746818610}";
   return response;
 }
 
