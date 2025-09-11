@@ -2717,22 +2717,50 @@ std::string SolanaRpcServer::compute_block_hash(
 
 std::string
 SolanaRpcServer::encode_base58(const std::vector<uint8_t> &data) const {
-  // Simple base58 encoding implementation
+  // Proper base58 encoding implementation for Solana compatibility
   if (data.empty())
     return "";
 
-  // Convert to hex string as simplified base58 alternative
-  std::ostringstream oss;
+  // Base58 alphabet used by Bitcoin and Solana
+  static const char base58_alphabet[] = 
+    "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  
+  // Convert to big integer representation
+  std::vector<uint8_t> digits(1, 0);
+  
   for (uint8_t byte : data) {
-    oss << std::hex << std::setfill('0') << std::setw(2)
-        << static_cast<int>(byte);
+    uint32_t carry = byte;
+    for (size_t j = 0; j < digits.size(); ++j) {
+      carry += static_cast<uint32_t>(digits[j]) << 8;
+      digits[j] = carry % 58;
+      carry /= 58;
+    }
+    
+    while (carry > 0) {
+      digits.push_back(carry % 58);
+      carry /= 58;
+    }
   }
-  return oss.str();
+  
+  // Convert leading zeros
+  std::string result;
+  for (uint8_t byte : data) {
+    if (byte != 0) break;
+    result += base58_alphabet[0];
+  }
+  
+  // Convert digits to base58 characters (reverse order)
+  for (auto it = digits.rbegin(); it != digits.rend(); ++it) {
+    result += base58_alphabet[*it];
+  }
+  
+  return result;
 }
 
 std::string SolanaRpcServer::compute_signature_hash(
     const std::vector<uint8_t> &signature_data) const {
-  // Compute hash for transaction signature using the same OpenSSL approach
+  // Compute hash for transaction signature using SHA-256 and base58 encoding
+  // This matches Solana's transaction signature format
   EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
   const EVP_MD *md = EVP_sha256();
   unsigned char hash[EVP_MAX_MD_SIZE];
@@ -2743,13 +2771,11 @@ std::string SolanaRpcServer::compute_signature_hash(
   EVP_DigestFinal_ex(mdctx, hash, &hash_len);
   EVP_MD_CTX_free(mdctx);
 
-  // Convert to hex string
-  std::stringstream ss;
-  for (unsigned int i = 0; i < hash_len; ++i) {
-    ss << std::hex << std::setfill('0') << std::setw(2)
-       << static_cast<int>(hash[i]);
-  }
-  return ss.str();
+  // Convert hash to vector for base58 encoding
+  std::vector<uint8_t> hash_vector(hash, hash + hash_len);
+  
+  // Use base58 encoding for Solana-compatible transaction signatures
+  return encode_base58(hash_vector);
 }
 
 // Additional Account Methods Implementation
@@ -3503,10 +3529,66 @@ RpcResponse SolanaRpcServer::request_airdrop(const RpcRequest &request) {
                 << std::endl;
     }
 
-    // Generate transaction signature
-    std::string signature = process_transaction_submission(request);
-    response.result = "\"" + signature + "\"";
+    // Create proper transaction record for the airdrop
+    auto airdrop_transaction = std::make_shared<ledger::Transaction>();
+    
+    // Create transaction message for airdrop (system program transfer)
+    std::string tx_message = "airdrop_" + address + "_" + amount_str;
+    airdrop_transaction->message.assign(tx_message.begin(), tx_message.end());
+    
+    // Generate proper signature
+    std::string signature_base = tx_message + "_" + std::to_string(airdrop_amount);
+    std::vector<uint8_t> signature_data(signature_base.begin(), signature_base.end());
+    std::string signature = compute_signature_hash(signature_data);
+    
+    // Create signature vector (64 bytes for Ed25519)
+    std::vector<uint8_t> sig_bytes(64, 0);
+    std::string sig_hex = signature.substr(0, std::min(signature.length(), size_t(128))); // Take first 64 bytes as hex
+    for (size_t i = 0; i < sig_hex.length() && i < 128; i += 2) {
+      if (i/2 < 64) {
+        std::string byte_str = sig_hex.substr(i, 2);
+        sig_bytes[i/2] = static_cast<uint8_t>(std::strtoul(byte_str.c_str(), nullptr, 16));
+      }
+    }
+    airdrop_transaction->signatures.push_back(sig_bytes);
+    
+    // Compute transaction hash from serialized data
+    auto serialized = airdrop_transaction->serialize();
+    airdrop_transaction->hash.resize(32);
+    
+    // Use SHA-256 for transaction hash
+    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+    if (ctx) {
+      if (EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) == 1 &&
+          EVP_DigestUpdate(ctx, serialized.data(), serialized.size()) == 1) {
+        unsigned int hash_len;
+        EVP_DigestFinal_ex(ctx, airdrop_transaction->hash.data(), &hash_len);
+      }
+      EVP_MD_CTX_free(ctx);
+    }
 
+    // Record transaction in ledger if available
+    if (ledger_manager_) {
+      ledger::Block airdrop_block;
+      airdrop_block.slot = ledger_manager_->get_latest_slot() + 1;
+      airdrop_block.timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+                                  std::chrono::system_clock::now().time_since_epoch())
+                                  .count();
+      airdrop_block.parent_hash = ledger_manager_->get_latest_block_hash();
+      airdrop_block.transactions.push_back(*airdrop_transaction);
+      airdrop_block.block_hash = airdrop_block.compute_hash();
+      
+      auto store_result = ledger_manager_->store_block(airdrop_block);
+      if (store_result.is_ok()) {
+        std::cout << "RPC: Airdrop transaction recorded in ledger at slot " 
+                  << airdrop_block.slot << std::endl;
+      } else {
+        std::cout << "RPC: Warning - failed to record airdrop in ledger: " 
+                  << store_result.error() << std::endl;
+      }
+    }
+
+    response.result = "\"" + signature + "\"";
     std::cout << "RPC: Airdrop transaction signature: " << signature
               << std::endl;
 

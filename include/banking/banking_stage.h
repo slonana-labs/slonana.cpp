@@ -249,6 +249,11 @@ public:
   }
   void set_transaction_priority(TransactionPtr transaction, int priority);
 
+  // Ledger integration
+  void set_ledger_manager(std::shared_ptr<ledger::LedgerManager> ledger_manager) {
+    ledger_manager_ = ledger_manager;
+  }
+
 private:
   bool initialized_;
   bool running_;
@@ -268,6 +273,9 @@ private:
   bool adaptive_batching_enabled_;
   bool resource_monitoring_enabled_;
   bool priority_processing_enabled_;
+
+  // Ledger integration
+  std::shared_ptr<ledger::LedgerManager> ledger_manager_;
 
   // Transaction queue
   std::queue<TransactionPtr> transaction_queue_;

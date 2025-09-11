@@ -267,9 +267,10 @@ BankingStage::BankingStage()
       batch_timeout_(std::chrono::milliseconds(100)), parallel_stages_(4),
       max_concurrent_batches_(16), worker_thread_count_(8),
       adaptive_batching_enabled_(true), resource_monitoring_enabled_(true),
-      priority_processing_enabled_(false), should_stop_(false),
-      total_transactions_processed_(0), total_batches_processed_(0),
-      failed_transactions_(0), total_processing_time_ms_(0) {}
+      priority_processing_enabled_(false), ledger_manager_(nullptr),
+      should_stop_(false), total_transactions_processed_(0),
+      total_batches_processed_(0), failed_transactions_(0),
+      total_processing_time_ms_(0) {}
 
 BankingStage::~BankingStage() { shutdown(); }
 
@@ -655,18 +656,53 @@ bool BankingStage::execute_batch(std::shared_ptr<TransactionBatch> batch) {
 }
 
 bool BankingStage::commit_batch(std::shared_ptr<TransactionBatch> batch) {
-  // Commit all transactions in the batch
+  // Production-ready commitment process that records transactions in the ledger
   auto &transactions = batch->get_transactions();
+  bool all_committed = true;
 
-  // Production-ready commitment process that integrates with the ledger system
-  // This provides atomic transaction commitment with proper state management
+  if (ledger_manager_) {
+    // Create a new block to contain these transactions
+    ledger::Block new_block;
+    new_block.slot = ledger_manager_->get_latest_slot() + 1;
+    new_block.timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+                            std::chrono::system_clock::now().time_since_epoch())
+                            .count();
+    new_block.parent_hash = ledger_manager_->get_latest_block_hash();
+    
+    // Convert shared_ptr<Transaction> to Transaction objects for the block
+    for (const auto &tx_ptr : transactions) {
+      if (tx_ptr) {
+        ledger::Transaction ledger_tx;
+        ledger_tx.signatures = tx_ptr->signatures;
+        ledger_tx.message = tx_ptr->message;
+        ledger_tx.hash = tx_ptr->hash;
+        new_block.transactions.push_back(ledger_tx);
+      }
+    }
+
+    // Compute block hash
+    new_block.block_hash = new_block.compute_hash();
+    
+    // Store the block in the ledger
+    auto store_result = ledger_manager_->store_block(new_block);
+    if (!store_result.is_ok()) {
+      std::cerr << "Failed to store transaction block in ledger: " 
+                << store_result.error() << std::endl;
+      all_committed = false;
+    } else {
+      std::cout << "Successfully committed " << transactions.size() 
+                << " transactions to ledger at slot " << new_block.slot << std::endl;
+    }
+  } else {
+    std::cout << "Warning: No ledger manager available, transactions not persisted" << std::endl;
+  }
 
   // Call completion callback
   if (completion_callback_) {
     completion_callback_(batch);
   }
 
-  return true;
+  return all_committed;
 }
 
 void BankingStage::adjust_batch_size_if_needed() {
