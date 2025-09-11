@@ -707,8 +707,11 @@ start_validator() {
     validator_args+=(
         --ledger-path "$LEDGER_DIR"
         --rpc-bind-address "127.0.0.1:$RPC_PORT"
+        --rpc-port "$RPC_PORT"
         --gossip-bind-address "127.0.0.1:$GOSSIP_PORT"
         --log-level info
+        --enable-rpc-transaction-history
+        --enable-cpi-and-log-storage
     )
 
     # Start validator in background with enhanced logging
@@ -922,8 +925,83 @@ test_transaction_throughput() {
         return 0
     fi
 
-    # Configure Solana CLI if available with comprehensive validation
+    # **CRITICAL FIX**: Add explicit wait for validator RPC readiness before CLI operations
+    log_info "🔍 Ensuring validator RPC is ready for CLI operations..."
     export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+    
+    # Wait for validator RPC to become available (timeout after 60s)
+    local readiness_timeout=60
+    local readiness_wait=0
+    local validator_ready=false
+    
+    while [[ $readiness_wait -lt $readiness_timeout ]]; do
+        log_info "🔍 Testing validator RPC readiness... ($readiness_wait/${readiness_timeout}s)"
+        
+        # Test basic RPC connectivity
+        if curl -s -f "http://localhost:$RPC_PORT/health" > /dev/null 2>&1; then
+            log_info "✅ Basic RPC health endpoint responsive"
+            
+            # Test JSON-RPC method availability
+            if curl -s -X POST "http://localhost:$RPC_PORT" \
+                -H "Content-Type: application/json" \
+                -d '{"jsonrpc":"2.0","id":1,"method":"getVersion"}' \
+                | grep -q '"result"' 2>/dev/null; then
+                log_info "✅ JSON-RPC methods responsive"
+                
+                # Test CLI connectivity if available
+                if command -v solana >/dev/null 2>&1; then
+                    if timeout 10s solana --url "http://localhost:$RPC_PORT" cluster-version >/dev/null 2>&1; then
+                        log_success "✅ Validator RPC is ready for CLI operations!"
+                        validator_ready=true
+                        break
+                    else
+                        log_info "⏳ CLI connectivity not ready yet..."
+                    fi
+                else
+                    log_info "✅ RPC ready (CLI not available, skipping CLI test)"
+                    validator_ready=true
+                    break
+                fi
+            else
+                log_info "⏳ JSON-RPC methods not ready yet..."
+            fi
+        else
+            log_info "⏳ RPC health endpoint not ready yet..."
+        fi
+        
+        sleep 2
+        readiness_wait=$((readiness_wait + 2))
+    done
+    
+    # **FAIL FAST**: Exit if validator RPC never became ready
+    if [[ "$validator_ready" != "true" ]]; then
+        log_error "❌ Validator RPC never became available within ${readiness_timeout}s"
+        log_error "❌ This usually means:"
+        log_error "    - Validator failed to start fully"
+        log_error "    - Wrong port/interface configuration"
+        log_error "    - Validator needs more initialization time"
+        log_error "❌ ABORTING transaction test to prevent CLI connection failures"
+        
+        # Check validator process status
+        if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
+            local validator_pid
+            validator_pid=$(cat "$RESULTS_DIR/validator.pid" 2>/dev/null) || validator_pid="unknown"
+            if [[ -n "$validator_pid" ]] && kill -0 "$validator_pid" 2>/dev/null; then
+                log_error "❌ Validator process (PID: $validator_pid) is running but RPC is not responding"
+                log_error "❌ Last validator log output:"
+                tail -20 "$RESULTS_DIR/validator.log" 2>/dev/null || log_error "❌ Could not read validator logs"
+            else
+                log_error "❌ Validator process appears to have died"
+            fi
+        fi
+        
+        echo "0" > "$RESULTS_DIR/effective_tps.txt"
+        echo "0" > "$RESULTS_DIR/successful_transactions.txt"
+        echo "0" > "$RESULTS_DIR/submitted_requests.txt"
+        return 0
+    fi
+
+    # Configure Solana CLI if available with comprehensive validation
     if command -v solana >/dev/null 2>&1; then
         log_info "DEBUG: Configuring and validating Solana CLI..."
         
@@ -941,9 +1019,9 @@ test_transaction_throughput() {
         current_rpc_url=$(solana config get | grep "RPC URL" | awk '{print $3}' 2>/dev/null) || current_rpc_url="unknown"
         log_info "DEBUG: Solana CLI configured for RPC endpoint: $current_rpc_url"
         
-        # Test connectivity to the RPC endpoint
+        # Final connectivity test (should succeed since we verified readiness above)
         if ! timeout 10s solana cluster-version >/dev/null 2>&1; then
-            log_warning "Solana CLI cannot connect to RPC endpoint - transaction tests may fail"
+            log_warning "Solana CLI connectivity issue after readiness confirmation - proceeding anyway"
         else
             log_info "DEBUG: Solana CLI connectivity to RPC endpoint verified"
         fi
