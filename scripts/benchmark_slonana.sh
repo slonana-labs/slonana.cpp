@@ -751,6 +751,12 @@ start_validator() {
         else
             log_verbose "✅ Port $RPC_PORT is free"
         fi
+        
+        if netstat -tulpn 2>/dev/null | grep -q ":${GOSSIP_PORT} "; then
+            log_warning "⚠️  Port $GOSSIP_PORT still appears to be in use after cleanup"
+        else
+            log_verbose "✅ Port $GOSSIP_PORT is free"
+        fi
     fi
     
     log_info "Starting Slonana validator..."
@@ -773,9 +779,10 @@ start_validator() {
         validator_args+=(--identity "$IDENTITY_FILE")
     fi
     
-    # **EXPLICIT RPC BINDING**: Ensure RPC is available at expected address/port
-    # Note: The validator uses --rpc-bind-address with combined address:port format
-    validator_args+=(--rpc-bind-address "127.0.0.1:$RPC_PORT")
+    # **EXPLICIT RPC BINDING**: Force validator to bind on localhost only
+    # Use separate port and bind address arguments to ensure CLI compatibility
+    validator_args+=(--rpc-port "$RPC_PORT")
+    validator_args+=(--rpc-bind-address "127.0.0.1")
     validator_args+=(--gossip-bind-address "127.0.0.1:$GOSSIP_PORT")
     
     # **ENHANCED CONFIGURATION**: Additional args for better CI reliability
@@ -783,8 +790,8 @@ start_validator() {
     validator_args+=(--network-id devnet)
     validator_args+=(--allow-stale-rpc)  # Allow RPC before fully caught up (helps with CI timeouts)
     
-    log_info "🚀 Starting validator with explicit RPC binding:"
-    log_info "   RPC Endpoint: 127.0.0.1:$RPC_PORT"
+    log_info "🚀 Starting validator with explicit localhost-only RPC binding:"
+    log_info "   RPC Port: $RPC_PORT (bind: 127.0.0.1 only)"
     log_info "   Gossip Endpoint: 127.0.0.1:$GOSSIP_PORT"
     log_verbose "   Full arguments: ${validator_args[*]}"
 
@@ -822,6 +829,21 @@ start_validator() {
         # **STEP 1**: Test basic health endpoint (should respond with HTTP 200)
         if curl -s --max-time 5 "http://localhost:$RPC_PORT/health" > /dev/null 2>&1; then
             log_verbose "✅ Health endpoint responsive"
+            
+            # Check actual port binding when health endpoint is responsive
+            if command -v netstat >/dev/null 2>&1; then
+                local actual_binding=$(netstat -tulpn 2>/dev/null | grep ":$RPC_PORT " | head -1)
+                if [[ -n "$actual_binding" ]]; then
+                    log_verbose "🔍 Actual RPC port binding: $actual_binding"
+                    # Check if bound to localhost specifically
+                    if echo "$actual_binding" | grep -q "127.0.0.1:$RPC_PORT"; then
+                        log_verbose "✅ Validator correctly bound to localhost:$RPC_PORT"
+                    elif echo "$actual_binding" | grep -q "0.0.0.0:$RPC_PORT"; then
+                        log_warning "⚠️  Validator bound to 0.0.0.0:$RPC_PORT instead of 127.0.0.1:$RPC_PORT"
+                        log_warning "    This may cause CLI connectivity issues in some CI environments"
+                    fi
+                fi
+            fi
             
             # **STEP 2**: Test JSON-RPC method availability  
             if curl -s --max-time 5 -X POST "http://localhost:$RPC_PORT" \
@@ -885,14 +907,21 @@ start_validator() {
         if command -v netstat >/dev/null 2>&1; then
             local port_status=$(netstat -tulpn 2>/dev/null | grep ":$RPC_PORT " || echo "No process binding to port $RPC_PORT")
             log_error "   • Port $RPC_PORT status: $port_status"
+            
+            # Check if bound to wrong interface
+            if echo "$port_status" | grep -q "0.0.0.0:$RPC_PORT"; then
+                log_error "   • Issue: Validator bound to 0.0.0.0 instead of 127.0.0.1"
+                log_error "   • This breaks CLI connectivity in CI environments"
+            fi
         fi
         
         log_error ""
         log_error "🛠️  Common fixes:"
-        log_error "   1. Increase timeout if validator needs more startup time"
+        log_error "   1. Ensure validator uses --rpc-port $RPC_PORT --rpc-bind-address 127.0.0.1"
         log_error "   2. Check for port conflicts: netstat -tulpn | grep $RPC_PORT"
-        log_error "   3. Verify validator arguments match CLI interface" 
-        log_error "   4. Check validator logs for startup errors"
+        log_error "   3. Increase timeout if validator needs more startup time" 
+        log_error "   4. Verify validator arguments match CLI interface"
+        log_error "   5. Check validator logs for startup errors"
         log_error ""
         log_error "📋 Final validator log output:"
         tail -30 "$RESULTS_DIR/validator.log" || true
