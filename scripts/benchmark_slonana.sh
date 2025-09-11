@@ -336,10 +336,20 @@ setup_validator() {
         
         # Find and download optimal snapshot using slonana CLI
         log_verbose "Finding optimal snapshot..."
-        if "$VALIDATOR_BIN" snapshot-find --network devnet --max-latency 100 --json > "$RESULTS_DIR/snapshot_sources.json" 2>/dev/null; then
+        if "$VALIDATOR_BIN" snapshot-find --network devnet --max-latency 200 --max-snapshot-age 50000 --min-download-speed 1 --json > "$RESULTS_DIR/snapshot_sources.json" 2>/dev/null; then
             log_verbose "Snapshot sources discovered, downloading optimal snapshot..."
-            if "$VALIDATOR_BIN" snapshot-download --output-dir "$LEDGER_DIR" --verbose > "$RESULTS_DIR/snapshot_download.log" 2>&1; then
-                log_success "Snapshot downloaded successfully using built-in slonana system"
+            if "$VALIDATOR_BIN" snapshot-download --output-dir "$LEDGER_DIR" --network devnet --max-latency 200 --max-snapshot-age 50000 --min-download-speed 1 --verbose > "$RESULTS_DIR/snapshot_download.log" 2>&1; then
+                # Check if a real snapshot was downloaded or a bootstrap marker was created
+                if find "$LEDGER_DIR" -name "*.tar.zst" -size +1M 2>/dev/null | head -1 | grep -q .; then
+                    log_success "Real snapshot downloaded successfully using built-in slonana system"
+                elif find "$LEDGER_DIR" -name "*.tar.zst" -exec grep -l "Bootstrap Snapshot Marker" {} \; 2>/dev/null | head -1 | grep -q .; then
+                    log_info "Bootstrap marker created - devnet snapshot downloads not available (this is normal)"
+                    log_info "Proceeding with optimized genesis bootstrap for development environment"
+                    setup_bootstrap_fallback
+                else
+                    log_warning "Unexpected snapshot download result, falling back to bootstrap mode"
+                    setup_bootstrap_fallback
+                fi
             else
                 log_warning "Snapshot download failed, falling back to bootstrap mode"
                 setup_bootstrap_fallback
