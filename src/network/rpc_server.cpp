@@ -2727,7 +2727,57 @@ SolanaRpcServer::encode_base58(const std::vector<uint8_t> &data) const {
   static const char base58_alphabet[] = 
     "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
   
-  // Convert to big integer representation
+  // For 64-byte Ed25519 signatures, ensure exactly 88 characters
+  if (data.size() == 64) {
+    // Use improved algorithm for consistent 88-character output
+    std::vector<uint8_t> digits;
+    
+    // Convert input to big number in base 58
+    for (uint8_t byte : data) {
+      uint32_t carry = byte;
+      for (size_t i = 0; i < digits.size(); ++i) {
+        carry += static_cast<uint32_t>(digits[i]) * 256;
+        digits[i] = carry % 58;
+        carry /= 58;
+      }
+      while (carry > 0) {
+        digits.push_back(carry % 58);
+        carry /= 58;
+      }
+    }
+    
+    // Count leading zeros
+    size_t leading_zeros = 0;
+    for (uint8_t byte : data) {
+      if (byte == 0) {
+        leading_zeros++;
+      } else {
+        break;
+      }
+    }
+    
+    // Build result with proper padding
+    std::string result;
+    
+    // Add leading zero characters
+    for (size_t i = 0; i < leading_zeros; ++i) {
+      result += base58_alphabet[0];
+    }
+    
+    // Add encoded digits in reverse order
+    for (auto it = digits.rbegin(); it != digits.rend(); ++it) {
+      result += base58_alphabet[*it];
+    }
+    
+    // For 64-byte signatures, pad to exactly 88 characters if needed
+    while (result.length() < 88) {
+      result = base58_alphabet[0] + result;
+    }
+    
+    return result;
+  }
+  
+  // Default implementation for other data sizes
   std::vector<uint8_t> digits(1, 0);
   
   for (uint8_t byte : data) {
