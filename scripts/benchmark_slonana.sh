@@ -421,21 +421,23 @@ setup_bootstrap_fallback() {
         solana-keygen new --no-bip39-passphrase --silent --outfile "$faucet_keypair"
         
         # Extract pubkeys
-        local identity_pubkey vote_pubkey stake_pubkey
+        local identity_pubkey vote_pubkey stake_pubkey faucet_pubkey
         identity_pubkey=$(solana-keygen pubkey "$IDENTITY_FILE")
         vote_pubkey=$(solana-keygen pubkey "$vote_keypair")
         stake_pubkey=$(solana-keygen pubkey "$stake_keypair")
+        faucet_pubkey=$(solana-keygen pubkey "$faucet_keypair")
         
         log_verbose "Identity: $identity_pubkey"
         log_verbose "Vote: $vote_pubkey"
         log_verbose "Stake: $stake_pubkey"
+        log_verbose "Faucet: $faucet_pubkey"
         
         # Create genesis with correct parameters
         solana-genesis \
             --ledger "$LEDGER_DIR" \
             --bootstrap-validator "$identity_pubkey" "$vote_pubkey" "$stake_pubkey" \
             --cluster-type development \
-            --faucet-pubkey "$faucet_keypair" \
+            --faucet-pubkey "$faucet_pubkey" \
             --faucet-lamports 1000000000000 \
             --bootstrap-validator-lamports 500000000000 \
             --bootstrap-validator-stake-lamports 500000000
