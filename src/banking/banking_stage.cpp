@@ -664,11 +664,12 @@ bool BankingStage::commit_batch(std::shared_ptr<TransactionBatch> batch) {
     // Create a new block to contain these transactions
     ledger::Block new_block;
     new_block.slot = ledger_manager_->get_latest_slot() + 1;
-    new_block.timestamp = std::chrono::duration_cast<std::chrono::seconds>(
-                            std::chrono::system_clock::now().time_since_epoch())
-                            .count();
+    new_block.timestamp =
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch())
+            .count();
     new_block.parent_hash = ledger_manager_->get_latest_block_hash();
-    
+
     // Convert shared_ptr<Transaction> to Transaction objects for the block
     size_t processed_transactions = 0;
     for (const auto &tx_ptr : transactions) {
@@ -677,16 +678,17 @@ bool BankingStage::commit_batch(std::shared_ptr<TransactionBatch> batch) {
         ledger_tx.signatures = tx_ptr->signatures;
         ledger_tx.message = tx_ptr->message;
         ledger_tx.hash = tx_ptr->hash;
-        
+
         // Generate proper Solana-compatible transaction ID from first signature
         if (!ledger_tx.signatures.empty() && !ledger_tx.signatures[0].empty()) {
           // Transaction ID should be the base58-encoded first signature
           // This ensures mixed-case format consistent with Solana conventions
           std::string transaction_id = encode_base58(ledger_tx.signatures[0]);
-          std::cout << "Banking: Transaction committed with ID: " << transaction_id 
-                    << " (base58-encoded, mixed-case format)" << std::endl;
+          std::cout << "Banking: Transaction committed with ID: "
+                    << transaction_id << " (base58-encoded, mixed-case format)"
+                    << std::endl;
         }
-        
+
         new_block.transactions.push_back(ledger_tx);
         processed_transactions++;
       }
@@ -696,28 +698,35 @@ bool BankingStage::commit_batch(std::shared_ptr<TransactionBatch> batch) {
     if (processed_transactions > 0) {
       // Compute block hash using SHA-256 for cryptographic security
       new_block.block_hash = new_block.compute_hash();
-      
+
       // Store the block in the ledger with balance state tracking
       auto store_result = ledger_manager_->store_block(new_block);
       if (!store_result.is_ok()) {
-        std::cerr << "Banking: Failed to store transaction block in ledger: " 
+        std::cerr << "Banking: Failed to store transaction block in ledger: "
                   << store_result.error() << std::endl;
         all_committed = false;
       } else {
-        std::cout << "Banking: Successfully committed " << processed_transactions 
-                  << " transactions to ledger at slot " << new_block.slot 
-                  << " with block hash: " << encode_base58(new_block.block_hash) << std::endl;
-                  
+        std::cout << "Banking: Successfully committed "
+                  << processed_transactions
+                  << " transactions to ledger at slot " << new_block.slot
+                  << " with block hash: " << encode_base58(new_block.block_hash)
+                  << std::endl;
+
         // Update transaction processing statistics for monitoring
         total_transactions_processed_ += processed_transactions;
         total_batches_processed_++;
       }
     } else {
-      std::cout << "Banking: No valid transactions to commit in batch" << std::endl;
+      std::cout << "Banking: No valid transactions to commit in batch"
+                << std::endl;
     }
   } else {
-    std::cout << "Banking: Warning - No ledger manager available, transactions not persisted" << std::endl;
-    std::cout << "Banking: Note - In production, all transactions must be recorded in persistent ledger" << std::endl;
+    std::cout << "Banking: Warning - No ledger manager available, transactions "
+                 "not persisted"
+              << std::endl;
+    std::cout << "Banking: Note - In production, all transactions must be "
+                 "recorded in persistent ledger"
+              << std::endl;
   }
 
   // Call completion callback
@@ -769,20 +778,21 @@ void BankingStage::handle_resource_pressure() {
 }
 
 // Utility function for base58 encoding (Solana-compatible)
-std::string BankingStage::encode_base58(const std::vector<uint8_t> &data) const {
+std::string
+BankingStage::encode_base58(const std::vector<uint8_t> &data) const {
   // Proper base58 encoding implementation for Solana compatibility
   if (data.empty())
     return "";
 
   // Base58 alphabet used by Bitcoin and Solana
-  static const char base58_alphabet[] = 
-    "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-  
+  static const char base58_alphabet[] =
+      "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
   // For 64-byte Ed25519 signatures, ensure exactly 88 characters
   if (data.size() == 64) {
     // Use improved algorithm for consistent 88-character output
     std::vector<uint8_t> digits;
-    
+
     // Convert input to big number in base 58
     for (uint8_t byte : data) {
       uint32_t carry = byte;
@@ -796,7 +806,7 @@ std::string BankingStage::encode_base58(const std::vector<uint8_t> &data) const 
         carry /= 58;
       }
     }
-    
+
     // Count leading zeros
     size_t leading_zeros = 0;
     for (uint8_t byte : data) {
@@ -806,31 +816,31 @@ std::string BankingStage::encode_base58(const std::vector<uint8_t> &data) const 
         break;
       }
     }
-    
+
     // Build result with proper padding
     std::string result;
-    
+
     // Add leading zero characters
     for (size_t i = 0; i < leading_zeros; ++i) {
       result += base58_alphabet[0];
     }
-    
+
     // Add encoded digits in reverse order
     for (auto it = digits.rbegin(); it != digits.rend(); ++it) {
       result += base58_alphabet[*it];
     }
-    
+
     // For 64-byte signatures, pad to exactly 88 characters if needed
     while (result.length() < 88) {
       result = base58_alphabet[0] + result;
     }
-    
+
     return result;
   }
-  
+
   // Default implementation for other data sizes
   std::vector<uint8_t> digits(1, 0);
-  
+
   for (uint8_t byte : data) {
     uint32_t carry = byte;
     for (size_t j = 0; j < digits.size(); ++j) {
@@ -838,25 +848,26 @@ std::string BankingStage::encode_base58(const std::vector<uint8_t> &data) const 
       digits[j] = carry % 58;
       carry /= 58;
     }
-    
+
     while (carry > 0) {
       digits.push_back(carry % 58);
       carry /= 58;
     }
   }
-  
+
   // Convert leading zeros
   std::string result;
   for (uint8_t byte : data) {
-    if (byte != 0) break;
+    if (byte != 0)
+      break;
     result += base58_alphabet[0];
   }
-  
+
   // Convert digits to base58 characters (reverse order)
   for (auto it = digits.rbegin(); it != digits.rend(); ++it) {
     result += base58_alphabet[*it];
   }
-  
+
   return result;
 }
 

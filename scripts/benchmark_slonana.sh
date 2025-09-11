@@ -703,6 +703,18 @@ start_validator() {
     export SLONANA_CI_MODE=1
     export CI=true
     
+    # Clear any processes using the RPC port to prevent conflicts
+    log_verbose "Clearing port $RPC_PORT to prevent conflicts..."
+    if command -v fuser >/dev/null 2>&1; then
+        fuser -k "$RPC_PORT/tcp" >/dev/null 2>&1 || true
+    elif command -v lsof >/dev/null 2>&1; then
+        local existing_pid=$(lsof -ti :"$RPC_PORT" 2>/dev/null || true)
+        if [[ -n "$existing_pid" ]]; then
+            log_verbose "Killing existing process on port $RPC_PORT (PID: $existing_pid)"
+            kill -9 "$existing_pid" 2>/dev/null || true
+        fi
+    fi
+    
     log_info "Starting Slonana validator..."
 
     log_verbose "Validator configuration:"

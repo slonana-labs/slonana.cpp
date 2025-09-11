@@ -514,8 +514,9 @@ SnapshotFinder::find_best_snapshots() {
 
   // Test each healthy node's snapshot quality
   for (const auto &node : healthy_nodes) {
-    std::cout << "🔍 Testing node: " << node.url << " (snapshot_slot: " << node.snapshot_slot << ")" << std::endl;
-    
+    std::cout << "🔍 Testing node: " << node.url
+              << " (snapshot_slot: " << node.snapshot_slot << ")" << std::endl;
+
     if (node.snapshot_slot == 0) {
       std::cout << "   ⚠️  No snapshot slot available, skipping" << std::endl;
       continue; // No snapshot available
@@ -525,7 +526,9 @@ SnapshotFinder::find_best_snapshots() {
     if (current_slot > 0 &&
         !is_valid_snapshot_slot(node.snapshot_slot, current_slot,
                                 config_.max_snapshot_age)) {
-      std::cout << "   ⚠️  Snapshot too old (" << (current_slot - node.snapshot_slot) << " slots), skipping" << std::endl;
+      std::cout << "   ⚠️  Snapshot too old ("
+                << (current_slot - node.snapshot_slot) << " slots), skipping"
+                << std::endl;
       continue;
     }
 
@@ -538,18 +541,21 @@ SnapshotFinder::find_best_snapshots() {
     quality.download_url =
         build_snapshot_download_url(node.url, node.snapshot_slot);
 
-    std::cout << "   📥 Testing download URL: " << quality.download_url << std::endl;
+    std::cout << "   📥 Testing download URL: " << quality.download_url
+              << std::endl;
 
     // Test download speed with small sample
     quality.download_speed_mbps =
         measure_download_speed(quality.download_url, 512 * 1024); // 512KB test
 
-    std::cout << "   📊 Download speed test: " << quality.download_speed_mbps << " MB/s" << std::endl;
+    std::cout << "   📊 Download speed test: " << quality.download_speed_mbps
+              << " MB/s" << std::endl;
 
     if (meets_quality_criteria(quality)) {
       quality.quality_score = calculate_quality_score(quality);
       snapshot_qualities_.push_back(quality);
-      std::cout << "   ✅ Node meets quality criteria (score: " << quality.quality_score << ")" << std::endl;
+      std::cout << "   ✅ Node meets quality criteria (score: "
+                << quality.quality_score << ")" << std::endl;
     } else {
       std::cout << "   ❌ Node does not meet quality criteria" << std::endl;
     }
@@ -599,19 +605,20 @@ double SnapshotFinder::measure_download_speed(const std::string &snapshot_url,
       // If HEAD fails, try the range request anyway
       auto response = http_client_->get(snapshot_url + "?range=0-" +
                                         std::to_string(test_bytes));
-      
+
       auto end_time = std::chrono::steady_clock::now();
-      
+
       if (!response.success || response.body.empty()) {
-        std::cout << "   ⚠️  Download speed test failed for devnet URL" << std::endl;
+        std::cout << "   ⚠️  Download speed test failed for devnet URL"
+                  << std::endl;
         return 0.0;
       }
-      
+
       double duration_seconds =
           std::chrono::duration<double>(end_time - start_time).count();
       double bytes_downloaded = response.body.size();
       double mbps = (bytes_downloaded / (1024.0 * 1024.0)) / duration_seconds;
-      
+
       return std::max(mbps, 0.1); // Minimum 0.1 MB/s for devnet
     }
   }
@@ -641,20 +648,26 @@ SnapshotFinder::build_snapshot_download_url(const std::string &rpc_url,
   if (rpc_url.find("rpcpool.com") != std::string::npos) {
     // rpcpool.com uses network-specific paths
     if (config_.network == "devnet") {
-      return "https://snapshots.rpcpool.com/devnet/snapshot-" + std::to_string(slot) + ".tar.zst";
+      return "https://snapshots.rpcpool.com/devnet/snapshot-" +
+             std::to_string(slot) + ".tar.zst";
     } else if (config_.network == "testnet") {
-      return "https://snapshots.rpcpool.com/testnet/snapshot-" + std::to_string(slot) + ".tar.zst";
+      return "https://snapshots.rpcpool.com/testnet/snapshot-" +
+             std::to_string(slot) + ".tar.zst";
     } else {
-      return "https://snapshots.rpcpool.com/snapshot-" + std::to_string(slot) + ".tar.zst";
+      return "https://snapshots.rpcpool.com/snapshot-" + std::to_string(slot) +
+             ".tar.zst";
     }
   } else if (rpc_url.find("api.devnet.solana.com") != std::string::npos) {
     // Devnet Solana RPC uses download path
-    return "https://api.devnet.solana.com/download/snapshot-" + std::to_string(slot) + ".tar.zst";
+    return "https://api.devnet.solana.com/download/snapshot-" +
+           std::to_string(slot) + ".tar.zst";
   } else if (rpc_url.find("api.testnet.solana.com") != std::string::npos) {
     // Testnet Solana RPC uses download path
-    return "https://api.testnet.solana.com/download/snapshot-" + std::to_string(slot) + ".tar.zst";
+    return "https://api.testnet.solana.com/download/snapshot-" +
+           std::to_string(slot) + ".tar.zst";
   } else if (rpc_url.find("solana.com") != std::string::npos) {
-    return "https://snapshots.solana.com/snapshot-" + std::to_string(slot) + ".tar.zst";
+    return "https://snapshots.solana.com/snapshot-" + std::to_string(slot) +
+           ".tar.zst";
   } else {
     // Generic snapshot URL pattern
     return rpc_url + "/snapshot-" + std::to_string(slot) + ".tar.zst";
@@ -740,107 +753,132 @@ common::Result<bool> SnapshotFinder::download_snapshot_from_best_source(
   // Find the best snapshot source
   auto best_result = find_single_best_snapshot();
   if (!best_result.is_ok()) {
-    std::cout << "⚠️  No quality snapshots found: " << best_result.error() << std::endl;
-    
-    // For devnet, if no quality snapshots are found, let's try direct download attempts first
+    std::cout << "⚠️  No quality snapshots found: " << best_result.error()
+              << std::endl;
+
+    // For devnet, if no quality snapshots are found, let's try direct download
+    // attempts first
     if (config_.network == "devnet") {
-      std::cout << "🔄 Devnet detected - attempting direct download from known sources before bootstrap fallback..." << std::endl;
-      
+      std::cout << "🔄 Devnet detected - attempting direct download from known "
+                   "sources before bootstrap fallback..."
+                << std::endl;
+
       // Try some known devnet snapshot patterns
       std::vector<std::string> devnet_snapshot_urls = {
-        "https://snapshots.rpcpool.com/devnet/snapshot-latest.tar.zst",
-        "https://api.devnet.solana.com/v1/snapshots/latest",
-        "https://devnet.helius-rpc.com/snapshot-latest.tar.zst"
-      };
-      
+          "https://snapshots.rpcpool.com/devnet/snapshot-latest.tar.zst",
+          "https://api.devnet.solana.com/v1/snapshots/latest",
+          "https://devnet.helius-rpc.com/snapshot-latest.tar.zst"};
+
       bool download_successful = false;
-      for (const auto& test_url : devnet_snapshot_urls) {
-        std::cout << "🔍 Attempting direct download from: " << test_url << std::endl;
-        
+      for (const auto &test_url : devnet_snapshot_urls) {
+        std::cout << "🔍 Attempting direct download from: " << test_url
+                  << std::endl;
+
         if (progress_callback) {
           progress_callback("Attempting download from " + test_url, 30, 100);
         }
-        
+
         // Ensure output directory exists
         if (!fs::exists(output_directory)) {
           fs::create_directories(output_directory);
         }
-        
+
         // Try to download
-        std::string output_path = output_directory + "/snapshot-devnet-latest.tar.zst";
-        
+        std::string output_path =
+            output_directory + "/snapshot-devnet-latest.tar.zst";
+
         // Simple download progress wrapper
-        auto download_progress_cb = [&progress_callback](size_t downloaded, size_t total) {
+        auto download_progress_cb = [&progress_callback](size_t downloaded,
+                                                         size_t total) {
           if (progress_callback && total > 0) {
-            uint64_t progress = 30 + ((downloaded * 40) / total); // 30-70% range
+            uint64_t progress =
+                30 + ((downloaded * 40) / total); // 30-70% range
             progress_callback("Downloading from mirror", progress, 100);
           }
         };
-        
-        if (http_client_->download_file(test_url, output_path, download_progress_cb)) {
+
+        if (http_client_->download_file(test_url, output_path,
+                                        download_progress_cb)) {
           // Verify the download is substantial (at least 1MB)
-          if (fs::exists(output_path) && fs::file_size(output_path) > 1024 * 1024) {
-            std::cout << "✅ Direct download successful from: " << test_url << std::endl;
-            std::cout << "   Size: " << (fs::file_size(output_path) / (1024 * 1024)) << " MB" << std::endl;
+          if (fs::exists(output_path) &&
+              fs::file_size(output_path) > 1024 * 1024) {
+            std::cout << "✅ Direct download successful from: " << test_url
+                      << std::endl;
+            std::cout << "   Size: "
+                      << (fs::file_size(output_path) / (1024 * 1024)) << " MB"
+                      << std::endl;
             std::cout << "   Path: " << output_path << std::endl;
-            
+
             output_path_out = output_path;
             download_successful = true;
-            
+
             if (progress_callback) {
               progress_callback("Download complete", 100, 100);
             }
-            
+
             return common::Result<bool>(true);
           } else {
-            std::cout << "❌ Download too small or failed from: " << test_url << std::endl;
+            std::cout << "❌ Download too small or failed from: " << test_url
+                      << std::endl;
             fs::remove(output_path); // Clean up failed download
           }
         } else {
           std::cout << "❌ Download failed from: " << test_url << std::endl;
         }
       }
-      
+
       if (!download_successful) {
-        std::cout << "⚠️  All direct devnet snapshot downloads failed - this is normal for development environments" << std::endl;
-        std::cout << "🔧 Creating bootstrap marker (NOT a real snapshot) for genesis-based startup..." << std::endl;
-        
+        std::cout << "⚠️  All direct devnet snapshot downloads failed - this is "
+                     "normal for development environments"
+                  << std::endl;
+        std::cout << "🔧 Creating bootstrap marker (NOT a real snapshot) for "
+                     "genesis-based startup..."
+                  << std::endl;
+
         if (progress_callback) {
           progress_callback("Creating bootstrap marker", 80, 100);
         }
-        
+
         // Ensure output directory exists
         if (!fs::exists(output_directory)) {
           fs::create_directories(output_directory);
         }
-        
+
         // Create a bootstrap marker file (NOT a real snapshot)
-        std::string output_path = output_directory + "/devnet-bootstrap-marker.txt";
+        std::string output_path =
+            output_directory + "/devnet-bootstrap-marker.txt";
         std::ofstream bootstrap_marker(output_path);
         if (bootstrap_marker.is_open()) {
-          bootstrap_marker << "# Slonana Devnet Bootstrap Marker - NOT A REAL SNAPSHOT\n";
-          bootstrap_marker << "# This file indicates that NO devnet snapshot was downloaded\n";
-          bootstrap_marker << "# Validator must start from genesis (no snapshot data available)\n";
+          bootstrap_marker
+              << "# Slonana Devnet Bootstrap Marker - NOT A REAL SNAPSHOT\n";
+          bootstrap_marker << "# This file indicates that NO devnet snapshot "
+                              "was downloaded\n";
+          bootstrap_marker << "# Validator must start from genesis (no "
+                              "snapshot data available)\n";
           bootstrap_marker << "network=" << config_.network << "\n";
           bootstrap_marker << "reason=no_accessible_devnet_snapshots\n";
           bootstrap_marker << "created=" << std::time(nullptr) << "\n";
           bootstrap_marker.close();
-          
+
           if (progress_callback) {
             progress_callback("Bootstrap marker created", 100, 100);
           }
-          
+
           output_path_out = output_path;
-          std::cout << "✅ Bootstrap marker created for genesis-based startup (no snapshot data)" << std::endl;
+          std::cout << "✅ Bootstrap marker created for genesis-based startup "
+                       "(no snapshot data)"
+                    << std::endl;
           std::cout << "   Path: " << output_path << std::endl;
-          std::cout << "   Note: This is NOT a snapshot - validator will create genesis from scratch" << std::endl;
+          std::cout << "   Note: This is NOT a snapshot - validator will "
+                       "create genesis from scratch"
+                    << std::endl;
           return common::Result<bool>(true);
         } else {
           return common::Result<bool>("Failed to create bootstrap marker file");
         }
       }
     }
-    
+
     return common::Result<bool>("Failed to find best snapshot: " +
                                 best_result.error());
   }
@@ -880,34 +918,40 @@ common::Result<bool> SnapshotFinder::download_snapshot_from_best_source(
   // For devnet, snapshot downloads often fail due to access restrictions
   // Try multiple approaches with graceful fallbacks
   if (config_.network == "devnet") {
-    std::cout << "🔄 Devnet detected - using enhanced download strategy with fallbacks..." << std::endl;
-    
+    std::cout << "🔄 Devnet detected - using enhanced download strategy with "
+                 "fallbacks..."
+              << std::endl;
+
     // Extract slot number from the download URL for fallback attempts
     uint64_t snapshot_slot = 0;
-    size_t slot_start = best_quality.download_url.find("snapshot-") + 9; // Length of "snapshot-"
+    size_t slot_start = best_quality.download_url.find("snapshot-") +
+                        9; // Length of "snapshot-"
     size_t slot_end = best_quality.download_url.find(".tar.zst", slot_start);
     if (slot_start != std::string::npos && slot_end != std::string::npos) {
-      std::string slot_str = best_quality.download_url.substr(slot_start, slot_end - slot_start);
+      std::string slot_str =
+          best_quality.download_url.substr(slot_start, slot_end - slot_start);
       try {
         snapshot_slot = std::stoull(slot_str);
       } catch (const std::exception &e) {
         snapshot_slot = 0;
       }
     }
-    
+
     // Try multiple download strategies for devnet
     bool download_success = false;
     std::vector<std::string> fallback_urls = {
-      best_quality.download_url,
-      "https://api.devnet.solana.com/snapshot-" + std::to_string(snapshot_slot) + ".tar.zst",
-      "https://devnet.genesysgo.net/snapshot-" + std::to_string(snapshot_slot) + ".tar.zst"
-    };
-    
-    for (const auto& url : fallback_urls) {
+        best_quality.download_url,
+        "https://api.devnet.solana.com/snapshot-" +
+            std::to_string(snapshot_slot) + ".tar.zst",
+        "https://devnet.genesysgo.net/snapshot-" +
+            std::to_string(snapshot_slot) + ".tar.zst"};
+
+    for (const auto &url : fallback_urls) {
       std::cout << "🔍 Attempting download from: " << url << std::endl;
-      
+
       // Download progress wrapper
-      auto download_progress_cb = [&progress_callback](size_t downloaded, size_t total) {
+      auto download_progress_cb = [&progress_callback](size_t downloaded,
+                                                       size_t total) {
         if (progress_callback && total > 0) {
           uint64_t progress = 30 + ((downloaded * 60) / total); // 30-90% range
           progress_callback("Downloading snapshot", progress, 100);
@@ -923,39 +967,50 @@ common::Result<bool> SnapshotFinder::download_snapshot_from_best_source(
         std::cout << "❌ Download failed from: " << url << std::endl;
       }
     }
-    
+
     if (!download_success) {
-      std::cout << "⚠️  All devnet snapshot downloads failed - this is common for development environments" << std::endl;
-      std::cout << "🔧 Creating bootstrap marker (NOT a real snapshot) for genesis-based startup..." << std::endl;
-      
+      std::cout << "⚠️  All devnet snapshot downloads failed - this is common "
+                   "for development environments"
+                << std::endl;
+      std::cout << "🔧 Creating bootstrap marker (NOT a real snapshot) for "
+                   "genesis-based startup..."
+                << std::endl;
+
       // Create a bootstrap marker file (NOT a real snapshot)
       if (progress_callback) {
         progress_callback("Creating bootstrap marker", 90, 100);
       }
-      
-      // Create a bootstrap marker file that indicates no real snapshot was available
+
+      // Create a bootstrap marker file that indicates no real snapshot was
+      // available
       std::ofstream bootstrap_marker(output_path);
       if (bootstrap_marker.is_open()) {
-        bootstrap_marker << "# Slonana Bootstrap Marker - NOT A REAL SNAPSHOT\n";
-        bootstrap_marker << "# This file indicates that NO real snapshot was downloaded\n";
-        bootstrap_marker << "# Validator must create genesis from scratch (no snapshot data)\n";
+        bootstrap_marker
+            << "# Slonana Bootstrap Marker - NOT A REAL SNAPSHOT\n";
+        bootstrap_marker
+            << "# This file indicates that NO real snapshot was downloaded\n";
+        bootstrap_marker << "# Validator must create genesis from scratch (no "
+                            "snapshot data)\n";
         bootstrap_marker << "network=" << config_.network << "\n";
         bootstrap_marker << "slot=" << snapshot_slot << "\n";
         bootstrap_marker << "created=" << std::time(nullptr) << "\n";
         bootstrap_marker << "reason=no_accessible_devnet_snapshots\n";
         bootstrap_marker.close();
-        
-        std::cout << "✅ Bootstrap marker created - validator will start from genesis (no snapshot data)" << std::endl;
+
+        std::cout << "✅ Bootstrap marker created - validator will start from "
+                     "genesis (no snapshot data)"
+                  << std::endl;
         download_success = true;
       }
     }
-    
+
     if (!download_success) {
       return common::Result<bool>("All devnet download strategies failed");
     }
   } else {
     // Original download logic for mainnet/testnet
-    auto download_progress_cb = [&progress_callback](size_t downloaded, size_t total) {
+    auto download_progress_cb = [&progress_callback](size_t downloaded,
+                                                     size_t total) {
       if (progress_callback && total > 0) {
         uint64_t progress = 30 + ((downloaded * 70) / total); // 30-100% range
         progress_callback("Downloading snapshot", progress, 100);
@@ -963,8 +1018,8 @@ common::Result<bool> SnapshotFinder::download_snapshot_from_best_source(
     };
 
     // Perform the download
-    bool success = http_client_->download_file(best_quality.download_url,
-                                               output_path, download_progress_cb);
+    bool success = http_client_->download_file(
+        best_quality.download_url, output_path, download_progress_cb);
 
     if (!success) {
       return common::Result<bool>("Download failed from: " +

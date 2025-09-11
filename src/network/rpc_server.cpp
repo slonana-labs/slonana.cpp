@@ -994,9 +994,10 @@ RpcResponse SolanaRpcServer::get_balance(const RpcRequest &request) {
     }
 
     if (account_manager_) {
-      // Try to decode the address as base58 first (proper Solana address format)
+      // Try to decode the address as base58 first (proper Solana address
+      // format)
       PublicKey pubkey = decode_base58(address);
-      
+
       // Ensure we have a 32-byte public key (standard Solana pubkey size)
       if (pubkey.size() != 32) {
         pubkey.resize(32);
@@ -1005,7 +1006,8 @@ RpcResponse SolanaRpcServer::get_balance(const RpcRequest &request) {
           std::hash<std::string> hasher;
           auto hash_val = hasher(address);
           for (size_t i = 0; i < 32; ++i) {
-            uint8_t byte_val = static_cast<uint8_t>((hash_val >> ((i * 8) % 64)) & 0xFF);
+            uint8_t byte_val =
+                static_cast<uint8_t>((hash_val >> ((i * 8) % 64)) & 0xFF);
             if (i < address.length()) {
               byte_val ^= static_cast<uint8_t>(address[i]);
             }
@@ -2724,14 +2726,14 @@ SolanaRpcServer::encode_base58(const std::vector<uint8_t> &data) const {
     return "";
 
   // Base58 alphabet used by Bitcoin and Solana
-  static const char base58_alphabet[] = 
-    "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-  
+  static const char base58_alphabet[] =
+      "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
   // For 64-byte Ed25519 signatures, ensure exactly 88 characters
   if (data.size() == 64) {
     // Use improved algorithm for consistent 88-character output
     std::vector<uint8_t> digits;
-    
+
     // Convert input to big number in base 58
     for (uint8_t byte : data) {
       uint32_t carry = byte;
@@ -2745,7 +2747,7 @@ SolanaRpcServer::encode_base58(const std::vector<uint8_t> &data) const {
         carry /= 58;
       }
     }
-    
+
     // Count leading zeros
     size_t leading_zeros = 0;
     for (uint8_t byte : data) {
@@ -2755,31 +2757,31 @@ SolanaRpcServer::encode_base58(const std::vector<uint8_t> &data) const {
         break;
       }
     }
-    
+
     // Build result with proper padding
     std::string result;
-    
+
     // Add leading zero characters
     for (size_t i = 0; i < leading_zeros; ++i) {
       result += base58_alphabet[0];
     }
-    
+
     // Add encoded digits in reverse order
     for (auto it = digits.rbegin(); it != digits.rend(); ++it) {
       result += base58_alphabet[*it];
     }
-    
+
     // For 64-byte signatures, pad to exactly 88 characters if needed
     while (result.length() < 88) {
       result = base58_alphabet[0] + result;
     }
-    
+
     return result;
   }
-  
+
   // Default implementation for other data sizes
   std::vector<uint8_t> digits(1, 0);
-  
+
   for (uint8_t byte : data) {
     uint32_t carry = byte;
     for (size_t j = 0; j < digits.size(); ++j) {
@@ -2787,25 +2789,26 @@ SolanaRpcServer::encode_base58(const std::vector<uint8_t> &data) const {
       digits[j] = carry % 58;
       carry /= 58;
     }
-    
+
     while (carry > 0) {
       digits.push_back(carry % 58);
       carry /= 58;
     }
   }
-  
+
   // Convert leading zeros
   std::string result;
   for (uint8_t byte : data) {
-    if (byte != 0) break;
+    if (byte != 0)
+      break;
     result += base58_alphabet[0];
   }
-  
+
   // Convert digits to base58 characters (reverse order)
   for (auto it = digits.rbegin(); it != digits.rend(); ++it) {
     result += base58_alphabet[*it];
   }
-  
+
   return result;
 }
 
@@ -2825,21 +2828,22 @@ std::string SolanaRpcServer::compute_signature_hash(
 
   // Convert hash to vector for base58 encoding
   std::vector<uint8_t> hash_vector(hash, hash + hash_len);
-  
+
   // Use base58 encoding for Solana-compatible transaction signatures
   return encode_base58(hash_vector);
 }
 
-std::vector<uint8_t> SolanaRpcServer::decode_base58(const std::string &encoded) const {
+std::vector<uint8_t>
+SolanaRpcServer::decode_base58(const std::string &encoded) const {
   // Base58 decoding implementation for Solana address compatibility
   if (encoded.empty()) {
     return {};
   }
 
   // Base58 alphabet used by Bitcoin and Solana
-  static const char base58_alphabet[] = 
-    "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-  
+  static const char base58_alphabet[] =
+      "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
   // Create lookup table for base58 characters
   static std::vector<int> base58_map(256, -1);
   static bool map_initialized = false;
@@ -2849,10 +2853,10 @@ std::vector<uint8_t> SolanaRpcServer::decode_base58(const std::string &encoded) 
     }
     map_initialized = true;
   }
-  
+
   // Convert from base58 to big integer
   std::vector<uint8_t> result(1, 0);
-  
+
   for (char c : encoded) {
     int digit = base58_map[static_cast<unsigned char>(c)];
     if (digit == -1) {
@@ -2861,7 +2865,8 @@ std::vector<uint8_t> SolanaRpcServer::decode_base58(const std::string &encoded) 
       auto hash_val = hasher(encoded);
       std::vector<uint8_t> fallback_result(32, 0);
       for (size_t i = 0; i < 32; ++i) {
-        uint8_t byte_val = static_cast<uint8_t>((hash_val >> ((i * 8) % 64)) & 0xFF);
+        uint8_t byte_val =
+            static_cast<uint8_t>((hash_val >> ((i * 8) % 64)) & 0xFF);
         if (i < encoded.length()) {
           byte_val ^= static_cast<uint8_t>(encoded[i]);
         }
@@ -2869,20 +2874,20 @@ std::vector<uint8_t> SolanaRpcServer::decode_base58(const std::string &encoded) 
       }
       return fallback_result;
     }
-    
+
     uint32_t carry = digit;
     for (size_t j = 0; j < result.size(); ++j) {
       carry += static_cast<uint32_t>(result[j]) * 58;
       result[j] = carry & 0xFF;
       carry >>= 8;
     }
-    
+
     while (carry > 0) {
       result.push_back(carry & 0xFF);
       carry >>= 8;
     }
   }
-  
+
   // Handle leading zeros
   size_t leading_zeros = 0;
   for (char c : encoded) {
@@ -2892,11 +2897,11 @@ std::vector<uint8_t> SolanaRpcServer::decode_base58(const std::string &encoded) 
       break;
     }
   }
-  
+
   // Reverse result and add leading zeros
   std::reverse(result.begin(), result.end());
   result.insert(result.begin(), leading_zeros, 0);
-  
+
   return result;
 }
 
@@ -3575,7 +3580,7 @@ RpcResponse SolanaRpcServer::request_airdrop(const RpcRequest &request) {
     // Convert address string to PublicKey using proper base58 decoding
     // This ensures compatibility with Solana CLI tools and addresses
     PublicKey recipient_pubkey = decode_base58(address);
-    
+
     // Ensure we have a 32-byte public key (standard Solana pubkey size)
     if (recipient_pubkey.size() != 32) {
       recipient_pubkey.resize(32);
@@ -3584,7 +3589,8 @@ RpcResponse SolanaRpcServer::request_airdrop(const RpcRequest &request) {
         std::hash<std::string> hasher;
         auto hash_val = hasher(address);
         for (size_t i = 0; i < 32; ++i) {
-          uint8_t byte_val = static_cast<uint8_t>((hash_val >> ((i * 8) % 64)) & 0xFF);
+          uint8_t byte_val =
+              static_cast<uint8_t>((hash_val >> ((i * 8) % 64)) & 0xFF);
           if (i < address.length()) {
             byte_val ^= static_cast<uint8_t>(address[i]);
           }
@@ -3655,58 +3661,67 @@ RpcResponse SolanaRpcServer::request_airdrop(const RpcRequest &request) {
 
     // Create proper transaction record for the airdrop
     auto airdrop_transaction = std::make_shared<ledger::Transaction>();
-    
+
     // Create transaction message for airdrop (system program transfer)
     std::string tx_message = "airdrop_" + address + "_" + amount_str;
     airdrop_transaction->message.assign(tx_message.begin(), tx_message.end());
-    
+
     // Generate proper Solana-compatible transaction signature
-    // Transaction signatures should be base58-encoded and contain mixed-case characters
-    std::string signature_base = tx_message + "_" + std::to_string(airdrop_amount) + "_" + address;
-    
-    // Add timestamp and randomness for uniqueness (like real Solana transactions)
+    // Transaction signatures should be base58-encoded and contain mixed-case
+    // characters
+    std::string signature_base =
+        tx_message + "_" + std::to_string(airdrop_amount) + "_" + address;
+
+    // Add timestamp and randomness for uniqueness (like real Solana
+    // transactions)
     auto now = std::chrono::system_clock::now();
-    auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
+    auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(
+                         now.time_since_epoch())
+                         .count();
     signature_base += "_" + std::to_string(timestamp);
-    
+
     // Create signature using SHA-256 hash of the transaction data
-    std::vector<uint8_t> signature_data(signature_base.begin(), signature_base.end());
-    
-    // Compute proper transaction signature hash using SHA-256 
+    std::vector<uint8_t> signature_data(signature_base.begin(),
+                                        signature_base.end());
+
+    // Compute proper transaction signature hash using SHA-256
     EVP_MD_CTX *sig_ctx = EVP_MD_CTX_new();
     std::vector<uint8_t> signature_hash(32); // SHA-256 produces 32-byte hash
-    
+
     if (sig_ctx) {
       if (EVP_DigestInit_ex(sig_ctx, EVP_sha256(), nullptr) == 1 &&
-          EVP_DigestUpdate(sig_ctx, signature_data.data(), signature_data.size()) == 1) {
+          EVP_DigestUpdate(sig_ctx, signature_data.data(),
+                           signature_data.size()) == 1) {
         unsigned int hash_len;
         EVP_DigestFinal_ex(sig_ctx, signature_hash.data(), &hash_len);
       }
       EVP_MD_CTX_free(sig_ctx);
     }
-    
-    // Generate proper base58-encoded transaction signature (64 bytes for Ed25519)
+
+    // Generate proper base58-encoded transaction signature (64 bytes for
+    // Ed25519)
     std::vector<uint8_t> sig_bytes(64, 0);
-    
+
     // Use the hash as the foundation for the signature
     for (size_t i = 0; i < 32 && i < 64; ++i) {
       sig_bytes[i] = signature_hash[i];
     }
-    
+
     // Fill remaining bytes with derived data to create a full 64-byte signature
     for (size_t i = 32; i < 64; ++i) {
       sig_bytes[i] = signature_hash[i % 32] ^ static_cast<uint8_t>(i);
     }
-    
-    // Convert to base58 string (this produces mixed-case output like real Solana transactions)
+
+    // Convert to base58 string (this produces mixed-case output like real
+    // Solana transactions)
     std::string signature = encode_base58(sig_bytes);
-    
+
     airdrop_transaction->signatures.push_back(sig_bytes);
-    
+
     // Compute transaction hash from serialized data
     auto serialized = airdrop_transaction->serialize();
     airdrop_transaction->hash.resize(32);
-    
+
     // Use SHA-256 for transaction hash
     EVP_MD_CTX *ctx = EVP_MD_CTX_new();
     if (ctx) {
@@ -3722,10 +3737,11 @@ RpcResponse SolanaRpcServer::request_airdrop(const RpcRequest &request) {
     if (ledger_manager_) {
       ledger::Block airdrop_block;
       airdrop_block.slot = ledger_manager_->get_latest_slot() + 1;
-      airdrop_block.timestamp = std::chrono::duration_cast<std::chrono::seconds>(
-                                  std::chrono::system_clock::now().time_since_epoch())
-                                  .count();
-      
+      airdrop_block.timestamp =
+          std::chrono::duration_cast<std::chrono::seconds>(
+              std::chrono::system_clock::now().time_since_epoch())
+              .count();
+
       // Get parent hash, or use genesis hash for first block
       airdrop_block.parent_hash = ledger_manager_->get_latest_block_hash();
       if (airdrop_block.parent_hash.empty()) {
@@ -3733,18 +3749,18 @@ RpcResponse SolanaRpcServer::request_airdrop(const RpcRequest &request) {
         airdrop_block.parent_hash.resize(32, 0);
         airdrop_block.parent_hash[0] = 0x01; // Mark as genesis parent
       }
-      
+
       airdrop_block.transactions.push_back(*airdrop_transaction);
-      
+
       // Compute block hash (required for validation)
       airdrop_block.block_hash = airdrop_block.compute_hash();
-      
+
       auto store_result = ledger_manager_->store_block(airdrop_block);
       if (store_result.is_ok()) {
-        std::cout << "RPC: Airdrop transaction recorded in ledger at slot " 
+        std::cout << "RPC: Airdrop transaction recorded in ledger at slot "
                   << airdrop_block.slot << std::endl;
       } else {
-        std::cout << "RPC: Warning - failed to record airdrop in ledger: " 
+        std::cout << "RPC: Warning - failed to record airdrop in ledger: "
                   << store_result.error() << std::endl;
       }
     }
