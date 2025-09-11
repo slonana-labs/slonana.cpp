@@ -330,51 +330,67 @@ setup_validator() {
         log_verbose "✅ Validator keypair integrity verified"
     fi
 
-    # Use built-in slonana snapshot commands for faster startup
+    # Try to find and download real devnet snapshots for production-grade startup
     if [[ -n "$VALIDATOR_BIN" ]] && [[ -x "$VALIDATOR_BIN" ]]; then
-        log_info "Using built-in slonana snapshot system for optimal startup..."
+        log_info "Attempting devnet snapshot discovery for production startup..."
         
-        # Find and download optimal snapshot using slonana CLI
-        log_verbose "Finding optimal snapshot..."
+        # Discover available snapshot sources
+        log_verbose "Discovering devnet snapshot sources..."
+        local snapshot_discovery_success=false
+        local real_snapshot_downloaded=false
+        
         if "$VALIDATOR_BIN" snapshot-find --network devnet --max-latency 200 --max-snapshot-age 50000 --min-download-speed 1 --json > "$RESULTS_DIR/snapshot_sources.json" 2>/dev/null; then
-            log_verbose "Snapshot sources discovered, downloading optimal snapshot..."
+            log_verbose "Snapshot sources discovered, attempting download..."
+            snapshot_discovery_success=true
+            
             if "$VALIDATOR_BIN" snapshot-download --output-dir "$LEDGER_DIR" --network devnet --max-latency 200 --max-snapshot-age 50000 --min-download-speed 1 --verbose > "$RESULTS_DIR/snapshot_download.log" 2>&1; then
-                # Check if a real snapshot was downloaded or a bootstrap marker was created
+                # Check if a REAL snapshot was actually downloaded
                 if find "$LEDGER_DIR" -name "*.tar.zst" -size +1M 2>/dev/null | head -1 | grep -q .; then
-                    log_success "Real devnet snapshot downloaded successfully"
-                elif find "$LEDGER_DIR" -name "*bootstrap-marker*" 2>/dev/null | head -1 | grep -q .; then
-                    log_info "Devnet bootstrap marker created - snapshot downloads not available (normal for development)"
-                    log_info "Proceeding with optimized genesis bootstrap for devnet environment"
-                    setup_bootstrap_fallback
-                elif find "$LEDGER_DIR" -name "*.tar.zst" -exec grep -l "Bootstrap Snapshot Marker" {} \; 2>/dev/null | head -1 | grep -q .; then
-                    log_info "Bootstrap marker created in snapshot file - using genesis bootstrap"
-                    setup_bootstrap_fallback
-                else
-                    log_info "Snapshot download completed - validator ready for startup"
+                    # Verify it's not just a bootstrap marker disguised as a snapshot
+                    local snapshot_file=$(find "$LEDGER_DIR" -name "*.tar.zst" -size +1M 2>/dev/null | head -1)
+                    if ! grep -q "Bootstrap.*Marker" "$snapshot_file" 2>/dev/null; then
+                        log_success "✅ REAL devnet snapshot downloaded successfully"
+                        log_info "   Snapshot contains full chain state - validator will hard fork from snapshot"
+                        log_info "   File: $(basename "$snapshot_file")"
+                        log_info "   Size: $(ls -lh "$snapshot_file" | awk '{print $5}')"
+                        real_snapshot_downloaded=true
+                    fi
                 fi
-            else
-                log_warning "Snapshot download command failed, falling back to bootstrap mode"
-                setup_bootstrap_fallback
             fi
+        fi
+        
+        # Handle fallback scenarios with clear messaging
+        if [[ "$real_snapshot_downloaded" == "true" ]]; then
+            log_success "Snapshot-based startup ready - validator will hard fork from downloaded state"
         else
-            log_warning "Snapshot discovery failed, falling back to bootstrap mode"
+            if [[ "$snapshot_discovery_success" == "true" ]]; then
+                log_info "⚠️  Devnet snapshot discovery succeeded but no accessible snapshots found"
+                log_info "   This is normal for development environments where snapshots are restricted"
+            else
+                log_info "⚠️  Devnet snapshot discovery failed - no accessible snapshot sources"
+            fi
+            
+            log_info "🔧 Falling back to genesis bootstrap mode for development environment"
+            log_info "   Creating genesis configuration from scratch (no snapshot data will be used)"
             setup_bootstrap_fallback
         fi
     else
-        log_verbose "Slonana validator binary not available, using bootstrap fallback"
+        log_verbose "Validator binary not available - using genesis bootstrap for development"
         setup_bootstrap_fallback
     fi
 
     log_success "Validator environment setup complete"
 }
 
-# Fallback to bootstrap validator genesis (original logic)
+# Genesis bootstrap mode - used only when no real snapshot is available
 setup_bootstrap_fallback() {
-    log_verbose "Setting up bootstrap fallback..."
+    log_verbose "🔧 Setting up genesis bootstrap mode (no snapshot data available)..."
+    log_info "   This creates a fresh genesis block from scratch"
+    log_info "   Validator will start from slot 0 with initial configuration"
     
-    # Generate bootstrap validator genesis if we have Solana tools and identity
+    # Generate fresh genesis configuration if we have Solana tools and identity
     if [[ -n "$IDENTITY_FILE" ]] && command -v solana-genesis &> /dev/null; then
-        log_verbose "Creating genesis configuration..."
+        log_verbose "Creating fresh genesis configuration from scratch..."
         
         # Generate additional required keypairs
         local vote_keypair="$RESULTS_DIR/vote-keypair.json"

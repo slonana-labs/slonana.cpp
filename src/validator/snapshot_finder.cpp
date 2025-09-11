@@ -803,7 +803,7 @@ common::Result<bool> SnapshotFinder::download_snapshot_from_best_source(
       
       if (!download_successful) {
         std::cout << "⚠️  All direct devnet snapshot downloads failed - this is normal for development environments" << std::endl;
-        std::cout << "🔧 Creating bootstrap marker for genesis-based startup..." << std::endl;
+        std::cout << "🔧 Creating bootstrap marker (NOT a real snapshot) for genesis-based startup..." << std::endl;
         
         if (progress_callback) {
           progress_callback("Creating bootstrap marker", 80, 100);
@@ -814,15 +814,15 @@ common::Result<bool> SnapshotFinder::download_snapshot_from_best_source(
           fs::create_directories(output_directory);
         }
         
-        // Create a bootstrap marker file
+        // Create a bootstrap marker file (NOT a real snapshot)
         std::string output_path = output_directory + "/devnet-bootstrap-marker.txt";
         std::ofstream bootstrap_marker(output_path);
         if (bootstrap_marker.is_open()) {
-          bootstrap_marker << "# Slonana Devnet Bootstrap Marker\n";
-          bootstrap_marker << "# This file indicates that devnet snapshot downloads are not available\n";
-          bootstrap_marker << "# and genesis bootstrap mode should be used instead\n";
+          bootstrap_marker << "# Slonana Devnet Bootstrap Marker - NOT A REAL SNAPSHOT\n";
+          bootstrap_marker << "# This file indicates that NO devnet snapshot was downloaded\n";
+          bootstrap_marker << "# Validator must start from genesis (no snapshot data available)\n";
           bootstrap_marker << "network=" << config_.network << "\n";
-          bootstrap_marker << "reason=no_accessible_snapshots\n";
+          bootstrap_marker << "reason=no_accessible_devnet_snapshots\n";
           bootstrap_marker << "created=" << std::time(nullptr) << "\n";
           bootstrap_marker.close();
           
@@ -831,8 +831,9 @@ common::Result<bool> SnapshotFinder::download_snapshot_from_best_source(
           }
           
           output_path_out = output_path;
-          std::cout << "✅ Bootstrap marker created successfully for devnet development environment" << std::endl;
+          std::cout << "✅ Bootstrap marker created for genesis-based startup (no snapshot data)" << std::endl;
           std::cout << "   Path: " << output_path << std::endl;
+          std::cout << "   Note: This is NOT a snapshot - validator will create genesis from scratch" << std::endl;
           return common::Result<bool>(true);
         } else {
           return common::Result<bool>("Failed to create bootstrap marker file");
@@ -925,25 +926,26 @@ common::Result<bool> SnapshotFinder::download_snapshot_from_best_source(
     
     if (!download_success) {
       std::cout << "⚠️  All devnet snapshot downloads failed - this is common for development environments" << std::endl;
-      std::cout << "🔧 Generating minimal bootstrap snapshot for development..." << std::endl;
+      std::cout << "🔧 Creating bootstrap marker (NOT a real snapshot) for genesis-based startup..." << std::endl;
       
-      // Create a minimal bootstrap "snapshot" for development
+      // Create a bootstrap marker file (NOT a real snapshot)
       if (progress_callback) {
-        progress_callback("Creating bootstrap snapshot", 90, 100);
+        progress_callback("Creating bootstrap marker", 90, 100);
       }
       
-      // Create a minimal snapshot file that indicates bootstrap mode
+      // Create a bootstrap marker file that indicates no real snapshot was available
       std::ofstream bootstrap_marker(output_path);
       if (bootstrap_marker.is_open()) {
-        bootstrap_marker << "# Slonana Bootstrap Snapshot Marker\n";
-        bootstrap_marker << "# This file indicates that snapshot download failed\n";
-        bootstrap_marker << "# and bootstrap mode should be used instead\n";
+        bootstrap_marker << "# Slonana Bootstrap Marker - NOT A REAL SNAPSHOT\n";
+        bootstrap_marker << "# This file indicates that NO real snapshot was downloaded\n";
+        bootstrap_marker << "# Validator must create genesis from scratch (no snapshot data)\n";
         bootstrap_marker << "network=" << config_.network << "\n";
         bootstrap_marker << "slot=" << snapshot_slot << "\n";
         bootstrap_marker << "created=" << std::time(nullptr) << "\n";
+        bootstrap_marker << "reason=no_accessible_devnet_snapshots\n";
         bootstrap_marker.close();
         
-        std::cout << "✅ Bootstrap marker created - validator will use genesis bootstrap" << std::endl;
+        std::cout << "✅ Bootstrap marker created - validator will start from genesis (no snapshot data)" << std::endl;
         download_success = true;
       }
     }
