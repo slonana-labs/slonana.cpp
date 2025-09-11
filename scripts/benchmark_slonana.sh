@@ -726,7 +726,7 @@ start_validator() {
         validator_args+=(--identity "$IDENTITY_FILE")
     fi
     
-    # Use exact format from --help: separate arguments, not combined strings
+    # Use correct format matching actual CLI interface: combined address:port format
     validator_args+=(--rpc-bind-address "127.0.0.1:$RPC_PORT")
     validator_args+=(--gossip-bind-address "127.0.0.1:$GOSSIP_PORT")
     validator_args+=(--log-level info)
@@ -957,8 +957,8 @@ test_transaction_throughput() {
     while [[ $readiness_wait -lt $readiness_timeout ]]; do
         log_info "🔍 Testing validator RPC readiness... ($readiness_wait/${readiness_timeout}s)"
         
-        # Test basic RPC connectivity
-        if curl -s -f "http://localhost:$RPC_PORT/health" > /dev/null 2>&1; then
+        # Test basic RPC connectivity (don't use -f flag as health endpoint may return JSON-RPC error response)
+        if curl -s "http://localhost:$RPC_PORT/health" > /dev/null 2>&1; then
             log_info "✅ Basic RPC health endpoint responsive"
             
             # Test JSON-RPC method availability
