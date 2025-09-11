@@ -1254,9 +1254,9 @@ test_transaction_throughput() {
         log_info "DEBUG: Created mock keypair files for RPC testing (CLI tools not available)"
     fi
 
-    # **CRITICAL FIX**: Pre-flight funding with CLI-compatible method 
-    # This addresses the CLI-RPC state synchronization issue by using CLI funding instead of RPC-only
-    log_info "🔧 Pre-flight funding using CLI for state synchronization..."
+    # **ENHANCED PRE-FLIGHT FUNDING**: Robust balance checking and funding with decimal support
+    # This addresses funding failures by implementing comprehensive balance validation and larger funding amounts
+    log_info "🔧 Enhanced pre-flight funding using CLI with decimal balance support..."
     
     # Generate public key for sender from keypair file  
     local sender_pubkey_cli
@@ -1279,105 +1279,191 @@ test_transaction_throughput() {
         return 0
     fi
     
-    # **CRITICAL FIX**: Use CLI airdrop instead of RPC to ensure CLI sees the funding
-    log_info "💰 Pre-flight: Fund account using CLI airdrop for state consistency..."
-    local MIN_BAL_SOL=10  # 10 SOL minimum required
-    local MAX_FUNDING_TRIES=6
+    # **ENHANCED FUNDING LOGIC**: Better balance checking with decimal support and larger funding amounts
+    log_info "💰 Enhanced pre-flight funding with robust balance validation..."
+    
+    # **IMPROVED PARAMETERS**: Based on user feedback to prevent insufficient funds
+    local REQUIRED_BALANCE_SOL=50.0    # 50 SOL minimum (increased from 10)
+    local FUNDING_AMOUNT_SOL=500       # 500 SOL per attempt (increased from 100)
+    local MAX_FUNDING_TRIES=8          # 8 attempts (increased from 6)
     local funding_attempt=0
     local funding_validated=false
     
-    for funding_attempt in $(seq 1 $MAX_FUNDING_TRIES); do
-        log_info "🔄 CLI funding attempt $funding_attempt/$MAX_FUNDING_TRIES - requesting 100 SOL..."
+    # **ROBUST BALANCE CHECKING FUNCTION**: Supports decimal comparison using bc
+    check_balance_sufficient() {
+        local account="$1"
+        local required="$2"
         
-        # Use CLI airdrop instead of RPC to ensure CLI state consistency
-        if timeout 30s solana airdrop 100 "$sender_pubkey_cli" --url "http://localhost:$RPC_PORT" 2>/dev/null; then
-            log_info "✅ CLI airdrop successful, validating balance..."
-            sleep 3
-            
-            # Validate using CLI balance check (this ensures CLI sees the funding)
-            local current_balance_output current_balance_sol=0
-            current_balance_output=$(timeout 15s solana balance "$sender_keypair" --url "http://localhost:$RPC_PORT" 2>&1) || current_balance_output="Balance check failed"
-            
-            # Extract SOL amount from balance output (format: "X.XXX SOL")
-            if [[ "$current_balance_output" =~ ([0-9]+\.?[0-9]*)[[:space:]]*SOL ]]; then
-                current_balance_sol="${BASH_REMATCH[1]}"
-                current_balance_sol=${current_balance_sol%.*}  # Remove decimals for integer comparison
-            fi
-            
-            log_info "📊 CLI balance validation: $current_balance_sol SOL (from: $current_balance_output)"
-            
-            # Check if balance meets minimum requirements
-            if [[ "$current_balance_sol" -ge "$MIN_BAL_SOL" ]]; then
-                log_info "✅ Pre-flight CLI funding validation PASSED: $current_balance_sol SOL available"
-                funding_validated=true
-                break
+        # Get balance with enhanced error handling
+        local balance_output balance_value
+        balance_output=$(timeout 15s solana balance "$account" --url "http://localhost:$RPC_PORT" 2>&1) || balance_output="Balance check failed"
+        
+        # Extract numerical balance value (handle various formats)
+        if [[ "$balance_output" =~ ([0-9]+\.?[0-9]*)[[:space:]]*SOL ]]; then
+            balance_value="${BASH_REMATCH[1]}"
+        else
+            log_warning "Could not parse balance from: $balance_output"
+            return 1
+        fi
+        
+        # Use bc for decimal comparison if available, fallback to bash arithmetic
+        if command -v bc &> /dev/null; then
+            if (( $(echo "$balance_value >= $required" | bc -l) )); then
+                log_info "📊 Balance check PASSED: $balance_value SOL >= $required SOL (using bc)"
+                return 0
             else
-                log_warning "⚠️  Balance below minimum: $current_balance_sol SOL < $MIN_BAL_SOL SOL, retrying..."
+                log_info "📊 Balance check FAILED: $balance_value SOL < $required SOL (using bc)"
+                return 1
             fi
         else
-            log_warning "❌ CLI airdrop attempt $funding_attempt failed"
+            # Fallback: convert to integer comparison (multiply by 1000 for milliSOL precision)
+            local balance_milli=$(echo "$balance_value * 1000" | awk '{printf "%.0f", $1}')
+            local required_milli=$(echo "$required * 1000" | awk '{printf "%.0f", $1}')
             
-            # **ENHANCED DIAGNOSTICS**: Add diagnostic information when airdrop fails
-            log_info "🔍 Airdrop failure diagnostics:"
-            
-            # Check if validator is still accepting requests
-            log_info "   Testing validator connectivity after failed airdrop..."
-            if timeout 10s solana cluster-version --url "http://localhost:$RPC_PORT" >/dev/null 2>&1; then
-                log_info "   ✅ Validator is responding to cluster-version queries"
+            if [[ "$balance_milli" -ge "$required_milli" ]]; then
+                log_info "📊 Balance check PASSED: $balance_value SOL >= $required SOL (using awk)"
+                return 0
             else
-                log_warning "   ❌ Validator not responding to cluster-version queries"
+                log_info "📊 Balance check FAILED: $balance_value SOL < $required SOL (using awk)"
+                return 1
             fi
+        fi
+    }
+    
+    # **INITIAL BALANCE CHECK**: Check current balance before attempting funding
+    log_info "🔍 Initial balance check for account: $sender_pubkey_cli"
+    if check_balance_sufficient "$sender_keypair" "$REQUIRED_BALANCE_SOL"; then
+        log_info "✅ Account already has sufficient funds, skipping funding"
+        funding_validated=true
+    else
+        log_info "💰 Account needs funding, starting enhanced funding process..."
+        
+        # **ENHANCED FUNDING LOOP**: Larger amounts and better error handling
+        for funding_attempt in $(seq 1 $MAX_FUNDING_TRIES); do
+            log_info "🔄 Enhanced funding attempt $funding_attempt/$MAX_FUNDING_TRIES - requesting $FUNDING_AMOUNT_SOL SOL..."
             
-            # Check validator status
-            log_info "   Testing validator status..."
-            local validators_output
-            validators_output=$(timeout 15s solana validators --url "http://localhost:$RPC_PORT" 2>&1) || validators_output="Validators query failed"
-            log_info "   Validators output: $validators_output"
-            
-            # Check if validator process is still running
-            if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
-                local validator_pid
-                validator_pid=$(cat "$RESULTS_DIR/validator.pid" 2>/dev/null) || validator_pid="unknown"
-                if [[ -n "$validator_pid" ]] && kill -0 "$validator_pid" 2>/dev/null; then
-                    log_info "   ✅ Validator process is still running (PID: $validator_pid)"
+            # **LARGER FUNDING AMOUNTS**: Use 500 SOL to ensure sufficient funds for entire test duration
+            if timeout 45s solana airdrop "$FUNDING_AMOUNT_SOL" "$sender_pubkey_cli" --url "http://localhost:$RPC_PORT" 2>/dev/null; then
+                log_info "✅ Large CLI airdrop successful, validating balance..."
+                sleep 5  # Longer wait for large funding to settle
+                
+                # **ROBUST BALANCE VALIDATION**: Use enhanced balance checking
+                if check_balance_sufficient "$sender_keypair" "$REQUIRED_BALANCE_SOL"; then
+                    log_info "✅ Enhanced funding validation PASSED - sufficient funds confirmed"
+                    funding_validated=true
+                    break
                 else
-                    log_warning "   ❌ Validator process appears to have died"
+                    log_warning "⚠️  Balance still below required minimum after funding, retrying with higher amount..."
+                    # Increase funding amount for next attempt
+                    FUNDING_AMOUNT_SOL=$((FUNDING_AMOUNT_SOL + 200))
+                fi
+            else
+                log_warning "❌ CLI airdrop attempt $funding_attempt failed"
+                
+                # **COMPREHENSIVE DIAGNOSTICS**: Enhanced error reporting
+                log_info "🔍 Enhanced airdrop failure diagnostics:"
+                
+                # Check validator health
+                log_info "   Testing validator health..."
+                if timeout 10s curl -s "http://localhost:$RPC_PORT/health" >/dev/null 2>&1; then
+                    log_info "   ✅ Validator health endpoint responding"
+                else
+                    log_warning "   ❌ Validator health endpoint not responding"
+                fi
+                
+                # Check basic RPC connectivity
+                if timeout 10s solana cluster-version --url "http://localhost:$RPC_PORT" >/dev/null 2>&1; then
+                    log_info "   ✅ Basic RPC connectivity working"
+                else
+                    log_warning "   ❌ Basic RPC connectivity failed"
+                fi
+                
+                # Check if faucet is enabled
+                log_info "   Testing faucet availability..."
+                local faucet_test_output
+                faucet_test_output=$(timeout 15s solana airdrop 0.1 "$sender_pubkey_cli" --url "http://localhost:$RPC_PORT" 2>&1) || faucet_test_output="Faucet test failed"
+                log_info "   Faucet test result: $faucet_test_output"
+                
+                # Check validator process
+                if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
+                    local validator_pid
+                    validator_pid=$(cat "$RESULTS_DIR/validator.pid" 2>/dev/null) || validator_pid="unknown"
+                    if [[ -n "$validator_pid" ]] && kill -0 "$validator_pid" 2>/dev/null; then
+                        log_info "   ✅ Validator process running (PID: $validator_pid)"
+                    else
+                        log_error "   ❌ Validator process not running"
+                        break  # Exit funding loop if validator died
+                    fi
+                fi
+                
+                # Show validator logs
+                log_info "   Recent validator logs:"
+                if [[ -f "$RESULTS_DIR/validator.log" ]]; then
+                    tail -15 "$RESULTS_DIR/validator.log" | while IFS= read -r line; do
+                        log_info "     $line"
+                    done
+                else
+                    log_info "     No validator log available"
                 fi
             fi
             
-            # Show recent validator log output for debugging
-            log_info "   Recent validator log output:"
-            if [[ -f "$RESULTS_DIR/validator.log" ]]; then
-                tail -10 "$RESULTS_DIR/validator.log" | while IFS= read -r line; do
-                    log_info "     $line"
-                done
-            else
-                log_info "     No validator log available"
+            # **PROGRESSIVE BACKOFF**: Longer waits for larger funding operations
+            if [[ $funding_attempt -lt $MAX_FUNDING_TRIES ]]; then
+                local sleep_time=$((funding_attempt * 3))  # Increased backoff
+                log_info "⏳ Waiting ${sleep_time}s before next funding attempt..."
+                sleep $sleep_time
             fi
-        fi
-        
-        # Progressive backoff between attempts
-        if [[ $funding_attempt -lt $MAX_FUNDING_TRIES ]]; then
-            local sleep_time=$((funding_attempt * 2))
-            log_info "⏳ Waiting ${sleep_time}s before next funding attempt..."
-            sleep $sleep_time
-        fi
-    done
+        done
+    fi
     
-    # **FAIL FAST**: Hard abort if funding validation failed after max attempts
+    # **ENHANCED FAIL FAST**: Better error reporting with funding suggestions
     if [[ "$funding_validated" != "true" ]]; then
-        log_error "❌ PRE-FLIGHT CLI FUNDING FAILED after $MAX_FUNDING_TRIES attempts"
-        log_error "❌ Account $sender_pubkey_cli could not be funded via CLI airdrop"
-        log_error "❌ This indicates validator is not accepting CLI airdrops or is unavailable"
+        log_error "❌ ENHANCED PRE-FLIGHT FUNDING FAILED after $MAX_FUNDING_TRIES attempts"
+        log_error "❌ Account $sender_pubkey_cli could not be funded to required $REQUIRED_BALANCE_SOL SOL"
+        log_error "❌ Attempted funding amounts: $FUNDING_AMOUNT_SOL SOL per attempt"
+        log_error "❌ This indicates a fundamental issue with validator faucet or CLI connectivity"
+        log_error ""
+        log_error "🛠️  Suggested fixes:"
+        log_error "   1. Verify validator is started with --faucet-port and --rpc-faucet-address"
+        log_error "   2. Check if validator faucet has sufficient funds"
+        log_error "   3. Ensure CLI is properly configured for the validator endpoint"
+        log_error "   4. Consider increasing validator initialization time"
+        log_error "   5. Check for port conflicts or network issues"
+        log_error ""
         log_error "❌ ABORTING transaction throughput test to prevent endless loops"
         
-        # Write failure results and exit immediately
+        # **DETAILED FAILURE REPORTING**: Create comprehensive failure report
+        cat > "$RESULTS_DIR/funding_failure_report.txt" << EOF
+Enhanced Pre-flight Funding Failure Report
+==========================================
+Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+Account: $sender_pubkey_cli
+Required Balance: $REQUIRED_BALANCE_SOL SOL
+Funding Amount Per Attempt: $FUNDING_AMOUNT_SOL SOL
+Total Attempts: $MAX_FUNDING_TRIES
+Status: FAILED
+
+Failure Details:
+- All funding attempts exhausted without reaching required balance
+- Account may have received partial funding but not sufficient amount
+- Validator faucet appears to be unresponsive or insufficiently funded
+- This prevents transaction throughput testing due to insufficient funds
+
+Recommended Actions:
+1. Check validator startup logs for faucet initialization errors
+2. Verify --faucet-port and --rpc-faucet-address arguments are correct
+3. Ensure validator has adequate time to initialize faucet service
+4. Consider manual account funding for testing if automated funding fails
+5. Check for network connectivity issues preventing airdrop requests
+
+This report indicates a systemic issue with the funding mechanism that
+requires investigation before transaction throughput testing can proceed.
+EOF
+        
+        # Write failure results
         echo "0" > "$RESULTS_DIR/effective_tps.txt"
         echo "0" > "$RESULTS_DIR/successful_transactions.txt"
         echo "0" > "$RESULTS_DIR/submitted_requests.txt"
-        
-        # Create failure marker for debugging
-        echo "Pre-flight CLI funding validation failed after $MAX_FUNDING_TRIES attempts" > "$RESULTS_DIR/funding_failure.txt"
         
         return 0
     fi
@@ -1558,11 +1644,11 @@ test_transaction_throughput() {
                 log_info "DEBUG: Transaction failed (exit code: $transfer_result)"
                 log_info "DEBUG: Transfer output: $transfer_output"
                 
-                # If insufficient funds detected, try LIMITED emergency funding using CLI
+                # **ENHANCED EMERGENCY FUNDING**: Detect insufficient funds and apply robust emergency funding
                 if [[ "$transfer_output" == *"insufficient funds"* ]]; then
-                    log_warning "DEBUG: Insufficient funds detected, attempting LIMITED emergency funding using CLI..."
+                    log_warning "DEBUG: Insufficient funds detected, attempting ENHANCED emergency funding..."
                     
-                    # **CRITICAL FIX**: Hard limit on emergency funding attempts to prevent endless loops
+                    # **CRITICAL FIX**: Hard limit on emergency funding attempts to prevent endless loops  
                     local emergency_attempts_file="$RESULTS_DIR/emergency_attempts.txt"
                     
                     # Track total emergency attempts across the entire test
@@ -1571,14 +1657,39 @@ test_transaction_throughput() {
                         total_emergency_attempts=$(cat "$emergency_attempts_file" 2>/dev/null || echo "0")
                     fi
                     
-                    # **FAIL FAST**: Maximum 3 emergency funding attempts per test
-                    if [[ $total_emergency_attempts -ge 3 ]]; then
-                        log_error "❌ MAXIMUM EMERGENCY FUNDING ATTEMPTS REACHED ($total_emergency_attempts/3)"
-                        log_error "❌ Persistent funding failures indicate CLI/validator issues"
+                    # **ENHANCED LIMITS**: Increased to 5 attempts with larger funding amounts
+                    if [[ $total_emergency_attempts -ge 5 ]]; then
+                        log_error "❌ MAXIMUM EMERGENCY FUNDING ATTEMPTS REACHED ($total_emergency_attempts/5)"
+                        log_error "❌ Persistent funding failures despite enhanced amounts indicate systematic issues"
+                        log_error "❌ Account requires manual funding or validator faucet repair"
                         log_error "❌ ABORTING transaction test to prevent endless loops"
                         
-                        # Write abort marker and exit transaction loop immediately
-                        echo "Emergency funding limit reached after $total_emergency_attempts attempts" > "$RESULTS_DIR/emergency_abort.txt"
+                        # **COMPREHENSIVE ABORT REPORT**: Create detailed emergency funding failure report
+                        cat > "$RESULTS_DIR/emergency_funding_failure.txt" << EOF
+Emergency Funding Failure Report
+================================
+Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+Account: $sender_pubkey_cli
+Emergency Attempts: $total_emergency_attempts/5
+Last Transfer Output: $transfer_output
+
+Emergency Funding History:
+$(cat "$emergency_attempts_file" 2>/dev/null || echo "No emergency attempts log")
+
+Status: CRITICAL FAILURE
+- Account consistently reports insufficient funds despite multiple emergency funding attempts
+- Emergency funding amounts: 200+ SOL per attempt
+- This indicates either validator faucet is broken or account is draining funds faster than expected
+- Manual intervention required to resolve funding issues
+
+Recommended Actions:
+1. Check validator faucet configuration and funding
+2. Verify account is not being drained by external processes  
+3. Consider using a pre-funded account for testing
+4. Investigate validator logs for faucet errors
+5. Manually fund account with larger amounts if needed
+EOF
+                        
                         break 2  # Break out of both transaction batch loop and main while loop
                     fi
                     
@@ -1586,33 +1697,35 @@ test_transaction_throughput() {
                     total_emergency_attempts=$((total_emergency_attempts + 1))
                     echo "$total_emergency_attempts" > "$emergency_attempts_file"
                     
-                    log_info "DEBUG: Emergency funding attempt $total_emergency_attempts/3 for CLI account: $sender_pubkey_cli"
+                    # **ENHANCED EMERGENCY FUNDING**: Larger amounts based on attempt number
+                    local emergency_funding_amount=$((200 + (total_emergency_attempts * 100)))  # 200, 300, 400, 500, 600 SOL
+                    log_info "DEBUG: Enhanced emergency funding attempt $total_emergency_attempts/5"
+                    log_info "DEBUG: Requesting $emergency_funding_amount SOL for account: $sender_pubkey_cli"
                     
-                    # **CRITICAL FIX**: Use CLI airdrop for emergency funding to ensure CLI consistency
-                    if timeout 30s solana airdrop 50 "$sender_pubkey_cli" --url "http://localhost:$RPC_PORT" 2>/dev/null; then
-                        log_info "DEBUG: Emergency CLI airdrop completed, waiting for confirmation..."
-                        sleep 3
+                    # **ENHANCED EMERGENCY AIRDROP**: Larger amounts and longer timeouts
+                    if timeout 45s solana airdrop "$emergency_funding_amount" "$sender_pubkey_cli" --url "http://localhost:$RPC_PORT" 2>/dev/null; then
+                        log_info "DEBUG: Large emergency CLI airdrop completed, waiting for confirmation..."
+                        sleep 5  # Longer wait for large amounts
                         
-                        # Verify emergency funding worked using CLI
-                        local emergency_balance_output emergency_balance_sol=0
-                        emergency_balance_output=$(timeout 15s solana balance "$sender_keypair" --url "http://localhost:$RPC_PORT" 2>&1) || emergency_balance_output="Emergency balance check failed"
-                        
-                        # Extract SOL amount from balance output
-                        if [[ "$emergency_balance_output" =~ ([0-9]+\.?[0-9]*)[[:space:]]*SOL ]]; then
-                            emergency_balance_sol="${BASH_REMATCH[1]}"
-                            emergency_balance_sol=${emergency_balance_sol%.*}  # Remove decimals for integer comparison
-                        fi
-                        
-                        log_info "DEBUG: Post-emergency CLI balance: $emergency_balance_sol SOL (from: $emergency_balance_output)"
-                        
-                        if [[ "$emergency_balance_sol" -gt 5 ]]; then  # At least 5 SOL
-                            log_info "✅ Emergency CLI funding successful: $emergency_balance_sol SOL"
+                        # **ROBUST EMERGENCY VALIDATION**: Use enhanced balance checking
+                        if check_balance_sufficient "$sender_keypair" "10.0"; then  # At least 10 SOL required
+                            log_info "✅ Enhanced emergency funding successful - sufficient balance confirmed"
+                            
+                            # Log successful emergency funding for monitoring
+                            echo "$(date): Emergency funding successful - $emergency_funding_amount SOL funded" >> "$RESULTS_DIR/emergency_funding_log.txt"
                         else
-                            log_error "❌ Emergency CLI funding failed - balance still insufficient: $emergency_balance_sol SOL"
-                            log_error "❌ This indicates CLI airdrop is not working"
+                            log_error "❌ Enhanced emergency funding failed - balance still insufficient after $emergency_funding_amount SOL"
+                            log_error "❌ This suggests account is draining funds or faucet is malfunctioning"
+                            
+                            # Log emergency funding failure for debugging
+                            echo "$(date): Emergency funding failed - $emergency_funding_amount SOL funded but insufficient balance" >> "$RESULTS_DIR/emergency_funding_log.txt"
                         fi
                     else
-                        log_error "❌ Emergency CLI airdrop request failed - validator may be unresponsive"
+                        log_error "❌ Large emergency CLI airdrop request failed - validator faucet may be unresponsive"
+                        log_error "❌ Attempted amount: $emergency_funding_amount SOL"
+                        
+                        # Log emergency funding attempt failure
+                        echo "$(date): Emergency funding attempt failed - airdrop request for $emergency_funding_amount SOL failed" >> "$RESULTS_DIR/emergency_funding_log.txt"
                     fi
                 fi
             fi
