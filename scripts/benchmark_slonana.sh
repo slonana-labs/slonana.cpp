@@ -978,10 +978,11 @@ test_transaction_throughput() {
         log_info "DEBUG: Created mock keypair files for RPC testing (CLI tools not available)"
     fi
 
-    # Airdrop SOL to sender using RPC (with improved error handling)
-    log_verbose "Requesting airdrop via RPC..."
+    # **CRITICAL FIX**: Pre-fund test accounts before starting transaction tests
+    # This addresses the "insufficient funds" errors by ensuring accounts are properly funded upfront
+    log_info "🔧 Pre-funding test accounts to ensure sufficient balance..."
     
-    # Generate public key for sender from keypair file
+    # Generate public key for sender from keypair file  
     local sender_pubkey_rpc
     if command -v solana-keygen &> /dev/null; then
         log_info "DEBUG: Extracting sender pubkey using Solana CLI..."
@@ -1000,118 +1001,106 @@ test_transaction_throughput() {
         log_info "DEBUG: Generated sender pubkey for RPC: $sender_pubkey_rpc"
     fi
     
+    # **ENHANCED PRE-FUNDING**: Fund account with substantial amount before testing
+    log_info "💰 Funding sender account with 1000 SOL for comprehensive testing..."
     local airdrop_attempts=0
     local airdrop_success=false
-    while [[ $airdrop_attempts -lt 5 ]]; do
-        if request_airdrop_rpc "$sender_pubkey_rpc" 100000000000; then  # 100 SOL in lamports
-            airdrop_success=true
-            break
-        fi
-        airdrop_attempts=$((airdrop_attempts + 1))
-        sleep 2
+    
+    # Multiple funding attempts with increasing amounts to ensure sufficient balance
+    local funding_amounts=(1000000000000 1500000000000 2000000000000)  # 1000, 1500, 2000 SOL
+    
+    for funding_amount in "${funding_amounts[@]}"; do
+        log_info "DEBUG: Attempting to fund with $(($funding_amount / 1000000000)) SOL..."
+        airdrop_attempts=0
+        
+        while [[ $airdrop_attempts -lt 3 ]]; do
+            if request_airdrop_rpc "$sender_pubkey_rpc" "$funding_amount"; then
+                log_info "✅ Successfully funded account with $(($funding_amount / 1000000000)) SOL"
+                airdrop_success=true
+                break 2  # Break out of both loops
+            fi
+            airdrop_attempts=$((airdrop_attempts + 1))
+            log_info "DEBUG: Funding attempt $airdrop_attempts failed, retrying..."
+            sleep 3
+        done
     done
     
     if [[ "$airdrop_success" == "false" ]]; then
-        log_warning "All airdrop attempts failed via RPC - validator may have issues"
-        log_warning "Skipping transaction throughput test due to airdrop failures"
+        log_error "❌ All pre-funding attempts failed - validator RPC may be unavailable"
+        log_warning "Skipping transaction throughput test due to funding failures"
         echo "0" > "$RESULTS_DIR/effective_tps.txt"
         echo "0" > "$RESULTS_DIR/successful_transactions.txt"
         echo "0" > "$RESULTS_DIR/submitted_requests.txt"
         return 0
     fi
 
-    # Wait for airdrop to be processed
-    log_info "DEBUG: Waiting for airdrop to be processed..."
-    sleep 5
+    # Wait for funding to be processed and verify
+    log_info "DEBUG: Waiting for funding to be processed and confirmed..."
+    sleep 8
     
-    # Verify balance using RPC
+    # Verify balance using RPC  
     local balance=$(get_balance_rpc "$sender_pubkey_rpc")
-    log_info "DEBUG: Sender balance after airdrop: $balance lamports"
+    log_info "DEBUG: Sender balance after pre-funding: $balance lamports ($(($balance / 1000000000)) SOL)"
     
-    # Force CLI to use the exact same account that receives RPC airdrops
+    # **CRITICAL**: Ensure CLI and RPC operations use the same account
     if command -v solana &> /dev/null; then
-        log_info "DEBUG: Fixing CLI-RPC account state synchronization..."
+        log_info "🔄 Ensuring CLI-RPC account synchronization..."
         
-        # Extract the CLI pubkey that will be used for transfers
+        # The CLI pubkey should already match the RPC pubkey since we extracted it from the same keypair file
+        # This is just a verification step to ensure consistency
         local cli_pubkey
         cli_pubkey=$(solana-keygen pubkey "$sender_keypair" 2>/dev/null) || cli_pubkey="unknown"
         
-        if [[ "$cli_pubkey" == "unknown" ]]; then
-            log_error "Cannot extract pubkey from CLI keypair file: $sender_keypair"
+        if [[ "$cli_pubkey" != "$sender_pubkey_rpc" ]]; then
+            log_error "❌ CLI-RPC pubkey mismatch: CLI=$cli_pubkey, RPC=$sender_pubkey_rpc"
             echo "0" > "$RESULTS_DIR/effective_tps.txt"
             echo "0" > "$RESULTS_DIR/successful_transactions.txt"
             echo "0" > "$RESULTS_DIR/submitted_requests.txt"
             return 0
         fi
         
-        log_info "DEBUG: CLI will use account: $cli_pubkey"
+        log_info "✅ CLI-RPC pubkey consistency verified: $cli_pubkey"
         
-        # Always use the CLI pubkey for RPC operations to ensure perfect synchronization
-        sender_pubkey_rpc="$cli_pubkey"
+        # Force CLI cache refresh to see the pre-funded balance
+        log_info "🔄 Forcing CLI cache refresh to recognize pre-funded balance..."
+        local cli_refresh_attempts=0
+        local cli_balance_detected=false
         
-        # Fund the account with large amount
-        log_info "DEBUG: Funding account $sender_pubkey_rpc with 500 SOL..."
-        local funding_success=false
-        
-        for attempt in 1 2 3; do
-            log_info "DEBUG: Funding attempt $attempt/3"
-            if request_airdrop_rpc "$sender_pubkey_rpc" 500000000000; then  # 500 SOL
-                sleep 5  # Allow processing time
+        while [[ $cli_refresh_attempts -lt 8 ]]; do
+            cli_refresh_attempts=$((cli_refresh_attempts + 1))
+            
+            # Multiple cache refresh methods
+            timeout 15s solana balance "$sender_keypair" >/dev/null 2>&1 || true
+            timeout 10s solana cluster-version >/dev/null 2>&1 || true
+            
+            # Check if CLI now sees the funded balance
+            local cli_balance_output
+            cli_balance_output=$(timeout 15s solana balance "$sender_keypair" 2>&1) || cli_balance_output="CLI check failed"
+            
+            if [[ "$cli_balance_output" == *"SOL"* ]]; then
+                local cli_balance_sol
+                cli_balance_sol=$(echo "$cli_balance_output" | grep -o '[0-9.]*' | head -1) || cli_balance_sol="0"
                 
-                # Verify RPC balance
-                local rpc_balance=$(get_balance_rpc "$sender_pubkey_rpc")
-                log_info "DEBUG: RPC shows balance: $rpc_balance lamports"
+                log_info "DEBUG: CLI balance refresh attempt $cli_refresh_attempts: $cli_balance_sol SOL"
                 
-                # Critical: Force CLI to refresh account cache by explicitly checking balance
-                log_info "DEBUG: Forcing CLI account cache refresh..."
-                local cli_refresh_attempts=0
-                while [[ $cli_refresh_attempts -lt 10 ]]; do
-                    cli_refresh_attempts=$((cli_refresh_attempts + 1))
-                    
-                    # Force CLI to query the account to refresh its cache
-                    local cli_balance_output
-                    cli_balance_output=$(timeout 15s solana balance "$sender_keypair" --verbose 2>&1) || cli_balance_output="CLI check failed"
-                    log_info "DEBUG: CLI cache refresh attempt $cli_refresh_attempts: $cli_balance_output"
-                    
-                    # Check if CLI now sees the funds
-                    if [[ "$cli_balance_output" == *"SOL"* ]]; then
-                        local cli_balance_sol
-                        cli_balance_sol=$(echo "$cli_balance_output" | grep -o '[0-9.]*' | head -1) || cli_balance_sol="0"
-                        
-                        # Convert to compare with minimum threshold
-                        if [[ -n "$cli_balance_sol" ]] && command -v bc &> /dev/null; then
-                            # Check if CLI balance is at least 100 SOL
-                            if (( $(echo "$cli_balance_sol >= 100" | bc -l 2>/dev/null || echo "0") )); then
-                                log_info "DEBUG: CLI cache refreshed successfully - balance: $cli_balance_sol SOL"
-                                funding_success=true
-                                break 2  # Break out of both loops
-                            fi
-                        fi
+                # Check if CLI sees at least 500 SOL (reasonable amount for testing)
+                if [[ -n "$cli_balance_sol" ]] && command -v bc &> /dev/null; then
+                    if (( $(echo "$cli_balance_sol >= 500" | bc -l 2>/dev/null || echo "0") )); then
+                        log_info "✅ CLI cache refresh successful - CLI sees $cli_balance_sol SOL"
+                        cli_balance_detected=true
+                        break
                     fi
-                    
-                    log_info "DEBUG: CLI cache refresh attempt $cli_refresh_attempts failed, retrying..."
-                    sleep 2
-                done
-                
-                if [[ $funding_success == true ]]; then
-                    break
                 fi
             fi
             
-            sleep 3
+            log_info "DEBUG: CLI cache refresh attempt $cli_refresh_attempts - balance not detected yet, retrying..."
+            sleep 2
         done
         
-        if [[ "$funding_success" != "true" ]]; then
-            log_error "Failed to establish CLI-visible funding after all attempts"
-            log_info "DEBUG: This indicates a fundamental issue with CLI-RPC account state synchronization"
-            echo "0" > "$RESULTS_DIR/effective_tps.txt"
-            echo "0" > "$RESULTS_DIR/successful_transactions.txt"
-            echo "0" > "$RESULTS_DIR/submitted_requests.txt"
-            return 0
+        if [[ "$cli_balance_detected" != "true" ]]; then
+            log_warning "⚠️  CLI cache refresh did not detect sufficient balance after $cli_refresh_attempts attempts"
+            log_info "DEBUG: CLI may still work for transfers, proceeding with testing..."
         fi
-        
-        log_success "CLI-RPC account synchronization established successfully"
-        log_info "DEBUG: Account $sender_pubkey_rpc is properly funded and CLI cache refreshed"
     fi
     
     # Convert lamports to SOL for comparison (1 SOL = 1000000000 lamports)

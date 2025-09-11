@@ -311,6 +311,9 @@ private:
   void process_batches();
   void create_batch_if_needed();
   void process_transaction_queue();
+  
+  // Utility methods for transaction processing
+  std::string encode_base58(const std::vector<uint8_t> &data) const;
 
   // Pipeline stage functions
   bool validate_batch(std::shared_ptr<TransactionBatch> batch);
