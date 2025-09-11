@@ -697,22 +697,26 @@ start_validator() {
     log_verbose "  Gossip Bind: 127.0.0.1:$GOSSIP_PORT"
     log_verbose "  CI Mode: Enabled (sustained activity)"
 
-    # Prepare validator arguments
+    # Prepare validator arguments - FIXED: Use correct CLI format matching actual validator interface
     local validator_args=()
+    
+    # The validator defaults to "validator" command, so no need to explicitly add it
+    # unless we want to be explicit about it
+    
+    # Add required arguments with correct format matching --help output
+    validator_args+=(--ledger-path "$LEDGER_DIR")
     
     if [[ -n "$IDENTITY_FILE" ]]; then
         validator_args+=(--identity "$IDENTITY_FILE")
     fi
     
-    validator_args+=(
-        --ledger-path "$LEDGER_DIR"
-        --rpc-bind-address "127.0.0.1:$RPC_PORT"
-        --rpc-port "$RPC_PORT"
-        --gossip-bind-address "127.0.0.1:$GOSSIP_PORT"
-        --log-level info
-        --enable-rpc-transaction-history
-        --enable-cpi-and-log-storage
-    )
+    # Use exact format from --help: separate arguments, not combined strings
+    validator_args+=(--rpc-bind-address "127.0.0.1:$RPC_PORT")
+    validator_args+=(--gossip-bind-address "127.0.0.1:$GOSSIP_PORT")
+    validator_args+=(--log-level info)
+    
+    # Add network ID to help with proper initialization
+    validator_args+=(--network-id devnet)
 
     # Start validator in background with enhanced logging
     "$VALIDATOR_BIN" "${validator_args[@]}" > "$RESULTS_DIR/validator.log" 2>&1 &
