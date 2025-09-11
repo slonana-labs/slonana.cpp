@@ -1170,29 +1170,53 @@ test_transaction_throughput() {
         return 0
     fi
 
+    # **CRITICAL FIX**: Add extra wait time for validator airdrop readiness
+    log_info "⏳ Ensuring validator is fully ready for airdrop operations..."
+    log_info "   Waiting additional 10 seconds for validator internal initialization..."
+    sleep 10
+    log_info "✅ Validator airdrop readiness wait completed"
+
     # Configure Solana CLI if available with comprehensive validation
     if command -v solana >/dev/null 2>&1; then
         log_info "DEBUG: Configuring and validating Solana CLI..."
         
-        # Configure the RPC endpoint
-        if ! solana config set --url "http://localhost:$RPC_PORT" > /dev/null 2>&1; then
-            log_error "Failed to configure Solana CLI RPC endpoint"
+        # Configure the RPC endpoint with enhanced validation
+        local expected_url="http://localhost:$RPC_PORT"
+        log_info "🔧 Configuring Solana CLI for endpoint: $expected_url"
+        
+        if ! solana config set --url "$expected_url" > /dev/null 2>&1; then
+            log_error "❌ Failed to configure Solana CLI RPC endpoint"
             echo "0" > "$RESULTS_DIR/effective_tps.txt"
             echo "0" > "$RESULTS_DIR/successful_transactions.txt"
             echo "0" > "$RESULTS_DIR/submitted_requests.txt"
             return 0
         fi
         
-        # Verify the configuration
+        # Verify the configuration with enhanced validation
         local current_rpc_url
         current_rpc_url=$(solana config get | grep "RPC URL" | awk '{print $3}' 2>/dev/null) || current_rpc_url="unknown"
-        log_info "DEBUG: Solana CLI configured for RPC endpoint: $current_rpc_url"
+        log_info "✅ Solana CLI configured for RPC endpoint: $current_rpc_url"
         
-        # Final connectivity test (should succeed since we verified readiness above)
-        if ! timeout 10s solana cluster-version >/dev/null 2>&1; then
-            log_warning "Solana CLI connectivity issue after readiness confirmation - proceeding anyway"
+        # Verify endpoint matches expectation
+        if [[ "$current_rpc_url" != "$expected_url" ]]; then
+            log_warning "⚠️  CLI endpoint mismatch: expected $expected_url, got $current_rpc_url"
+        fi
+        
+        # **ENHANCED DIAGNOSTICS**: Test validator readiness from CLI perspective
+        log_info "🔍 Testing validator readiness from CLI perspective..."
+        
+        # Test cluster-version (basic connectivity)
+        if timeout 10s solana cluster-version --url "$expected_url" >/dev/null 2>&1; then
+            log_info "✅ CLI cluster-version command successful"
         else
-            log_info "DEBUG: Solana CLI connectivity to RPC endpoint verified"
+            log_warning "⚠️  CLI cluster-version command failed - validator may not be fully ready"
+        fi
+        
+        # Test validators command (shows if validator is accepting requests)
+        if timeout 10s solana validators --url "$expected_url" >/dev/null 2>&1; then
+            log_info "✅ CLI validators command successful"
+        else
+            log_warning "⚠️  CLI validators command failed - validator may not be accepting all requests"
         fi
     else
         log_warning "Solana CLI not available, skipping transaction throughput test"
@@ -1287,6 +1311,44 @@ test_transaction_throughput() {
             fi
         else
             log_warning "❌ CLI airdrop attempt $funding_attempt failed"
+            
+            # **ENHANCED DIAGNOSTICS**: Add diagnostic information when airdrop fails
+            log_info "🔍 Airdrop failure diagnostics:"
+            
+            # Check if validator is still accepting requests
+            log_info "   Testing validator connectivity after failed airdrop..."
+            if timeout 10s solana cluster-version --url "http://localhost:$RPC_PORT" >/dev/null 2>&1; then
+                log_info "   ✅ Validator is responding to cluster-version queries"
+            else
+                log_warning "   ❌ Validator not responding to cluster-version queries"
+            fi
+            
+            # Check validator status
+            log_info "   Testing validator status..."
+            local validators_output
+            validators_output=$(timeout 15s solana validators --url "http://localhost:$RPC_PORT" 2>&1) || validators_output="Validators query failed"
+            log_info "   Validators output: $validators_output"
+            
+            # Check if validator process is still running
+            if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
+                local validator_pid
+                validator_pid=$(cat "$RESULTS_DIR/validator.pid" 2>/dev/null) || validator_pid="unknown"
+                if [[ -n "$validator_pid" ]] && kill -0 "$validator_pid" 2>/dev/null; then
+                    log_info "   ✅ Validator process is still running (PID: $validator_pid)"
+                else
+                    log_warning "   ❌ Validator process appears to have died"
+                fi
+            fi
+            
+            # Show recent validator log output for debugging
+            log_info "   Recent validator log output:"
+            if [[ -f "$RESULTS_DIR/validator.log" ]]; then
+                tail -10 "$RESULTS_DIR/validator.log" | while IFS= read -r line; do
+                    log_info "     $line"
+                done
+            else
+                log_info "     No validator log available"
+            fi
         fi
         
         # Progressive backoff between attempts
