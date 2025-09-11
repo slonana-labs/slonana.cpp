@@ -81,6 +81,11 @@ struct ValidatorConfig {
   std::string snapshot_mirror = "";     // URL for snapshot mirror
   bool allow_stale_rpc = false;         // Allow RPC before caught up
   std::string upstream_rpc_url = "";    // For auto-discovery and catch-up
+
+  // Faucet configuration (for CLI airdrop support)
+  bool enable_faucet = false;              // Enable faucet functionality
+  uint32_t faucet_port = 9900;             // Faucet service port
+  std::string rpc_faucet_address = "127.0.0.1:9900"; // Faucet bind address
 };
 
 /**

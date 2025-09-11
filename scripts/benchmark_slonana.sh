@@ -789,9 +789,14 @@ start_validator() {
     validator_args+=(--network-id devnet)
     validator_args+=(--allow-stale-rpc)  # Allow RPC before fully caught up (helps with CI timeouts)
     
-    log_info "🚀 Starting validator with correct CLI arguments:"
+    # **FAUCET CONFIGURATION**: Enable faucet for CLI airdrop support
+    validator_args+=(--faucet-port 9900)  # Enable faucet on standard port
+    validator_args+=(--rpc-faucet-address "127.0.0.1:9900")  # Localhost-only faucet binding
+    
+    log_info "🚀 Starting validator with enhanced CLI arguments:"
     log_info "   RPC Bind Address: 127.0.0.1:$RPC_PORT"
     log_info "   Gossip Bind Address: 127.0.0.1:$GOSSIP_PORT"
+    log_info "   Faucet Address: 127.0.0.1:9900 (CLI airdrop support enabled)"
     log_verbose "   Full arguments: ${validator_args[*]}"
 
     # Start validator in background with enhanced logging

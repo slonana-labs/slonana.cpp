@@ -3565,6 +3565,15 @@ RpcResponse SolanaRpcServer::request_airdrop(const RpcRequest &request) {
   response.id_is_number = request.id_is_number;
 
   try {
+    // Check if faucet functionality is enabled
+    if (!config_.enable_faucet) {
+      std::cout << "RPC: Airdrop request denied - faucet functionality not enabled" << std::endl;
+      std::cout << "RPC: Use --faucet-port or --rpc-faucet-address to enable airdrop support" << std::endl;
+      return create_error_response(request.id, -32601, 
+                                   "Faucet not enabled. Use --faucet-port to enable airdrop support",
+                                   request.id_is_number);
+    }
+
     std::string address = extract_param_by_index(request.params, 0);
     std::string amount_str = extract_param_by_index(request.params, 1);
 
