@@ -591,7 +591,7 @@ bool SnapshotBootstrapManager::extract_snapshot_archive(
                   << std::endl;
         // List contents for debugging
         std::string list_cmd = "ls -la \"" + extract_dir + "\"";
-        std::system(list_cmd.c_str());
+        [[maybe_unused]] int debug_result = std::system(list_cmd.c_str());
         return true; // Continue anyway
       }
     } else {

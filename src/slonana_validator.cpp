@@ -322,7 +322,10 @@ common::Result<bool> SolanaValidator::initialize_identity() {
       identity_path.substr(0, identity_path.find_last_of("/\\"));
   if (!dir_path.empty()) {
     // Create directory if it doesn't exist (simplified for this implementation)
-    std::system(("mkdir -p " + dir_path).c_str());
+    int result = std::system(("mkdir -p " + dir_path).c_str());
+    if (result != 0) {
+      std::cerr << "Warning: Failed to create directory " << dir_path << std::endl;
+    }
   }
 
   // Try to load existing identity
