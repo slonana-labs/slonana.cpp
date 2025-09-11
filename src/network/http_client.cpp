@@ -26,6 +26,12 @@ HttpClient::get(const std::string &url,
 }
 
 HttpResponse
+HttpClient::head(const std::string &url,
+                 const std::map<std::string, std::string> &headers) {
+  return execute_request(url, "HEAD", "", headers);
+}
+
+HttpResponse
 HttpClient::post(const std::string &url, const std::string &data,
                  const std::map<std::string, std::string> &headers) {
   return execute_request(url, "POST", data, headers);

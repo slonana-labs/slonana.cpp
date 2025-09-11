@@ -30,6 +30,8 @@ public:
   // Basic HTTP operations
   HttpResponse get(const std::string &url,
                    const std::map<std::string, std::string> &headers = {});
+  HttpResponse head(const std::string &url,
+                    const std::map<std::string, std::string> &headers = {});
   HttpResponse post(const std::string &url, const std::string &data,
                     const std::map<std::string, std::string> &headers = {});
 
