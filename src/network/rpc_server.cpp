@@ -178,19 +178,29 @@ public:
 
     struct sockaddr_in address;
     address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
 
-    // Parse port from rpc_bind_address (format: "127.0.0.1:8899")
+    // Parse IP address and port from rpc_bind_address (format: "127.0.0.1:8899")
     std::string bind_addr = config_.rpc_bind_address;
     size_t colon_pos = bind_addr.find(':');
-    int port = 8899; // default
+    
+    std::string ip_address = "127.0.0.1"; // default to localhost
+    int port = 8899; // default port
+    
     if (colon_pos != std::string::npos) {
+      ip_address = bind_addr.substr(0, colon_pos);
       try {
         port = std::stoi(bind_addr.substr(colon_pos + 1));
       } catch (...) {
         port = 8899;
       }
     }
+    
+    // Convert IP address string to binary format
+    if (inet_pton(AF_INET, ip_address.c_str(), &address.sin_addr) <= 0) {
+      std::cerr << "Invalid IP address: " << ip_address << ", falling back to 127.0.0.1" << std::endl;
+      inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
+    }
+    
     address.sin_port = htons(port);
 
     if (bind(server_socket_, (struct sockaddr *)&address, sizeof(address)) <
