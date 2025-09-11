@@ -1,7 +1,7 @@
 #include "svm/account_loader.h"
 #include <algorithm>
 #include <iostream>
-#include <set>
+#include <unordered_set>
 
 namespace slonana {
 namespace svm {
@@ -12,7 +12,7 @@ public:
   AccountLoadingCallback *callback_;
   std::unordered_map<PublicKey, LoadedAccount> account_cache_;
   AccountLoader::CacheStats stats_;
-  std::set<PublicKey> accessed_accounts_;
+  std::unordered_set<PublicKey> accessed_accounts_;
 
   explicit Impl(AccountLoadingCallback *callback) : callback_(callback) {}
 
@@ -52,7 +52,7 @@ public:
                                const std::vector<bool> &is_writable,
                                size_t max_loaded_accounts_data_size) {
     // Check for duplicate accounts in writable positions
-    std::set<PublicKey> writable_accounts;
+    std::unordered_set<PublicKey> writable_accounts;
     for (size_t i = 0; i < account_keys.size() && i < is_writable.size(); ++i) {
       if (is_writable[i]) {
         if (writable_accounts.count(account_keys[i])) {

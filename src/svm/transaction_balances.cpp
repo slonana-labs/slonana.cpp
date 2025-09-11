@@ -1,8 +1,8 @@
 #include "svm/transaction_balances.h"
 #include <algorithm>
 #include <cmath>
-#include <set>
 #include <sstream>
+#include <unordered_set>
 
 namespace slonana {
 namespace svm {
@@ -106,7 +106,7 @@ void TransactionBalances::update_balances() {
   balances_.clear();
 
   // Combine all addresses from pre and post balances
-  std::set<PublicKey> all_addresses;
+  std::unordered_set<PublicKey> all_addresses;
   for (const auto &pair : pre_balances_) {
     all_addresses.insert(pair.first);
   }
@@ -206,7 +206,7 @@ BalanceCollector::CollectionStats BalanceCollector::get_collection_statistics(
   CollectionStats stats;
   stats.total_transactions = all_balances_.size();
 
-  std::set<PublicKey> affected_accounts;
+  std::unordered_set<PublicKey> affected_accounts;
 
   for (size_t i = 0; i < all_balances_.size(); ++i) {
     const auto &balances = all_balances_[i];
