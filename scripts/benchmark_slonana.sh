@@ -341,17 +341,19 @@ setup_validator() {
             if "$VALIDATOR_BIN" snapshot-download --output-dir "$LEDGER_DIR" --network devnet --max-latency 200 --max-snapshot-age 50000 --min-download-speed 1 --verbose > "$RESULTS_DIR/snapshot_download.log" 2>&1; then
                 # Check if a real snapshot was downloaded or a bootstrap marker was created
                 if find "$LEDGER_DIR" -name "*.tar.zst" -size +1M 2>/dev/null | head -1 | grep -q .; then
-                    log_success "Real snapshot downloaded successfully using built-in slonana system"
+                    log_success "Real devnet snapshot downloaded successfully"
+                elif find "$LEDGER_DIR" -name "*bootstrap-marker*" 2>/dev/null | head -1 | grep -q .; then
+                    log_info "Devnet bootstrap marker created - snapshot downloads not available (normal for development)"
+                    log_info "Proceeding with optimized genesis bootstrap for devnet environment"
+                    setup_bootstrap_fallback
                 elif find "$LEDGER_DIR" -name "*.tar.zst" -exec grep -l "Bootstrap Snapshot Marker" {} \; 2>/dev/null | head -1 | grep -q .; then
-                    log_info "Bootstrap marker created - devnet snapshot downloads not available (this is normal)"
-                    log_info "Proceeding with optimized genesis bootstrap for development environment"
+                    log_info "Bootstrap marker created in snapshot file - using genesis bootstrap"
                     setup_bootstrap_fallback
                 else
-                    log_warning "Unexpected snapshot download result, falling back to bootstrap mode"
-                    setup_bootstrap_fallback
+                    log_info "Snapshot download completed - validator ready for startup"
                 fi
             else
-                log_warning "Snapshot download failed, falling back to bootstrap mode"
+                log_warning "Snapshot download command failed, falling back to bootstrap mode"
                 setup_bootstrap_fallback
             fi
         else

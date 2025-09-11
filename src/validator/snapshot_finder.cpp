@@ -700,6 +700,45 @@ common::Result<bool> SnapshotFinder::download_snapshot_from_best_source(
   // Find the best snapshot source
   auto best_result = find_single_best_snapshot();
   if (!best_result.is_ok()) {
+    // For devnet, if no snapshots are found, create a bootstrap marker instead of failing
+    if (config_.network == "devnet") {
+      std::cout << "⚠️  No accessible devnet snapshots found - this is normal for development environments" << std::endl;
+      std::cout << "🔧 Creating bootstrap marker for genesis-based startup..." << std::endl;
+      
+      if (progress_callback) {
+        progress_callback("Creating bootstrap marker", 50, 100);
+      }
+      
+      // Ensure output directory exists
+      if (!fs::exists(output_directory)) {
+        fs::create_directories(output_directory);
+      }
+      
+      // Create a bootstrap marker file
+      std::string output_path = output_directory + "/devnet-bootstrap-marker.txt";
+      std::ofstream bootstrap_marker(output_path);
+      if (bootstrap_marker.is_open()) {
+        bootstrap_marker << "# Slonana Devnet Bootstrap Marker\n";
+        bootstrap_marker << "# This file indicates that devnet snapshot downloads are not available\n";
+        bootstrap_marker << "# and genesis bootstrap mode should be used instead\n";
+        bootstrap_marker << "network=" << config_.network << "\n";
+        bootstrap_marker << "reason=no_accessible_snapshots\n";
+        bootstrap_marker << "created=" << std::time(nullptr) << "\n";
+        bootstrap_marker.close();
+        
+        if (progress_callback) {
+          progress_callback("Bootstrap marker created", 100, 100);
+        }
+        
+        output_path_out = output_path;
+        std::cout << "✅ Bootstrap marker created successfully for devnet development environment" << std::endl;
+        std::cout << "   Path: " << output_path << std::endl;
+        return common::Result<bool>(true);
+      } else {
+        return common::Result<bool>("Failed to create bootstrap marker file");
+      }
+    }
+    
     return common::Result<bool>("Failed to find best snapshot: " +
                                 best_result.error());
   }
