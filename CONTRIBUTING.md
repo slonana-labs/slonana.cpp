@@ -116,6 +116,9 @@ Local benchmarks must pass before opening PRs:
 # Ubuntu/Debian
 make install-deps
 
+# Or install Solana CLI separately
+make install-solana-cli
+
 # Manual verification
 make check-deps
 ```
@@ -199,6 +202,7 @@ make bench-local
 | Benchmark failures | Check validator configuration and system resources |
 | Performance budget exceeded | Profile code and optimize hot paths |
 | Missing dependencies | Run `make check-deps` and `make install-deps` |
+| Solana CLI not available | Run `make install-solana-cli` |
 
 ### Getting Help
 

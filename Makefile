@@ -2,7 +2,7 @@
 # Production-ready build and validation targets for maintaining code quality
 
 .PHONY: all build test format-check lint clean ci-fast bench-local setup-hooks help
-.PHONY: check-deps install-deps validate-performance
+.PHONY: check-deps install-deps install-solana-cli validate-performance
 
 # Default target
 all: build test
@@ -28,6 +28,7 @@ help: ## Show this help message
 	@echo "Setup (one-time):"
 	@echo "  make setup-hooks     Install git pre-push hook for automated validation"
 	@echo "  make check-deps      Verify all required dependencies are installed"
+	@echo "  make install-solana-cli  Install Solana CLI from GitHub releases"
 	@echo ""
 	@echo "Development targets:"
 	@echo "  make build           Build the validator binary"
@@ -40,12 +41,17 @@ check-deps: ## Check required dependencies
 	@echo "🔍 Checking required dependencies..."
 	@which cmake >/dev/null 2>&1 || { echo "❌ CMake not found. Install: apt-get install cmake"; exit 1; }
 	@which g++ >/dev/null 2>&1 || { echo "❌ G++ not found. Install: apt-get install g++"; exit 1; }
-	@if ! which solana >/dev/null 2>&1; then \
+	@if ! which solana >/dev/null 2>&1 && ! test -f ~/.local/share/solana/install/active_release/bin/solana; then \
 		echo "⚠️  Solana CLI not found. Install with:"; \
-		echo "     sh -c \"\$$(curl -sSfL https://release.solana.com/stable/install)\""; \
+		echo "     make install-solana-cli"; \
 		echo "     (Optional for basic build, required for benchmarks)"; \
 	else \
-		echo "✅ Solana CLI found: $$(which solana)"; \
+		if which solana >/dev/null 2>&1; then \
+			echo "✅ Solana CLI found: $$(which solana)"; \
+		else \
+			echo "✅ Solana CLI found: ~/.local/share/solana/install/active_release/bin/solana"; \
+			echo "   Add to PATH: export PATH=\"\$$HOME/.local/share/solana/install/active_release/bin:\$$PATH\""; \
+		fi \
 	fi
 	@if ! which rustc >/dev/null 2>&1; then \
 		echo "⚠️  Rust not found. Install with:"; \
@@ -205,6 +211,17 @@ clean: ## Clean build artifacts
 	@rm -rf benchmark_results/
 	@echo "✅ Clean completed"
 
+install-solana-cli: ## Install Solana CLI from GitHub releases
+	@echo "☀️  Installing Solana CLI..."
+	@mkdir -p /tmp/solana-install ~/.local/share/solana/install
+	@cd /tmp/solana-install && \
+		curl -L https://github.com/solana-labs/solana/releases/download/v1.18.26/solana-release-x86_64-unknown-linux-gnu.tar.bz2 -o solana.tar.bz2 && \
+		tar -xjf solana.tar.bz2 && \
+		cp -r solana-release/* ~/.local/share/solana/install/active_release/
+	@echo "✅ Solana CLI installed to ~/.local/share/solana/install/active_release/"
+	@echo "🔄 Add to PATH: export PATH=\"\$$HOME/.local/share/solana/install/active_release/bin:\$$PATH\""
+	@echo "   Or add to ~/.bashrc: echo 'export PATH=\"\$$HOME/.local/share/solana/install/active_release/bin:\$$PATH\"' >> ~/.bashrc"
+
 install-deps: ## Install all required dependencies (Ubuntu/Debian)
 	@echo "📦 Installing dependencies..."
 	@sudo apt-get update
@@ -212,7 +229,7 @@ install-deps: ## Install all required dependencies (Ubuntu/Debian)
 	@echo "🦀 Installing Rust..."
 	@curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 	@echo "☀️  Installing Solana CLI..."
-	@sh -c "$$(curl -sSfL https://release.solana.com/stable/install)"
+	@$(MAKE) install-solana-cli
 	@echo "✅ All dependencies installed"
 	@echo "🔄 Please restart your shell or run: source ~/.bashrc && source ~/.cargo/env"
 

@@ -287,13 +287,27 @@ check_dependencies() {
     fi
 
     # Check for Solana CLI tools (needed for keypair generation and transactions)
+    # Check and setup Solana CLI
     if [[ -z "$VALIDATOR_BIN" ]] || [[ "$BOOTSTRAP_ONLY" == false ]]; then
+        # Check if Solana CLI is in PATH or standard installation location
         if ! command -v solana-keygen &> /dev/null; then
-            log_warning "solana-keygen not found. Install Solana CLI tools for full functionality."
+            if [[ -f "$HOME/.local/share/solana/install/active_release/bin/solana-keygen" ]]; then
+                log_info "Found Solana CLI in standard location, adding to PATH"
+                export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+            else
+                log_warning "solana-keygen not found. Install Solana CLI tools for full functionality."
+                log_warning "Run: make install-solana-cli"
+            fi
         fi
 
         if ! command -v solana &> /dev/null; then
-            log_warning "solana CLI not found. Install Solana CLI tools for transaction tests."
+            if [[ -f "$HOME/.local/share/solana/install/active_release/bin/solana" ]]; then
+                log_info "Found Solana CLI in standard location, adding to PATH"
+                export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+            else
+                log_warning "solana CLI not found. Install Solana CLI tools for transaction tests."
+                log_warning "Run: make install-solana-cli"
+            fi
         fi
     fi
 
