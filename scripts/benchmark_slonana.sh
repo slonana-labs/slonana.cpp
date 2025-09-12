@@ -1279,24 +1279,24 @@ test_transaction_throughput() {
         return 0
     fi
     
-    # **SIMPLIFIED FUNDING LOGIC**: Basic funding with reasonable amounts
-    log_info "💰 Pre-flight funding..."
+    # **DISCIPLINED FUNDING LOGIC**: Improved logic with proper faucet readiness and retry mechanism
+    log_info "💰 Pre-flight funding with disciplined logic..."
     
-    # **REASONABLE PARAMETERS**: Balanced for most use cases
-    local REQUIRED_BALANCE_SOL=10.0    # 10 SOL minimum - sufficient for testing
-    local FUNDING_AMOUNT_SOL=100       # 100 SOL per attempt - reasonable amount
-    local MAX_FUNDING_TRIES=3          # 3 attempts - prevent endless loops
+    # **ENHANCED PARAMETERS**: Based on user recommendation
+    local REQUIRED_BALANCE_SOL=100     # 100 SOL minimum - sufficient for extended testing
+    local FUNDING_AMOUNT_SOL=100       # 100 SOL per attempt - standard amount
+    local MAX_FUNDING_TRIES=10         # 10 attempts - adequate retry count with backoff
     local funding_attempt=0
     local funding_validated=false
     
-    # **SIMPLIFIED BALANCE CHECKING FUNCTION**: Basic balance comparison
+    # **DISCIPLINED BALANCE CHECKING FUNCTION**: Improved balance validation with proper error handling
     check_balance_sufficient() {
         local account="$1"
         local required="$2"
         
-        # Get balance with basic error handling
+        # Get balance with enhanced error handling and URL targeting
         local balance_output balance_value
-        balance_output=$(timeout 10s solana balance "$account" --url "http://localhost:$RPC_PORT" 2>&1) || return 1
+        balance_output=$(timeout 15s solana balance "$account" --url "http://localhost:$RPC_PORT" 2>&1) || return 1
         
         # Extract numerical balance value (handle common formats)
         if [[ "$balance_output" =~ ([0-9]+\.?[0-9]*)[[:space:]]*SOL ]]; then
@@ -1305,15 +1305,57 @@ test_transaction_throughput() {
             return 1
         fi
         
-        # Simple comparison using awk for decimal support
-        if awk "BEGIN {exit !($balance_value >= $required)}"; then
-            log_verbose "Balance check PASSED: $balance_value SOL >= $required SOL"
-            return 0
+        # Use bc for precise decimal comparison if available, fallback to awk
+        if command -v bc >/dev/null 2>&1; then
+            if (( $(echo "$balance_value >= $required" | bc -l) )); then
+                log_verbose "Balance check PASSED: $balance_value SOL >= $required SOL"
+                return 0
+            else
+                log_verbose "Balance check FAILED: $balance_value SOL < $required SOL"
+                return 1
+            fi
         else
-            log_verbose "Balance check FAILED: $balance_value SOL < $required SOL"
-            return 1
+            # Fallback to awk for decimal comparison
+            if awk "BEGIN {exit !($balance_value >= $required)}"; then
+                log_verbose "Balance check PASSED: $balance_value SOL >= $required SOL"
+                return 0
+            else
+                log_verbose "Balance check FAILED: $balance_value SOL < $required SOL"
+                return 1
+            fi
         fi
     }
+    
+    # **WAIT FOR VALIDATOR/FAUCET READINESS**: Ensure faucet is available before requesting airdrops
+    log_info "🔍 Waiting for validator/faucet to become available before funding attempts..."
+    local faucet_ready=false
+    local faucet_wait_attempts=0
+    local max_faucet_wait=30
+    
+    while [[ $faucet_wait_attempts -lt $max_faucet_wait ]]; do
+        # Test faucet availability with a small test airdrop
+        if timeout 10s solana airdrop 0.001 "$sender_pubkey_cli" --url "http://localhost:$RPC_PORT" >/dev/null 2>&1; then
+            log_info "✅ Faucet is responsive and ready for funding operations"
+            faucet_ready=true
+            break
+        fi
+        
+        log_verbose "Faucet not ready yet, waiting... ($faucet_wait_attempts/$max_faucet_wait)"
+        sleep 2
+        faucet_wait_attempts=$((faucet_wait_attempts + 1))
+    done
+    
+    if [[ "$faucet_ready" != "true" ]]; then
+        log_warning "⚠️  Faucet never became available after ${max_faucet_wait} attempts (60s)"
+        log_warning "⚠️  This indicates validator faucet is not working properly"
+        
+        # Write failure results
+        echo "0" > "$RESULTS_DIR/effective_tps.txt"
+        echo "0" > "$RESULTS_DIR/successful_transactions.txt"
+        echo "0" > "$RESULTS_DIR/submitted_requests.txt"
+        
+        return 0
+    fi
     
     # **INITIAL BALANCE CHECK**: Check current balance before attempting funding
     log_info "🔍 Initial balance check for account: $sender_pubkey_cli"
@@ -1321,41 +1363,80 @@ test_transaction_throughput() {
         log_info "✅ Account already has sufficient funds, skipping funding"
         funding_validated=true
     else
-        log_info "💰 Account needs funding, starting enhanced funding process..."
+        log_info "💰 Account needs funding, starting disciplined funding process..."
         
-        # **SIMPLIFIED FUNDING LOOP**: Basic funding with minimal validation
+        # **DISCIPLINED FUNDING LOOP**: Enhanced funding with proper backoff and validation
         for funding_attempt in $(seq 1 $MAX_FUNDING_TRIES); do
             log_info "🔄 Funding attempt $funding_attempt/$MAX_FUNDING_TRIES - requesting $FUNDING_AMOUNT_SOL SOL..."
             
-            # **SIMPLE FUNDING**: Use reasonable amount
+            # **DISCIPLINED FUNDING**: Use always target local validator with proper timeout
             if timeout 30s solana airdrop "$FUNDING_AMOUNT_SOL" "$sender_pubkey_cli" --url "http://localhost:$RPC_PORT" 2>/dev/null; then
                 log_info "✅ CLI airdrop successful, validating balance..."
-                sleep 3  # Wait for funding to settle
                 
-                # **SIMPLE BALANCE VALIDATION**: Basic balance checking
-                if check_balance_sufficient "$sender_keypair" "$REQUIRED_BALANCE_SOL"; then
-                    log_info "✅ Funding validation PASSED - sufficient funds confirmed"
-                    funding_validated=true
+                # **DISCIPLINED BALANCE POLLING**: Poll balance and retry if unchanged  
+                local balance_validated=false
+                local balance_check_attempts=0
+                local max_balance_checks=5
+                
+                while [[ $balance_check_attempts -lt $max_balance_checks ]]; do
+                    sleep 2  # Wait for funding to settle
+                    
+                    if check_balance_sufficient "$sender_keypair" "$REQUIRED_BALANCE_SOL"; then
+                        log_info "✅ Funding validation PASSED - sufficient funds confirmed after $((balance_check_attempts + 1)) checks"
+                        funding_validated=true
+                        balance_validated=true
+                        break
+                    fi
+                    
+                    balance_check_attempts=$((balance_check_attempts + 1))
+                    log_verbose "Balance still insufficient after check $balance_check_attempts/$max_balance_checks, waiting..."
+                done
+                
+                if [[ "$balance_validated" == "true" ]]; then
                     break
                 else
-                    log_verbose "Balance still below required minimum after funding, retrying..."
+                    log_verbose "Balance validation failed after all checks, retrying funding..."
                 fi
             else
                 log_verbose "CLI airdrop attempt $funding_attempt failed, will retry..."
             fi
             
-            # **SIMPLE BACKOFF**: Brief wait before next attempt
+            # **EXPONENTIAL BACKOFF**: Progressive wait time between attempts
             if [[ $funding_attempt -lt $MAX_FUNDING_TRIES ]]; then
-                sleep 2
+                local backoff_time=$((funding_attempt * 2))  # 2s, 4s, 6s, 8s, etc.
+                log_verbose "Waiting ${backoff_time}s before next funding attempt (exponential backoff)..."
+                sleep "$backoff_time"
             fi
         done
     fi
     
-    # **SIMPLIFIED FAIL FAST**: Basic error reporting
+    # **DISCIPLINED FAIL FAST**: Enhanced error reporting with troubleshooting
     if [[ "$funding_validated" != "true" ]]; then
         log_warning "⚠️  Pre-flight funding failed after $MAX_FUNDING_TRIES attempts"
         log_warning "⚠️  Account $sender_pubkey_cli could not be funded to required $REQUIRED_BALANCE_SOL SOL"
-        log_warning "⚠️  Skipping transaction throughput test due to insufficient funds"
+        
+        # **ENHANCED DIAGNOSTICS**: Check validator and faucet status
+        log_warning "🔍 Diagnostic information:"
+        
+        # Check validator process
+        if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
+            local validator_pid
+            validator_pid=$(cat "$RESULTS_DIR/validator.pid" 2>/dev/null) || validator_pid="unknown"
+            if [[ -n "$validator_pid" ]] && kill -0 "$validator_pid" 2>/dev/null; then
+                log_warning "   • Validator process: Running (PID: $validator_pid)"
+            else
+                log_warning "   • Validator process: Dead or not found"
+            fi
+        fi
+        
+        # Test faucet one more time
+        if timeout 10s solana airdrop 0.001 "$sender_pubkey_cli" --url "http://localhost:$RPC_PORT" >/dev/null 2>&1; then
+            log_warning "   • Faucet test: Working (small airdrop succeeded)"
+        else
+            log_warning "   • Faucet test: Failed (validator faucet not responding)"
+        fi
+        
+        log_warning "⚠️  Aborting transaction test due to funding failure"
         
         # Write failure results
         echo "0" > "$RESULTS_DIR/effective_tps.txt"
@@ -1490,11 +1571,11 @@ test_transaction_throughput() {
             if [[ $transfer_result -eq 0 ]]; then
                 success_count=$(( success_count + 1 ))
             else
-                # **SIMPLIFIED EMERGENCY FUNDING**: Detect insufficient funds and apply emergency funding
+                # **DISCIPLINED EMERGENCY FUNDING**: Detect insufficient funds and apply disciplined emergency funding
                 if [[ "$transfer_output" == *"insufficient funds"* ]]; then
-                    log_verbose "Insufficient funds detected, attempting emergency funding..."
+                    log_verbose "Insufficient funds detected, attempting disciplined emergency funding..."
                     
-                    # **SIMPLIFIED LIMITS**: Hard limit on emergency funding attempts
+                    # **DISCIPLINED LIMITS**: Hard limit on emergency funding attempts
                     local emergency_attempts_file="$RESULTS_DIR/emergency_attempts.txt"
                     
                     # Track total emergency attempts across the entire test
@@ -1503,7 +1584,7 @@ test_transaction_throughput() {
                         total_emergency_attempts=$(cat "$emergency_attempts_file" 2>/dev/null || echo "0")
                     fi
                     
-                    # **REASONABLE LIMITS**: Max 3 attempts to prevent endless loops
+                    # **DISCIPLINED LIMITS**: Max 3 attempts to prevent endless loops (as recommended)
                     if [[ $total_emergency_attempts -ge 3 ]]; then
                         log_warning "⚠️  Maximum emergency funding attempts reached ($total_emergency_attempts/3)"
                         log_warning "⚠️  Ending transaction test to prevent endless funding loops"
@@ -1514,17 +1595,40 @@ test_transaction_throughput() {
                     total_emergency_attempts=$((total_emergency_attempts + 1))
                     echo "$total_emergency_attempts" > "$emergency_attempts_file"
                     
-                    # **SIMPLIFIED EMERGENCY FUNDING**: Reasonable amounts
-                    local emergency_funding_amount=100  # Fixed 100 SOL amount
+                    # **DISCIPLINED EMERGENCY FUNDING**: Reasonable amounts with backoff
+                    local emergency_funding_amount=100  # Fixed 100 SOL amount - adequate for most needs
                     log_verbose "Emergency funding attempt $total_emergency_attempts/3 - requesting $emergency_funding_amount SOL"
                     
-                    # **SIMPLIFIED EMERGENCY AIRDROP**: Straightforward funding
+                    # **DISCIPLINED EMERGENCY AIRDROP**: Enhanced funding with proper validation
                     if timeout 30s solana airdrop "$emergency_funding_amount" "$sender_pubkey_cli" --url "http://localhost:$RPC_PORT" 2>/dev/null; then
-                        log_verbose "Emergency funding completed, continuing..."
-                        sleep 2  # Brief wait for funding to settle
+                        log_verbose "Emergency funding airdrop completed, validating balance..."
+                        
+                        # **VALIDATION**: Poll balance to confirm emergency funding
+                        local emergency_validation_attempts=0
+                        local emergency_validated=false
+                        
+                        while [[ $emergency_validation_attempts -lt 3 ]]; do
+                            sleep 2  # Wait for funding to settle
+                            
+                            if check_balance_sufficient "$sender_keypair" "1.0"; then  # Just need enough for transfers
+                                log_verbose "✅ Emergency funding validated successfully"
+                                emergency_validated=true
+                                break
+                            fi
+                            
+                            emergency_validation_attempts=$((emergency_validation_attempts + 1))
+                            log_verbose "Emergency funding validation attempt $emergency_validation_attempts/3..."
+                        done
+                        
+                        if [[ "$emergency_validated" != "true" ]]; then
+                            log_warning "⚠️  Emergency funding validation failed - balance may not have updated"
+                        fi
                     else
-                        log_warning "Emergency funding failed, continuing anyway..."
+                        log_warning "Emergency funding airdrop failed, continuing anyway..."
                     fi
+                    
+                    # **BACKOFF**: Brief wait after emergency funding before retrying transaction
+                    sleep 1
                 fi
             fi
             
