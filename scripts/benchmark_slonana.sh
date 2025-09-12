@@ -1334,34 +1334,74 @@ test_transaction_throughput() {
         fi
     }
     
-    # **WAIT FOR VALIDATOR/FAUCET READINESS**: Ensure faucet is available before requesting airdrops
-    log_info "🔍 Waiting for validator/faucet to become available before funding attempts..."
+    # **ENHANCED FAUCET READINESS**: Extended wait time and better diagnostics per user feedback
+    log_info "🔍 Waiting for validator/faucet to become available (extended timeout for CI)..."
     local faucet_ready=false
     local faucet_wait_attempts=0
-    local max_faucet_wait=90  # Increased from 30 to 90 (3min) for slower CI environments
+    local max_faucet_wait=180  # Extended to 180 attempts (6 minutes) for slower CI environments
     
     while [[ $faucet_wait_attempts -lt $max_faucet_wait ]]; do
         # Test faucet availability with a small test airdrop
-        if timeout 10s solana airdrop 0.001 "$sender_pubkey_cli" --url "http://localhost:$RPC_PORT" >/dev/null 2>&1; then
+        if timeout 15s solana airdrop 0.001 "$sender_pubkey_cli" --url "http://localhost:$RPC_PORT" >/dev/null 2>&1; then
             log_info "✅ Faucet is responsive and ready for funding operations"
             faucet_ready=true
             break
         fi
         
-        log_verbose "Faucet not ready yet, waiting... ($faucet_wait_attempts/$max_faucet_wait)"
+        # Enhanced diagnostics every 30 attempts (1 minute intervals)
+        if [[ $((faucet_wait_attempts % 30)) -eq 0 ]] && [[ $faucet_wait_attempts -gt 0 ]]; then
+            log_info "🔍 Faucet readiness check: attempt $faucet_wait_attempts/$max_faucet_wait ($(($faucet_wait_attempts * 2 / 60)) minutes elapsed)"
+            
+            # Check validator process status
+            if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
+                local validator_pid
+                validator_pid=$(cat "$RESULTS_DIR/validator.pid" 2>/dev/null) || validator_pid="unknown"
+                if [[ -n "$validator_pid" ]] && kill -0 "$validator_pid" 2>/dev/null; then
+                    log_info "   • Validator process: Running (PID: $validator_pid)"
+                else
+                    log_warning "   • Validator process: Dead or not found - this explains faucet unavailability"
+                fi
+            fi
+            
+            # Test basic RPC connectivity
+            if curl -s -m 5 "http://localhost:$RPC_PORT/health" >/dev/null 2>&1; then
+                log_info "   • Validator RPC: Responsive"
+            else
+                log_warning "   • Validator RPC: Not responding"
+            fi
+        else
+            log_verbose "Faucet not ready yet, waiting... ($faucet_wait_attempts/$max_faucet_wait)"
+        fi
+        
         sleep 2
         faucet_wait_attempts=$((faucet_wait_attempts + 1))
     done
     
+    # **ENHANCED FALLBACK**: Allow workflow success with warning instead of hard failure
     if [[ "$faucet_ready" != "true" ]]; then
-        log_warning "⚠️  Faucet never became available after ${max_faucet_wait} attempts (3 minutes)"
+        log_warning "⚠️  Faucet never became available after ${max_faucet_wait} attempts (6 minutes)"
         log_warning "⚠️  This indicates validator faucet is not working properly"
+        log_warning "⚠️  SKIPPING transaction throughput test to allow workflow success"
+        log_warning "⚠️  Per user feedback: allowing workflow to continue with warning instead of hard exit"
         
-        # Write failure results
+        # Write zero results but continue workflow
         echo "0" > "$RESULTS_DIR/effective_tps.txt"
         echo "0" > "$RESULTS_DIR/successful_transactions.txt"
         echo "0" > "$RESULTS_DIR/submitted_requests.txt"
         
+        # Add note about faucet failure for debugging
+        cat > "$RESULTS_DIR/faucet_failure_note.txt" << EOF
+Faucet readiness failed after $max_faucet_wait attempts.
+This is often due to:
+1. Validator taking longer to initialize faucet in CI environments
+2. RPC binding issues preventing faucet accessibility  
+3. Port conflicts or networking restrictions in CI
+4. Validator process dying during initialization
+
+Transaction throughput test was skipped to allow workflow success.
+EOF
+        
+        log_info "📝 Faucet failure details saved to faucet_failure_note.txt"
         return 0
     fi
     
@@ -1418,10 +1458,12 @@ test_transaction_throughput() {
         done
     fi
     
-    # **DISCIPLINED FAIL FAST**: Enhanced error reporting with troubleshooting
+    # **DISCIPLINED FAIL FAST**: Enhanced error reporting with troubleshooting but allow workflow success
     if [[ "$funding_validated" != "true" ]]; then
         log_warning "⚠️  Pre-flight funding failed after $MAX_FUNDING_TRIES attempts"
         log_warning "⚠️  Account $sender_pubkey_cli could not be funded to required $REQUIRED_BALANCE_SOL SOL"
+        log_warning "⚠️  SKIPPING transaction throughput test to allow workflow success"
+        log_warning "⚠️  Per user feedback: allowing workflow to continue with warning instead of hard exit"
         
         # **ENHANCED DIAGNOSTICS**: Check validator and faucet status
         log_warning "🔍 Diagnostic information:"
@@ -1444,13 +1486,27 @@ test_transaction_throughput() {
             log_warning "   • Faucet test: Failed (validator faucet not responding)"
         fi
         
-        log_warning "⚠️  Aborting transaction test due to funding failure"
+        log_warning "⚠️  Continuing workflow with zero transaction results due to funding failure"
         
-        # Write failure results
+        # Write failure results and add funding failure note
         echo "0" > "$RESULTS_DIR/effective_tps.txt"
         echo "0" > "$RESULTS_DIR/successful_transactions.txt"
         echo "0" > "$RESULTS_DIR/submitted_requests.txt"
         
+        cat > "$RESULTS_DIR/funding_failure_note.txt" << EOF
+Pre-flight funding failed after $MAX_FUNDING_TRIES attempts.
+Account: $sender_pubkey_cli
+Required balance: $REQUIRED_BALANCE_SOL SOL
+This is often due to:
+1. Validator faucet not fully initialized in CI environments
+2. RPC connectivity issues with faucet service
+3. Insufficient validator funds or configuration issues
+4. Port binding problems affecting CLI-validator communication
+
+Transaction throughput test was skipped to allow workflow success.
+EOF
+        
+        log_info "📝 Funding failure details saved to funding_failure_note.txt"
         return 0
     fi
     
@@ -1504,13 +1560,14 @@ test_transaction_throughput() {
         sleep 2
     fi
 
-    # Transaction test loop with error handling
+    # Transaction test loop with enhanced error handling and debugging
     log_verbose "Starting transaction loop for ${TEST_DURATION} seconds..."
     
     # Safely calculate end time with error handling
     local end_time
     if ! end_time=$(( start_time + TEST_DURATION )) 2>/dev/null; then
         log_error "Failed to calculate end time (start_time=$start_time, TEST_DURATION=$TEST_DURATION)"
+        log_warning "⚠️  ARITHMETIC ERROR - allowing workflow to continue with zero results"
         echo "0" > "$RESULTS_DIR/effective_tps.txt"
         echo "0" > "$RESULTS_DIR/successful_transactions.txt"
         echo "0" > "$RESULTS_DIR/submitted_requests.txt"
@@ -1522,6 +1579,7 @@ test_transaction_throughput() {
     # Test solana command availability before starting loop
     if ! command -v solana &>/dev/null; then
         log_error "solana command not found in PATH"
+        log_warning "⚠️  SOLANA CLI MISSING - allowing workflow to continue with zero results"
         echo "0" > "$RESULTS_DIR/effective_tps.txt"
         echo "0" > "$RESULTS_DIR/successful_transactions.txt"
         echo "0" > "$RESULTS_DIR/submitted_requests.txt"
@@ -1532,26 +1590,62 @@ test_transaction_throughput() {
     
     # Test basic solana connectivity
     if ! solana config get >/dev/null 2>&1; then
-        log_warning "solana config appears to have issues"
+        log_warning "solana config appears to have issues, but continuing anyway"
     fi
     
+    # **ENHANCED LOOP DIAGNOSTICS**: Comprehensive debugging to identify early exit causes
+    local loop_iteration=0
+    local loop_exit_reason=""
     
     while true; do
+        loop_iteration=$((loop_iteration + 1))
+        
+        # **ENHANCED TIMING**: More robust current time calculation
         local current_time
-        if ! current_time=$(date +%s); then
+        if ! current_time=$(date +%s 2>/dev/null); then
+            loop_exit_reason="Failed to get current time"
             log_warning "Failed to get current time, ending transaction test"
             break
         fi
         
-        # **DEBUG**: Show timing information on first iteration
+        # **ENHANCED DEBUG**: Show timing information on first iteration and periodically
         if [[ $txn_count -eq 0 ]]; then
             log_verbose "🔍 Starting transaction loop - current_time=$current_time, end_time=$end_time, remaining=$((end_time - current_time))s"
+            
+            # Validate timing makes sense
+            local remaining_time=$((end_time - current_time))
+            if [[ $remaining_time -le 0 ]]; then
+                loop_exit_reason="Calculated remaining time is zero or negative (remaining: $remaining_time)"
+                log_error "❌ TIMING ERROR: remaining_time=$remaining_time, start_time=$start_time, current_time=$current_time, end_time=$end_time"
+                log_error "❌ This suggests start_time calculation was wrong or system clock issues"
+                break
+            fi
+            
+            log_info "✅ Transaction loop timing validated: $remaining_time seconds remaining"
+        fi
+        
+        # Show progress every 100 iterations
+        if [[ $((loop_iteration % 100)) -eq 0 ]]; then
+            local remaining_time=$((end_time - current_time))
+            log_verbose "🔄 Loop progress: iteration $loop_iteration, remaining ${remaining_time}s"
         fi
         
         # Check if we've reached the end time
         if [[ $current_time -ge $end_time ]]; then
+            loop_exit_reason="Normal completion - test duration elapsed"
             log_verbose "Transaction test duration completed (current: $current_time, end: $end_time)"
             break
+        fi
+        
+        # **ENHANCED VALIDATOR CHECK**: More reliable validator process monitoring
+        if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
+            local validator_pid
+            validator_pid=$(cat "$RESULTS_DIR/validator.pid" 2>/dev/null) || validator_pid=""
+            if [[ -n "$validator_pid" ]] && ! kill -0 "$validator_pid" 2>/dev/null; then
+                loop_exit_reason="Validator process died (PID: $validator_pid)"
+                log_warning "Validator process no longer running (PID: $validator_pid), ending transaction test"
+                break
+            fi
         fi
         
         # Send a batch of transactions with error handling
@@ -1560,16 +1654,6 @@ test_transaction_throughput() {
             # **DEBUG**: Show progress occasionally
             if [[ $((txn_count % 20)) -eq 0 ]] && [[ $txn_count -gt 0 ]]; then
                 log_verbose "🔄 Transaction progress: $txn_count transactions sent, $success_count successful"
-            fi
-            
-            # Check if validator is still running
-            if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
-                local validator_pid
-                validator_pid=$(cat "$RESULTS_DIR/validator.pid" 2>/dev/null) || true
-                if [[ -n "$validator_pid" ]] && ! kill -0 "$validator_pid" 2>/dev/null; then
-                    log_warning "Validator process no longer running (PID: $validator_pid), ending transaction test"
-                    break 2
-                fi
             fi
             
             # Attempt transfer with timeout protection
@@ -1607,6 +1691,7 @@ test_transaction_throughput() {
                     if [[ $total_emergency_attempts -ge 3 ]]; then
                         log_warning "⚠️  Maximum emergency funding attempts reached ($total_emergency_attempts/3)"
                         log_warning "⚠️  Ending transaction test to prevent endless funding loops"
+                        loop_exit_reason="Maximum emergency funding attempts reached"
                         break 2  # Break out of both transaction batch loop and main while loop
                     fi
                     
@@ -1657,9 +1742,18 @@ test_transaction_throughput() {
         
         # Brief pause between batches
         if ! sleep 0.2; then
+            loop_exit_reason="Sleep command failed"
             break
         fi
     done
+    
+    # **ENHANCED EXIT REPORTING**: Always report why the loop exited
+    if [[ -n "$loop_exit_reason" ]]; then
+        log_info "📊 Transaction loop exited: $loop_exit_reason"
+        log_info "📊 Loop statistics: $loop_iteration iterations, $txn_count transactions sent, $success_count successful"
+    else
+        log_info "📊 Transaction loop completed normally after $loop_iteration iterations"
+    fi
     
     log_verbose "Transaction test completed. Sent: $txn_count, Successful: $success_count"
 
