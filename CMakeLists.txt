@@ -179,6 +179,26 @@ target_include_directories(slonana_agave_phase1_tests PRIVATE "${CMAKE_SOURCE_DI
 target_compile_definitions(slonana_agave_phase1_tests PRIVATE STANDALONE_AGAVE_TESTS)
 add_test(NAME agave_phase1_tests COMMAND slonana_agave_phase1_tests)
 
+# Tower BFT test suite (Agave Phase 1)
+add_executable(slonana_tower_bft_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_tower_bft.cpp"
+)
+target_link_libraries(slonana_tower_bft_tests slonana_core)
+target_include_directories(slonana_tower_bft_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_tower_bft_tests PRIVATE STANDALONE_TOWER_BFT_TESTS)
+add_test(NAME tower_bft_tests COMMAND slonana_tower_bft_tests)
+
+# Turbine Protocol test suite (Agave Phase 1)
+add_executable(slonana_turbine_protocol_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_turbine_protocol.cpp"
+)
+target_link_libraries(slonana_turbine_protocol_tests slonana_core)
+target_include_directories(slonana_turbine_protocol_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_turbine_protocol_tests PRIVATE STANDALONE_TURBINE_PROTOCOL_TESTS)
+add_test(NAME turbine_protocol_tests COMMAND slonana_turbine_protocol_tests)
+
 # Enhanced test suites (if comprehensive testing is enabled)
 if(ENABLE_COMPREHENSIVE_TESTING)
     message(STATUS "Building comprehensive test suites...")
