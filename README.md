@@ -28,6 +28,7 @@ Slonana.cpp is a battle-tested native C++ validator that delivers exceptional pe
 | **[API Documentation](docs/API.md)** | Comprehensive RPC API reference |
 | **[Architecture Guide](docs/ARCHITECTURE.md)** | Deep dive into system design and components |
 | **[Development Guide](docs/DEVELOPMENT.md)** | Contributing and development workflows |
+| **[Contributing Guide](CONTRIBUTING.md)** | Required development workflow and performance standards |
 | **[Deployment Guide](docs/DEPLOYMENT.md)** | Production deployment and configuration |
 | **[Testing Guide](TESTING.md)** | Testing framework and procedures |
 | **[Benchmarking Guide](BENCHMARKING.md)** | Performance analysis and comparisons |
@@ -217,6 +218,29 @@ docker run slonana/validator:dev test-all
 6. **Hardware Wallet Commands** - Full APDU handler support for all device operations
 
 See **[Testing Guide](TESTING.md)** for detailed testing procedures.
+
+## 📊 Local Benchmarking
+
+**Required before every PR**: Run local benchmarks to validate performance and prevent regressions.
+
+```bash
+# One-time setup (installs pre-push hook for automated validation)
+make setup-hooks
+
+# Required before every push (enforced by pre-push hook)
+make ci-fast
+
+# Required before every PR (performance regression detection)
+make bench-local
+```
+
+**Performance Budgets** (automatically enforced):
+- **RPC p95 latency**: ≤ 15ms
+- **Transaction p95 latency**: ≤ 50ms
+
+The `make bench-local` command runs local Slonana and Agave benchmarks, then validates performance against strict budgets. PRs that regress p95 performance beyond these thresholds are automatically blocked.
+
+See **[Contributing Guide](CONTRIBUTING.md)** for complete development workflow requirements.
 
 ## 📊 Performance
 

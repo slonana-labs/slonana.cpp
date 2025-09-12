@@ -46,7 +46,7 @@ build/
 CMakeCache.txt
 cmake_install.cmake
 CTestTestfile.cmake
-Makefile
+# Note: We keep our custom Makefile for disciplined development workflow
 
 # Generated executables
 slonana_validator
@@ -143,6 +143,7 @@ local.toml
 
 # Benchmark results
 benchmark_results.*
+benchmark_comparison.json
 *.benchmark
 
 # Python files (for dev tools)

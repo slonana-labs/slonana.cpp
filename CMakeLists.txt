@@ -37,6 +37,7 @@ file(GLOB_RECURSE CORE_SOURCES
     "${SRC_DIR}/security/*.cpp"
     "${SRC_DIR}/cluster/*.cpp"
     "${SRC_DIR}/genesis/*.cpp"
+    "${SRC_DIR}/banking/*.cpp"
     "${SRC_DIR}/slonana_validator.cpp"
 )
 
@@ -167,6 +168,36 @@ add_test(NAME wallet_tests COMMAND slonana_wallet_tests)
 add_test(NAME monitoring_tests COMMAND slonana_monitoring_tests)
 add_test(NAME consensus_timing_tests COMMAND slonana_consensus_timing_tests)
 add_test(NAME proof_of_history_tests COMMAND slonana_proof_of_history_tests)
+
+# Agave Phase 1 test suite
+add_executable(slonana_agave_phase1_tests 
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_agave_phase1_tasks.cpp"
+)
+target_link_libraries(slonana_agave_phase1_tests slonana_core OpenSSL::SSL OpenSSL::Crypto)
+target_include_directories(slonana_agave_phase1_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_agave_phase1_tests PRIVATE STANDALONE_AGAVE_TESTS)
+add_test(NAME agave_phase1_tests COMMAND slonana_agave_phase1_tests)
+
+# Tower BFT test suite (Agave Phase 1)
+add_executable(slonana_tower_bft_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_tower_bft.cpp"
+)
+target_link_libraries(slonana_tower_bft_tests slonana_core)
+target_include_directories(slonana_tower_bft_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_tower_bft_tests PRIVATE STANDALONE_TOWER_BFT_TESTS)
+add_test(NAME tower_bft_tests COMMAND slonana_tower_bft_tests)
+
+# Turbine Protocol test suite (Agave Phase 1)
+add_executable(slonana_turbine_protocol_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_turbine_protocol.cpp"
+)
+target_link_libraries(slonana_turbine_protocol_tests slonana_core)
+target_include_directories(slonana_turbine_protocol_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_turbine_protocol_tests PRIVATE STANDALONE_TURBINE_PROTOCOL_TESTS)
+add_test(NAME turbine_protocol_tests COMMAND slonana_turbine_protocol_tests)
 
 # Enhanced test suites (if comprehensive testing is enabled)
 if(ENABLE_COMPREHENSIVE_TESTING)
@@ -308,6 +339,8 @@ target_link_libraries(slonana_hardware_wallet_tests slonana_core)
 target_include_directories(slonana_hardware_wallet_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 target_compile_definitions(slonana_hardware_wallet_tests PRIVATE STANDALONE_HARDWARE_WALLET_TESTS)
 add_test(NAME hardware_wallet_tests COMMAND slonana_hardware_wallet_tests)
+
+
 
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")

@@ -5,14 +5,12 @@ on:
     branches: [ main, copilot/fix-26 ]
   pull_request:
     branches: [ main ]
-  schedule:
-    - cron: '0 6 * * 0'
   workflow_dispatch:
 
 jobs:
   benchmark-comparison:
     runs-on: ubuntu-latest
-    timeout-minutes: 320
+    timeout-minutes: 620
 
     steps:
     - name: Checkout repository
@@ -128,7 +126,7 @@ jobs:
         mkdir -p test_ledgers/{agave,slonana}
         cat > benchmark_config.json << EOF
         {
-          "test_duration_seconds": 300,
+          "test_duration_seconds": 500,
           "target_tps": [1000, 5000, 10000, 25000, 50000],
           "concurrent_connections": [10, 50, 100],
           "transaction_types": ["transfer", "token_transfer", "vote"],
@@ -199,14 +197,12 @@ jobs:
             --ledger test_ledgers/slonana \
             --results benchmark_results/slonana \
             --validator-bin build/slonana_validator \
-            --test-duration 60 \
             --verbose
         else
           echo "Slonana validator not found, using placeholder mode..."
           ./scripts/benchmark_slonana.sh \
             --ledger test_ledgers/slonana \
             --results benchmark_results/slonana \
-            --test-duration 60 \
             --use-placeholder \
             --verbose
         fi
@@ -222,7 +218,6 @@ jobs:
           --ledger test_ledgers/agave \
           --results benchmark_results/agave \
           --validator-bin agave-validator \
-          --test-duration 60 \
           --verbose
           
     - name: Generate comparison report
