@@ -388,6 +388,7 @@ void test_epoch_boundary_handling() {
     ASSERT_TRUE(result.is_ok());
 
     slonana::staking::StakeAccount stake_account;
+    stake_account.stake_pubkey = slonana::common::PublicKey(std::vector<uint8_t>(32, static_cast<uint8_t>(epoch + 0x40))); // Unique stake pubkey
     stake_account.delegator_pubkey = slonana::common::PublicKey(std::vector<uint8_t>(32, static_cast<uint8_t>(epoch + 0x60)));
     stake_account.validator_pubkey = validator_key;
     stake_account.stake_amount = 5000000;
@@ -436,6 +437,7 @@ void test_economic_incentive_mechanisms() {
   
   for (size_t i = 0; i < stake_amounts.size(); ++i) {
     slonana::staking::StakeAccount stake_account;
+    stake_account.stake_pubkey = slonana::common::PublicKey(std::vector<uint8_t>(32, static_cast<uint8_t>(i + 0x80))); // Unique stake pubkey
     stake_account.delegator_pubkey = slonana::common::PublicKey(std::vector<uint8_t>(32, static_cast<uint8_t>(i + 0xA0)));
     stake_account.validator_pubkey = validator_key;
     stake_account.stake_amount = stake_amounts[i];

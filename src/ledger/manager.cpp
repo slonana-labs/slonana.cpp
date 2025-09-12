@@ -279,6 +279,43 @@ class LedgerManager::Impl {
 public:
   explicit Impl(const std::string &ledger_path) : ledger_path_(ledger_path) {
     std::filesystem::create_directories(ledger_path);
+    load_blocks_from_disk();
+  }
+
+  void save_block_to_disk(const Block &block) {
+    std::string block_file = ledger_path_ + "/block_" + std::to_string(block.slot) + ".dat";
+    std::ofstream file(block_file, std::ios::binary);
+    if (file.is_open()) {
+      auto serialized = block.serialize();
+      file.write(reinterpret_cast<const char*>(serialized.data()), serialized.size());
+      file.close();
+    }
+  }
+
+  void load_blocks_from_disk() {
+    try {
+      for (const auto& entry : std::filesystem::directory_iterator(ledger_path_)) {
+        if (entry.is_regular_file() && entry.path().filename().string().starts_with("block_")) {
+          std::ifstream file(entry.path(), std::ios::binary);
+          if (file.is_open()) {
+            std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)),
+                                     std::istreambuf_iterator<char>());
+            file.close();
+            
+            if (!data.empty()) {
+              Block block(data);
+              blocks_.push_back(block);
+              if (block.slot > latest_slot_) {
+                latest_slot_ = block.slot;
+                latest_hash_ = block.block_hash;
+              }
+            }
+          }
+        }
+      }
+    } catch (const std::exception& e) {
+      // Ignore errors during loading, continue with empty ledger
+    }
   }
 
   std::string ledger_path_;
@@ -302,6 +339,9 @@ common::Result<bool> LedgerManager::store_block(const Block &block) {
   impl_->blocks_.push_back(block);
   impl_->latest_hash_ = block.block_hash;
   impl_->latest_slot_ = block.slot;
+  
+  // Save block to disk for persistence
+  impl_->save_block_to_disk(block);
 
   std::cout << "Stored block at slot " << block.slot << std::endl;
   return common::Result<bool>(true);
