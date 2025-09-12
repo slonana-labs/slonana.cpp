@@ -243,7 +243,7 @@ parse_arguments() {
     # **CI OPTIMIZATION**: Reduce test duration for CI environments to prevent timeouts
     if [[ -n "${CI:-}" || -n "${GITHUB_ACTIONS:-}" || -n "${CONTINUOUS_INTEGRATION:-}" ]]; then
         if [[ "$TEST_DURATION" -eq 160 ]]; then  # Only adjust default duration
-            TEST_DURATION=60
+            TEST_DURATION=45  # Reduced to 45s for faster CI completion and timeout prevention
             log_info "🔧 CI environment detected - reducing test duration to ${TEST_DURATION}s to prevent timeouts"
         fi
     fi
@@ -822,7 +822,7 @@ start_validator() {
     log_info "⏳ Waiting for validator to become ready (timeout: ${timeout}s)..."
     log_info "🔍 This will test: health endpoint → JSON-RPC methods → CLI connectivity"
     
-    local timeout=180  # Increased timeout for CI environments that may be slower
+    local timeout=120  # Reduced timeout for CI environments to prevent job timeouts
     local wait_time=0
 
     while [[ $wait_time -lt $timeout ]]; do
@@ -1113,8 +1113,8 @@ test_transaction_throughput() {
     log_info "🔍 Ensuring validator RPC is ready for CLI operations..."
     export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
     
-    # Wait for validator RPC to become available (timeout after 60s)
-    local readiness_timeout=160
+    # Wait for validator RPC to become available (timeout after 90s)
+    local readiness_timeout=90
     local readiness_wait=0
     local validator_ready=false
     
@@ -1338,7 +1338,7 @@ test_transaction_throughput() {
     log_info "🔍 Waiting for validator/faucet to become available (extended timeout for CI)..."
     local faucet_ready=false
     local faucet_wait_attempts=0
-    local max_faucet_wait=180  # Extended to 180 attempts (6 minutes) for slower CI environments
+    local max_faucet_wait=90  # Reduced to 90 attempts (3 minutes) for faster CI environments
     
     while [[ $faucet_wait_attempts -lt $max_faucet_wait ]]; do
         # Test faucet availability with a small test airdrop
@@ -1922,6 +1922,9 @@ EOF
 cleanup_validator() {
     log_info "Cleaning up validator and background processes..."
     
+    # Set flag to indicate we're in cleanup mode
+    CLEANUP_MODE=true
+    
     # Stop activity generator first
     if [[ -f "$RESULTS_DIR/activity.pid" ]]; then
         local activity_pid
@@ -1941,7 +1944,7 @@ cleanup_validator() {
         rm -f "$RESULTS_DIR/activity.pid"
     fi
     
-    # Stop validator process
+    # Stop validator process gracefully
     if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
         local pid
         pid=$(cat "$RESULTS_DIR/validator.pid")
@@ -1951,13 +1954,13 @@ cleanup_validator() {
             
             # Try graceful shutdown first
             kill -TERM "$pid" 2>/dev/null || true
-            sleep 5
+            sleep 3
             
             # Check if gracefully stopped
             if kill -0 "$pid" 2>/dev/null; then
                 log_verbose "Graceful shutdown timeout, force killing validator..."
                 kill -KILL "$pid" 2>/dev/null || true
-                sleep 2
+                sleep 1
             else
                 log_success "Validator stopped gracefully"
             fi
@@ -1969,10 +1972,26 @@ cleanup_validator() {
     # Clean up any remaining processes
     pkill -f "slonana_validator" 2>/dev/null || true
     
-    log_verbose "Cleanup completed"
+    log_info "Stopping..."
 }
 
-# Trap cleanup on exit
+# Enhanced signal handling for graceful shutdown
+handle_sigterm() {
+    log_info "Received SIGTERM, initiating graceful shutdown..."
+    cleanup_validator
+    exit 0
+}
+
+# Enhanced signal handling for interrupt
+handle_sigint() {
+    log_info "Received SIGINT (Ctrl+C), initiating graceful shutdown..."
+    cleanup_validator
+    exit 0
+}
+
+# Set up signal traps for graceful shutdown
+trap handle_sigterm SIGTERM
+trap handle_sigint SIGINT
 trap cleanup_validator EXIT
 
 # Main execution

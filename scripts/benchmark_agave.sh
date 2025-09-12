@@ -638,27 +638,53 @@ EOF
 
 # Cleanup validator process
 cleanup_validator() {
+    log_info "Cleaning up validator processes..."
+    
+    # Set flag to indicate we're in cleanup mode
+    CLEANUP_MODE=true
+    
     if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
         local pid
         pid=$(cat "$RESULTS_DIR/validator.pid")
         
         if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
             log_info "Stopping test validator (PID: $pid)..."
-            kill "$pid" 2>/dev/null || true
-            sleep 5
+            kill -TERM "$pid" 2>/dev/null || true
+            sleep 3
             
             # Force kill if still running
             if kill -0 "$pid" 2>/dev/null; then
                 log_warning "Force killing validator..."
-                kill -9 "$pid" 2>/dev/null || true
+                kill -KILL "$pid" 2>/dev/null || true
+                sleep 1
+            else
+                log_success "Validator stopped gracefully"
             fi
         fi
         
         rm -f "$RESULTS_DIR/validator.pid"
     fi
+    
+    log_info "Stopping..."
 }
 
-# Trap cleanup on exit
+# Enhanced signal handling for graceful shutdown
+handle_sigterm() {
+    log_info "Received SIGTERM, initiating graceful shutdown..."
+    cleanup_validator
+    exit 0
+}
+
+# Enhanced signal handling for interrupt
+handle_sigint() {
+    log_info "Received SIGINT (Ctrl+C), initiating graceful shutdown..."
+    cleanup_validator
+    exit 0
+}
+
+# Set up signal traps for graceful shutdown
+trap handle_sigterm SIGTERM
+trap handle_sigint SIGINT
 trap cleanup_validator EXIT
 
 # Main execution

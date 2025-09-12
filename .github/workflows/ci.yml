@@ -11,6 +11,7 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     name: Build and Test
+    timeout-minutes: 30
 
     steps:
     - name: Checkout code
@@ -58,22 +59,23 @@ jobs:
         fi
 
     - name: Run tests
+      timeout-minutes: 15
       run: |
         cd build
         echo "Running tests with snapshot mode: ${SNAPSHOT_MODE:-unknown}"
         
-        # Run tests with proper error handling
+        # Run tests with proper error handling and timeouts
         EXIT_CODE=0
         
-        # Basic tests
-        if ! ./slonana_tests; then
-          echo "WARNING: Basic tests failed"
+        # Basic tests with timeout
+        if ! timeout 600s ./slonana_tests; then
+          echo "WARNING: Basic tests failed or timed out"
           EXIT_CODE=1
         fi
         
-        # Comprehensive tests
-        if ! ./slonana_comprehensive_tests; then
-          echo "WARNING: Comprehensive tests failed"
+        # Comprehensive tests with timeout  
+        if ! timeout 600s ./slonana_comprehensive_tests; then
+          echo "WARNING: Comprehensive tests failed or timed out"
           EXIT_CODE=1
         fi
         
@@ -86,9 +88,10 @@ jobs:
         echo "Test execution completed"
 
     - name: Run performance benchmarks
+      timeout-minutes: 10
       run: |
         cd build
-        ./slonana_benchmarks > benchmark_results.txt || echo "Benchmarks completed with warnings"
+        timeout 480s ./slonana_benchmarks > benchmark_results.txt || echo "Benchmarks completed with warnings"
         echo "Benchmark results:"
         tail -20 benchmark_results.txt
 
