@@ -1282,9 +1282,9 @@ test_transaction_throughput() {
     # **DISCIPLINED FUNDING LOGIC**: Improved logic with proper faucet readiness and retry mechanism
     log_info "💰 Pre-flight funding with disciplined logic..."
     
-    # **ENHANCED PARAMETERS**: Based on user recommendation
-    local REQUIRED_BALANCE_SOL=100     # 100 SOL minimum - sufficient for extended testing
-    local FUNDING_AMOUNT_SOL=100       # 100 SOL per attempt - standard amount
+    # **ENHANCED PARAMETERS**: Based on user recommendation - optimized for CI environments
+    local REQUIRED_BALANCE_SOL=1       # 1 SOL minimum - sufficient for CI testing, faster and more reliable
+    local FUNDING_AMOUNT_SOL=1         # 1 SOL per attempt - CI-optimized amount for faster funding
     local MAX_FUNDING_TRIES=10         # 10 attempts - adequate retry count with backoff
     local funding_attempt=0
     local funding_validated=false
@@ -1330,7 +1330,7 @@ test_transaction_throughput() {
     log_info "🔍 Waiting for validator/faucet to become available before funding attempts..."
     local faucet_ready=false
     local faucet_wait_attempts=0
-    local max_faucet_wait=30
+    local max_faucet_wait=90  # Increased from 30 to 90 (3min) for slower CI environments
     
     while [[ $faucet_wait_attempts -lt $max_faucet_wait ]]; do
         # Test faucet availability with a small test airdrop
@@ -1346,7 +1346,7 @@ test_transaction_throughput() {
     done
     
     if [[ "$faucet_ready" != "true" ]]; then
-        log_warning "⚠️  Faucet never became available after ${max_faucet_wait} attempts (60s)"
+        log_warning "⚠️  Faucet never became available after ${max_faucet_wait} attempts (3 minutes)"
         log_warning "⚠️  This indicates validator faucet is not working properly"
         
         # Write failure results
@@ -1595,8 +1595,8 @@ test_transaction_throughput() {
                     total_emergency_attempts=$((total_emergency_attempts + 1))
                     echo "$total_emergency_attempts" > "$emergency_attempts_file"
                     
-                    # **DISCIPLINED EMERGENCY FUNDING**: Reasonable amounts with backoff
-                    local emergency_funding_amount=100  # Fixed 100 SOL amount - adequate for most needs
+                    # **DISCIPLINED EMERGENCY FUNDING**: CI-optimized amounts with backoff
+                    local emergency_funding_amount=10  # 10 SOL for CI environments - adequate for most needs
                     log_verbose "Emergency funding attempt $total_emergency_attempts/3 - requesting $emergency_funding_amount SOL"
                     
                     # **DISCIPLINED EMERGENCY AIRDROP**: Enhanced funding with proper validation
