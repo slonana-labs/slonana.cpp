@@ -28,8 +28,9 @@ struct Lockout {
   uint64_t lockout_period() const {
     // Agave-compatible lockout calculation: 2^confirmation_count
     static constexpr uint64_t TOWER_BFT_MAX_LOCKOUT = 1ULL << 32;
-    return std::min(static_cast<uint64_t>(1ULL << confirmation_count),
-                    TOWER_BFT_MAX_LOCKOUT);
+    const uint32_t cc = std::min<uint32_t>(confirmation_count, 32u);
+    const uint64_t period = (uint64_t{1} << cc);
+    return std::min(period, TOWER_BFT_MAX_LOCKOUT);
   }
 
   /**
