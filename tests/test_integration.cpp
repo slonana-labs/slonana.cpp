@@ -8,8 +8,13 @@
 namespace fs = std::filesystem;
 
 void test_full_validator_lifecycle() {
+  std::string ledger_path = "/tmp/test_integration_validator";
+  
+  // Initialize test ledger with snapshot/genesis fallback
+  TestLedgerInitializer::initialize_test_ledger("full_validator_lifecycle", ledger_path);
+  
   slonana::common::ValidatorConfig config;
-  config.ledger_path = "/tmp/test_integration_validator";
+  config.ledger_path = ledger_path;
   config.identity_keypair_path = "/tmp/test_integration_identity.json";
   config.rpc_bind_address = "127.0.0.1:18899";
   config.gossip_bind_address = "127.0.0.1:18001";
