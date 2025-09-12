@@ -216,6 +216,7 @@ install-solana-cli: ## Install Solana CLI from GitHub releases
 	@mkdir -p /tmp/solana-install ~/.local/share/solana/install
 	@cd /tmp/solana-install && \
 		curl -L https://github.com/solana-labs/solana/releases/download/v1.18.26/solana-release-x86_64-unknown-linux-gnu.tar.bz2 -o solana.tar.bz2 && \
+		echo "EXPECTED_SHA256_HERE  solana.tar.bz2" | sha256sum -c - && \
 		tar -xjf solana.tar.bz2 && \
 		cp -r solana-release/* ~/.local/share/solana/install/active_release/
 	@echo "✅ Solana CLI installed to ~/.local/share/solana/install/active_release/"
