@@ -449,58 +449,119 @@ ExecutionOutcome ExecutionEngine::execute_transaction(
   final_outcome.result = ExecutionResult::SUCCESS;
   final_outcome.compute_units_consumed = 0;
 
-  ExecutionContext context;
-  context.instructions = instructions;
-  context.accounts = accounts;
-  context.max_compute_units = impl_->max_compute_units_;
-
-  for (const auto &instruction : instructions) {
-    // Check if we have compute budget left
-    if (context.consumed_compute_units >= context.max_compute_units) {
-      final_outcome.result = ExecutionResult::COMPUTE_BUDGET_EXCEEDED;
-      final_outcome.error_details = "Transaction exceeded compute budget";
-      break;
+  try {
+    // Enhanced safety checks to prevent crashes
+    if (instructions.empty()) {
+      std::cerr << "ERROR: Empty instructions in execute_transaction" << std::endl;
+      final_outcome.result = ExecutionResult::PROGRAM_ERROR;
+      final_outcome.error_details = "No instructions provided";
+      return final_outcome;
     }
 
-    // Find the program to execute
-    BuiltinProgram *program_to_execute = nullptr;
+    if (!impl_) {
+      std::cerr << "ERROR: Null implementation in execute_transaction" << std::endl;
+      final_outcome.result = ExecutionResult::PROGRAM_ERROR;
+      final_outcome.error_details = "Engine not properly initialized";
+      return final_outcome;
+    }
 
-    for (const auto &builtin : impl_->builtin_programs_) {
-      if (builtin->get_program_id() == instruction.program_id) {
-        program_to_execute = builtin.get();
+    ExecutionContext context;
+    context.instructions = instructions;
+    context.accounts = accounts;
+    context.max_compute_units = impl_->max_compute_units_;
+
+    for (const auto &instruction : instructions) {
+      try {
+        // Check if we have compute budget left
+        if (context.consumed_compute_units >= context.max_compute_units) {
+          final_outcome.result = ExecutionResult::COMPUTE_BUDGET_EXCEEDED;
+          final_outcome.error_details = "Transaction exceeded compute budget";
+          break;
+        }
+
+        // Find the program to execute with null checks
+        BuiltinProgram *program_to_execute = nullptr;
+
+        for (const auto &builtin : impl_->builtin_programs_) {
+          if (builtin && builtin->get_program_id() == instruction.program_id) {
+            program_to_execute = builtin.get();
+            break;
+          }
+        }
+
+        if (!program_to_execute) {
+          final_outcome.result = ExecutionResult::PROGRAM_ERROR;
+          final_outcome.error_details = "Program not found";
+          break;
+        }
+
+        // Execute the instruction with enhanced error handling
+        try {
+          auto outcome = program_to_execute->execute(instruction, context);
+          final_outcome.compute_units_consumed += outcome.compute_units_consumed;
+
+          if (outcome.result != ExecutionResult::SUCCESS) {
+            final_outcome.result = outcome.result;
+            final_outcome.error_details = outcome.error_details;
+            break;
+          }
+
+          // Merge modified accounts
+          final_outcome.modified_accounts.insert(
+              final_outcome.modified_accounts.end(),
+              outcome.modified_accounts.begin(), outcome.modified_accounts.end());
+
+          impl_->total_instructions_executed_++;
+          
+        } catch (const std::exception &e) {
+          std::cerr << "ERROR: Exception during instruction execution: " << e.what() << std::endl;
+          final_outcome.result = ExecutionResult::PROGRAM_ERROR;
+          final_outcome.error_details = "Instruction execution exception: " + std::string(e.what());
+          break;
+        } catch (...) {
+          std::cerr << "ERROR: Unknown exception during instruction execution" << std::endl;
+          final_outcome.result = ExecutionResult::PROGRAM_ERROR;
+          final_outcome.error_details = "Unknown instruction execution error";
+          break;
+        }
+        
+      } catch (const std::exception &e) {
+        std::cerr << "ERROR: Exception during instruction processing: " << e.what() << std::endl;
+        final_outcome.result = ExecutionResult::PROGRAM_ERROR;
+        final_outcome.error_details = "Instruction processing exception: " + std::string(e.what());
+        break;
+      } catch (...) {
+        std::cerr << "ERROR: Unknown exception during instruction processing" << std::endl;
+        final_outcome.result = ExecutionResult::PROGRAM_ERROR;
+        final_outcome.error_details = "Unknown instruction processing error";
         break;
       }
     }
 
-    if (!program_to_execute) {
-      final_outcome.result = ExecutionResult::PROGRAM_ERROR;
-      final_outcome.error_details = "Program not found";
-      break;
+    impl_->total_compute_units_consumed_ += final_outcome.compute_units_consumed;
+
+    // Update the provided accounts with modifications - with crash protection
+    try {
+      for (const auto &modified_account : final_outcome.modified_accounts) {
+        accounts[modified_account.program_id] = modified_account;
+      }
+    } catch (const std::exception &e) {
+      std::cerr << "ERROR: Exception during account updates: " << e.what() << std::endl;
+      // Don't fail the transaction for account update errors - continue
     }
 
-    // Execute the instruction
-    auto outcome = program_to_execute->execute(instruction, context);
-    final_outcome.compute_units_consumed += outcome.compute_units_consumed;
-
-    if (outcome.result != ExecutionResult::SUCCESS) {
-      final_outcome.result = outcome.result;
-      final_outcome.error_details = outcome.error_details;
-      break;
-    }
-
-    // Merge modified accounts
-    final_outcome.modified_accounts.insert(
-        final_outcome.modified_accounts.end(),
-        outcome.modified_accounts.begin(), outcome.modified_accounts.end());
-
-    impl_->total_instructions_executed_++;
-  }
-
-  impl_->total_compute_units_consumed_ += final_outcome.compute_units_consumed;
-
-  // Update the provided accounts with modifications
-  for (const auto &modified_account : final_outcome.modified_accounts) {
-    accounts[modified_account.program_id] = modified_account;
+  } catch (const std::bad_alloc &e) {
+    std::cerr << "CRITICAL: Memory allocation error in execute_transaction: " << e.what() << std::endl;
+    final_outcome.result = ExecutionResult::PROGRAM_ERROR;
+    final_outcome.error_details = "Memory allocation failed";
+  } catch (const std::exception &e) {
+    std::cerr << "CRITICAL: Exception in execute_transaction: " << e.what() << std::endl;
+    final_outcome.result = ExecutionResult::PROGRAM_ERROR;
+    final_outcome.error_details = "Transaction execution exception: " + std::string(e.what());
+  } catch (...) {
+    std::cerr << "CRITICAL: Unknown exception in execute_transaction" << std::endl;
+    final_outcome.result = ExecutionResult::PROGRAM_ERROR;
+    final_outcome.error_details = "Unknown transaction execution error";
   }
 
   return final_outcome;

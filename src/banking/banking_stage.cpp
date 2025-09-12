@@ -100,39 +100,73 @@ double PipelineStage::get_average_processing_time_ms() const {
 }
 
 void PipelineStage::worker_loop() {
-  while (!should_stop_) {
-    std::shared_ptr<TransactionBatch> batch;
+  try {
+    while (!should_stop_) {
+      std::shared_ptr<TransactionBatch> batch;
 
-    {
-      std::unique_lock<std::mutex> lock(queue_mutex_);
-      queue_cv_.wait(lock,
-                     [this] { return !batch_queue_.empty() || should_stop_; });
+      try {
+        std::unique_lock<std::mutex> lock(queue_mutex_);
+        queue_cv_.wait(lock,
+                       [this] { return !batch_queue_.empty() || should_stop_; });
 
-      if (should_stop_) {
-        break;
+        if (should_stop_) {
+          break;
+        }
+
+        if (!batch_queue_.empty()) {
+          batch = batch_queue_.front();
+          batch_queue_.pop();
+        }
+      } catch (const std::exception &e) {
+        std::cerr << "ERROR: Exception in worker loop queue handling: " << e.what() << std::endl;
+        continue;
       }
 
-      batch = batch_queue_.front();
-      batch_queue_.pop();
+      if (batch) {
+        try {
+          process_batch(batch);
+        } catch (const std::exception &e) {
+          std::cerr << "ERROR: Exception processing batch in worker: " << e.what() << std::endl;
+        } catch (...) {
+          std::cerr << "ERROR: Unknown exception processing batch in worker" << std::endl;
+        }
+      }
     }
-
-    if (batch) {
-      process_batch(batch);
-    }
+  } catch (const std::exception &e) {
+    std::cerr << "CRITICAL: Worker loop exception: " << e.what() << std::endl;
+  } catch (...) {
+    std::cerr << "CRITICAL: Unknown worker loop exception" << std::endl;
   }
 }
 
 void PipelineStage::process_batch(std::shared_ptr<TransactionBatch> batch) {
+  if (!batch) {
+    std::cerr << "ERROR: Null batch pointer in stage " << name_ << std::endl;
+    return;
+  }
+
   auto start_time = std::chrono::steady_clock::now();
 
   batch->set_state(TransactionBatch::State::PROCESSING);
 
   bool success = false;
   try {
-    success = process_fn_(batch);
+    if (!process_fn_) {
+      std::cerr << "ERROR: Null process function in stage " << name_ << std::endl;
+      success = false;
+    } else {
+      success = process_fn_(batch);
+    }
+  } catch (const std::bad_alloc &e) {
+    std::cerr << "CRITICAL: Memory allocation error in stage " << name_ << ": " 
+              << e.what() << std::endl;
+    success = false;
   } catch (const std::exception &e) {
     std::cerr << "Error processing batch in stage " << name_ << ": " << e.what()
               << std::endl;
+    success = false;
+  } catch (...) {
+    std::cerr << "CRITICAL: Unknown exception in stage " << name_ << std::endl;
     success = false;
   }
 
