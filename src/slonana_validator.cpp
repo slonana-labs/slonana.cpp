@@ -530,6 +530,10 @@ common::Result<bool> SolanaValidator::initialize_components() {
     gossip_protocol_ = std::make_shared<network::GossipProtocol>(config_);
     rpc_server_ = std::make_shared<network::SolanaRpcServer>(config_);
 
+    // Connect banking stage to ledger manager for transaction persistence
+    banking_stage_->set_ledger_manager(ledger_manager_);
+    std::cout << "    Banking stage connected to ledger manager" << std::endl;
+
     // Connect RPC server to validator components
     rpc_server_->set_ledger_manager(ledger_manager_);
     rpc_server_->set_validator_core(validator_core_);
