@@ -300,6 +300,7 @@ void test_advanced_staking_scenarios() {
     slonana::common::PublicKey validator_key(std::vector<uint8_t>(32, static_cast<uint8_t>(i % 3)));
     
     slonana::staking::StakeAccount stake_account;
+    stake_account.stake_pubkey = slonana::common::PublicKey(std::vector<uint8_t>(32, static_cast<uint8_t>(i + 20))); // Unique stake pubkey
     stake_account.delegator_pubkey = staker_key;
     stake_account.validator_pubkey = validator_key;
     stake_account.stake_amount = 1000000 * (i + 1); // Different amounts

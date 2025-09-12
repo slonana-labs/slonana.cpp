@@ -289,32 +289,43 @@ public:
       auto serialized = block.serialize();
       file.write(reinterpret_cast<const char*>(serialized.data()), serialized.size());
       file.close();
+      std::cout << "Saved block " << block.slot << " to " << block_file << " (" << serialized.size() << " bytes)" << std::endl;
+    } else {
+      std::cout << "Warning: Could not save block " << block.slot << " to " << block_file << std::endl;
     }
   }
 
   void load_blocks_from_disk() {
     try {
+      if (!std::filesystem::exists(ledger_path_)) {
+        return;
+      }
       for (const auto& entry : std::filesystem::directory_iterator(ledger_path_)) {
-        if (entry.is_regular_file() && entry.path().filename().string().starts_with("block_")) {
-          std::ifstream file(entry.path(), std::ios::binary);
-          if (file.is_open()) {
-            std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)),
-                                     std::istreambuf_iterator<char>());
-            file.close();
-            
-            if (!data.empty()) {
-              Block block(data);
-              blocks_.push_back(block);
-              if (block.slot > latest_slot_) {
-                latest_slot_ = block.slot;
-                latest_hash_ = block.block_hash;
+        if (entry.is_regular_file()) {
+          std::string filename = entry.path().filename().string();
+          if (filename.find("block_") == 0) {  // More compatible than starts_with
+            std::ifstream file(entry.path(), std::ios::binary);
+            if (file.is_open()) {
+              std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)),
+                                       std::istreambuf_iterator<char>());
+              file.close();
+              
+              if (!data.empty()) {
+                Block block(data);
+                blocks_.push_back(block);
+                if (block.slot > latest_slot_) {
+                  latest_slot_ = block.slot;
+                  latest_hash_ = block.block_hash;
+                }
               }
             }
           }
         }
       }
+      std::cout << "Loaded " << blocks_.size() << " blocks from disk, latest slot: " << latest_slot_ << std::endl;
     } catch (const std::exception& e) {
-      // Ignore errors during loading, continue with empty ledger
+      std::cout << "Warning: Could not load blocks from disk: " << e.what() << std::endl;
+      // Continue with empty ledger
     }
   }
 
