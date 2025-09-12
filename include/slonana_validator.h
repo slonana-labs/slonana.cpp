@@ -1,5 +1,6 @@
 #pragma once
 
+#include "banking/banking_stage.h"
 #include "common/types.h"
 #include "ledger/manager.h"
 #include "network/gossip.h"
@@ -67,6 +68,7 @@ private:
   std::shared_ptr<ledger::LedgerManager> ledger_manager_;
   std::shared_ptr<validator::ValidatorCore> validator_core_;
   std::shared_ptr<staking::StakingManager> staking_manager_;
+  std::shared_ptr<banking::BankingStage> banking_stage_;
   std::shared_ptr<svm::ExecutionEngine> execution_engine_;
   std::shared_ptr<svm::AccountManager> account_manager_;
   std::unique_ptr<validator::SnapshotBootstrapManager> snapshot_bootstrap_;

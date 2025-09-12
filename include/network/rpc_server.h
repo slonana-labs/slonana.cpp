@@ -19,6 +19,9 @@ class ValidatorCore;
 namespace staking {
 class StakingManager;
 }
+namespace banking {
+class BankingStage;
+}
 namespace svm {
 class ExecutionEngine;
 class AccountManager;
@@ -72,6 +75,7 @@ public:
   void set_ledger_manager(std::shared_ptr<ledger::LedgerManager> ledger);
   void set_validator_core(std::shared_ptr<validator::ValidatorCore> validator);
   void set_staking_manager(std::shared_ptr<staking::StakingManager> staking);
+  void set_banking_stage(std::shared_ptr<banking::BankingStage> banking);
   void set_execution_engine(std::shared_ptr<svm::ExecutionEngine> engine);
   void set_account_manager(std::shared_ptr<svm::AccountManager> accounts);
 
@@ -244,6 +248,7 @@ private:
   std::shared_ptr<ledger::LedgerManager> ledger_manager_;
   std::shared_ptr<validator::ValidatorCore> validator_core_;
   std::shared_ptr<staking::StakingManager> staking_manager_;
+  std::shared_ptr<banking::BankingStage> banking_stage_;
   std::shared_ptr<svm::ExecutionEngine> execution_engine_;
   std::shared_ptr<svm::AccountManager> account_manager_;
 
@@ -258,6 +263,10 @@ private:
   // Cache management
   bool is_cache_valid(uint64_t timestamp) const;
   uint64_t get_current_timestamp_ms() const;
+  
+  // Transaction utilities
+  std::string generate_transaction_signature(const std::string &transaction_data) const;
+  std::string encode_base58_signature(const std::vector<uint8_t> &signature_bytes) const;
 };
 
 } // namespace network

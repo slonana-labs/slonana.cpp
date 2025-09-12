@@ -164,6 +164,13 @@ common::Result<bool> SolanaValidator::start() {
               << std::endl;
   }
 
+  // Start banking stage for transaction processing
+  std::cout << "  🏦 Starting banking stage..." << std::endl;
+  if (!banking_stage_->start()) {
+    return common::Result<bool>("Failed to start banking stage");
+  }
+  std::cout << "  ✅ Banking stage started successfully" << std::endl;
+
   running_.store(true);
 
   // Display startup summary
@@ -198,6 +205,11 @@ void SolanaValidator::stop() {
 
   if (gossip_protocol_) {
     gossip_protocol_->stop();
+  }
+
+  // Stop banking stage
+  if (banking_stage_) {
+    banking_stage_->stop();
   }
 
   // Stop core validator
@@ -486,6 +498,14 @@ common::Result<bool> SolanaValidator::initialize_components() {
     std::cout << "  💰 Initializing staking manager..." << std::endl;
     staking_manager_ = std::make_shared<staking::StakingManager>();
 
+    // Initialize banking stage for transaction processing
+    std::cout << "  🏦 Initializing banking stage..." << std::endl;
+    banking_stage_ = std::make_shared<banking::BankingStage>();
+    if (!banking_stage_->initialize()) {
+      return common::Result<bool>("Failed to initialize banking stage");
+    }
+    std::cout << "    Banking stage initialized successfully" << std::endl;
+
     // Initialize validator core with enhanced setup
     std::cout << "  🎯 Initializing validator core..." << std::endl;
     validator_core_ = std::make_shared<validator::ValidatorCore>(
@@ -514,6 +534,7 @@ common::Result<bool> SolanaValidator::initialize_components() {
     rpc_server_->set_ledger_manager(ledger_manager_);
     rpc_server_->set_validator_core(validator_core_);
     rpc_server_->set_staking_manager(staking_manager_);
+    rpc_server_->set_banking_stage(banking_stage_);
     rpc_server_->set_execution_engine(execution_engine_);
     rpc_server_->set_account_manager(account_manager_);
 
