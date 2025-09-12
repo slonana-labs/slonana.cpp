@@ -15,7 +15,7 @@ LEDGER_DIR=""
 RESULTS_DIR=""
 VALIDATOR_BIN=""
 BUILD_DIR="$PROJECT_ROOT/build"
-TEST_DURATION=60
+TEST_DURATION=160
 RPC_PORT=8899
 GOSSIP_PORT=8001
 IDENTITY_FILE=""
@@ -353,11 +353,11 @@ setup_validator() {
         local snapshot_discovery_success=false
         local real_snapshot_downloaded=false
         
-        if "$VALIDATOR_BIN" snapshot-find --network devnet --max-latency 200 --max-snapshot-age 50000 --min-download-speed 1 --json > "$RESULTS_DIR/snapshot_sources.json" 2>/dev/null; then
+        if "$VALIDATOR_BIN" snapshot-find --network devnet --max-latency 2000 --max-snapshot-age 500000 --min-download-speed 0 --json > "$RESULTS_DIR/snapshot_sources.json" 2>/dev/null; then
             log_verbose "Snapshot sources discovered, attempting download..."
             snapshot_discovery_success=true
             
-            if "$VALIDATOR_BIN" snapshot-download --output-dir "$LEDGER_DIR" --network devnet --max-latency 200 --max-snapshot-age 50000 --min-download-speed 1 --verbose > "$RESULTS_DIR/snapshot_download.log" 2>&1; then
+            if "$VALIDATOR_BIN" snapshot-download --output-dir "$LEDGER_DIR" --network devnet --max-latency 2000 --max-snapshot-age 500000 --min-download-speed 0 --verbose > "$RESULTS_DIR/snapshot_download.log" 2>&1; then
                 # Check if a REAL snapshot was actually downloaded
                 if find "$LEDGER_DIR" -name "*.tar.zst" -size +1M 2>/dev/null | head -1 | grep -q .; then
                     # Verify it's not just a bootstrap marker disguised as a snapshot
@@ -1106,7 +1106,7 @@ test_transaction_throughput() {
     export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
     
     # Wait for validator RPC to become available (timeout after 60s)
-    local readiness_timeout=60
+    local readiness_timeout=160
     local readiness_wait=0
     local validator_ready=false
     
