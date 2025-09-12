@@ -127,7 +127,7 @@ OPTIONAL ARGUMENTS:
     --validator-bin PATH     Path to slonana_validator binary (auto-detected if not provided)
     --build-dir PATH         Build directory containing binaries (default: PROJECT_ROOT/build)
     --identity KEYFILE       Validator identity keypair file (auto-generated if not provided)
-    --test-duration SECONDS  Benchmark test duration in seconds (default: 60)
+    --test-duration SECONDS  Benchmark test duration in seconds (default: 160, auto-reduced to 60 in CI environments)
     --rpc-port PORT          RPC port for validator (default: 8899)
     --gossip-port PORT       Gossip port for validator (default: 8001)
     --bootstrap-only         Only bootstrap validator, don't run performance tests
@@ -238,6 +238,14 @@ parse_arguments() {
     if [[ -z "$RESULTS_DIR" ]]; then
         log_error "Missing required argument: --results"
         exit 2
+    fi
+
+    # **CI OPTIMIZATION**: Reduce test duration for CI environments to prevent timeouts
+    if [[ -n "${CI:-}" || -n "${GITHUB_ACTIONS:-}" || -n "${CONTINUOUS_INTEGRATION:-}" ]]; then
+        if [[ "$TEST_DURATION" -eq 160 ]]; then  # Only adjust default duration
+            TEST_DURATION=60
+            log_info "🔧 CI environment detected - reducing test duration to ${TEST_DURATION}s to prevent timeouts"
+        fi
     fi
 
     # Validate test duration
@@ -1502,12 +1510,14 @@ test_transaction_throughput() {
     # Safely calculate end time with error handling
     local end_time
     if ! end_time=$(( start_time + TEST_DURATION )) 2>/dev/null; then
-        log_error "Failed to calculate end time"
+        log_error "Failed to calculate end time (start_time=$start_time, TEST_DURATION=$TEST_DURATION)"
         echo "0" > "$RESULTS_DIR/effective_tps.txt"
         echo "0" > "$RESULTS_DIR/successful_transactions.txt"
         echo "0" > "$RESULTS_DIR/submitted_requests.txt"
         return 0
     fi
+    
+    log_verbose "Transaction test: start_time=$start_time, end_time=$end_time, duration=${TEST_DURATION}s"
     
     # Test solana command availability before starting loop
     if ! command -v solana &>/dev/null; then
@@ -1518,6 +1528,8 @@ test_transaction_throughput() {
         return 0
     fi
     
+    log_verbose "✅ solana command found: $(command -v solana)"
+    
     # Test basic solana connectivity
     if ! solana config get >/dev/null 2>&1; then
         log_warning "solana config appears to have issues"
@@ -1526,29 +1538,36 @@ test_transaction_throughput() {
     
     while true; do
         local current_time
-        current_time=$(date +%s 2>&1)
-        local date_result=$?
-        
-        if [[ $date_result -ne 0 ]]; then
+        if ! current_time=$(date +%s); then
             log_warning "Failed to get current time, ending transaction test"
             break
         fi
         
+        # **DEBUG**: Show timing information on first iteration
+        if [[ $txn_count -eq 0 ]]; then
+            log_verbose "🔍 Starting transaction loop - current_time=$current_time, end_time=$end_time, remaining=$((end_time - current_time))s"
+        fi
+        
         # Check if we've reached the end time
         if [[ $current_time -ge $end_time ]]; then
-            log_verbose "Transaction test duration completed"
+            log_verbose "Transaction test duration completed (current: $current_time, end: $end_time)"
             break
         fi
         
         # Send a batch of transactions with error handling
         local i
         for i in 1 2 3 4 5; do
+            # **DEBUG**: Show progress occasionally
+            if [[ $((txn_count % 20)) -eq 0 ]] && [[ $txn_count -gt 0 ]]; then
+                log_verbose "🔄 Transaction progress: $txn_count transactions sent, $success_count successful"
+            fi
+            
             # Check if validator is still running
             if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
                 local validator_pid
                 validator_pid=$(cat "$RESULTS_DIR/validator.pid" 2>/dev/null) || true
                 if [[ -n "$validator_pid" ]] && ! kill -0 "$validator_pid" 2>/dev/null; then
-                    log_warning "Validator process no longer running, ending transaction test"
+                    log_warning "Validator process no longer running (PID: $validator_pid), ending transaction test"
                     break 2
                 fi
             fi
