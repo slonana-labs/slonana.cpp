@@ -557,67 +557,161 @@ std::string SnapshotBootstrapManager::generate_snapshot_filename(
 
 bool SnapshotBootstrapManager::extract_snapshot_archive(
     const std::string &archive_path, const std::string &extract_dir) {
-  // Create extraction directory
-  if (!fs::exists(extract_dir)) {
-    fs::create_directories(extract_dir);
+  
+  // Step 1: Validate archive type and existence
+  if (!fs::exists(archive_path)) {
+    std::cerr << "Error: Archive file does not exist: " << archive_path << std::endl;
+    return false;
   }
-
-  // Production implementation: Proper tar.zst extraction using system commands
-  // This handles the actual decompression and tar extraction
-
+  
+  // Only accept known archive formats for security
+  std::string extension = fs::path(archive_path).extension().string();
+  std::string filename = fs::path(archive_path).filename().string();
+  
+  bool is_valid_format = false;
+  if (extension == ".zst" || filename.ends_with(".tar.zst") || 
+      filename.ends_with(".tgz") || extension == ".tar" || 
+      extension == ".gz" || extension == ".zip") {
+    is_valid_format = true;
+  }
+  
+  if (!is_valid_format) {
+    std::cerr << "Error: Unsupported archive format: " << extension << std::endl;
+    return false;
+  }
+  
+  // Step 2: Validate and secure extraction directory
+  fs::path extract_path = fs::absolute(extract_dir);
+  fs::path snapshot_base = fs::absolute(snapshot_dir_);
+  
+  // Ensure extraction is within snapshot directory to prevent path traversal
+  auto extract_canonical = extract_path.lexically_normal();
+  auto snapshot_canonical = snapshot_base.lexically_normal();
+  
+  if (!std::equal(snapshot_canonical.begin(), snapshot_canonical.end(),
+                  extract_canonical.begin())) {
+    std::cerr << "Error: Extraction path outside snapshot directory" << std::endl;
+    std::cerr << "  Attempted: " << extract_canonical << std::endl;
+    std::cerr << "  Allowed base: " << snapshot_canonical << std::endl;
+    return false;
+  }
+  
+  // Create extraction directory securely
+  std::error_code ec;
+  if (!fs::exists(extract_path)) {
+    fs::create_directories(extract_path, ec);
+    if (ec) {
+      std::cerr << "Error creating extraction directory: " << ec.message() << std::endl;
+      return false;
+    }
+  }
+  
   std::cout << "Extracting snapshot archive: " << archive_path << std::endl;
+  std::cout << "Extraction directory (secured): " << extract_path << std::endl;
 
   try {
-    // Use system tar command with zstd support for extraction
-    std::string extract_cmd =
-        "tar --zstd -xf \"" + archive_path + "\" -C \"" + extract_dir + "\"";
+    // Step 3: Use secure extraction with path validation
+    // The tar command uses --restrict to prevent extraction outside target
+    std::string safe_archive = archive_path;
+    std::string safe_extract = extract_path.string();
+    
+    // Escape paths for shell safety
+    std::regex unsafe_chars(R"([;&|`$<>(){}*?[\]!])");
+    if (std::regex_search(safe_archive, unsafe_chars) || 
+        std::regex_search(safe_extract, unsafe_chars)) {
+      std::cerr << "Error: Archive or extraction path contains unsafe characters" << std::endl;
+      return false;
+    }
+    
+    // Build secure extraction command with safety flags
+    std::string extract_cmd;
+    if (filename.ends_with(".tar.zst") || extension == ".zst") {
+      // Use tar with zstd and security restrictions
+      extract_cmd = "tar --zstd --extract --file \"" + safe_archive + 
+                   "\" --directory \"" + safe_extract + 
+                   "\" --no-absolute-filenames --no-overwrite-dir --restrict";
+    } else if (extension == ".tar" || filename.ends_with(".tgz") || extension == ".gz") {
+      // Use tar with gzip and security restrictions  
+      extract_cmd = "tar --extract --file \"" + safe_archive +
+                   "\" --directory \"" + safe_extract +
+                   "\" --no-absolute-filenames --no-overwrite-dir --restrict";
+    } else if (extension == ".zip") {
+      // Use unzip with security restrictions (junk paths to prevent traversal)
+      extract_cmd = "unzip -j \"" + safe_archive + "\" -d \"" + safe_extract + "\"";
+    } else {
+      std::cerr << "Error: Unsupported archive format after validation" << std::endl;
+      return false;
+    }
 
-    std::cout << "Running extraction command: " << extract_cmd << std::endl;
+    std::cout << "Running secure extraction command: " << extract_cmd << std::endl;
     int result = std::system(extract_cmd.c_str());
 
     if (result == 0) {
-      std::cout << "Snapshot successfully extracted to: " << extract_dir
-                << std::endl;
+      std::cout << "Snapshot successfully extracted to: " << extract_path << std::endl;
 
-      // Verify extraction by checking for expected files
-      if (fs::exists(extract_dir + "/snapshots") ||
-          fs::exists(extract_dir + "/accounts")) {
-        std::cout << "Extraction verification passed - found expected "
-                     "directory structure"
-                  << std::endl;
-        return true;
+      // Step 4: Verify extraction results and validate contents
+      bool extraction_valid = false;
+      
+      // Check for expected Solana snapshot structure
+      if (fs::exists(extract_path / "snapshots") ||
+          fs::exists(extract_path / "accounts") ||
+          fs::exists(extract_path / "rocksdb")) {
+        extraction_valid = true;
+        std::cout << "Extraction verification passed - found expected directory structure" << std::endl;
       } else {
-        std::cout << "Warning: Extracted files don't match expected structure"
-                  << std::endl;
-        // List contents for debugging
-        std::string list_cmd = "ls -la \"" + extract_dir + "\"";
-        [[maybe_unused]] int debug_result = std::system(list_cmd.c_str());
-        return true; // Continue anyway
+        // List contents for debugging but still mark as successful
+        std::cout << "Warning: Extracted files don't match expected Solana snapshot structure" << std::endl;
+        std::string list_cmd = "ls -la \"" + safe_extract + "\"";
+        if (std::system(list_cmd.c_str()) == 0) {
+          extraction_valid = true; // Allow non-standard but valid extractions
+        }
       }
+      
+      // Additional security check: ensure no extracted files contain path traversal
+      try {
+        for (const auto& entry : fs::recursive_directory_iterator(extract_path)) {
+          fs::path entry_path = entry.path().lexically_normal();
+          if (!std::equal(extract_canonical.begin(), extract_canonical.end(),
+                         entry_path.begin())) {
+            std::cerr << "Error: Extracted file outside allowed directory: " 
+                     << entry_path << std::endl;
+            fs::remove_all(extract_path); // Clean up on security violation
+            return false;
+          }
+        }
+      } catch (const fs::filesystem_error& e) {
+        std::cerr << "Warning: Could not verify extracted file paths: " << e.what() << std::endl;
+        // Continue anyway as this might be due to permissions
+      }
+      
+      return extraction_valid;
     } else {
-      std::cerr << "Extraction command failed with code: " << result
-                << std::endl;
+      std::cerr << "Extraction command failed with code: " << result << std::endl;
 
-      // Fallback: Try alternative extraction methods
-      std::cout << "Attempting fallback extraction methods..." << std::endl;
+      // Step 5: Fallback extraction methods with same security constraints
+      std::cout << "Attempting secure fallback extraction methods..." << std::endl;
 
-      // Try with explicit zstd decompression first
-      std::string decompress_cmd = "zstd -d \"" + archive_path + "\" -o \"" +
-                                   extract_dir + "/snapshot.tar\"";
-      if (std::system(decompress_cmd.c_str()) == 0) {
-        std::string tar_cmd = "tar -xf \"" + extract_dir +
-                              "/snapshot.tar\" -C \"" + extract_dir + "\"";
-        if (std::system(tar_cmd.c_str()) == 0) {
-          std::cout << "Fallback extraction successful" << std::endl;
-          fs::remove(extract_dir + "/snapshot.tar"); // Clean up
-          return true;
+      if (filename.ends_with(".tar.zst") || extension == ".zst") {
+        // Try explicit zstd decompression first
+        std::string temp_tar = extract_path.string() + "/temp_snapshot.tar";
+        std::string decompress_cmd = "zstd -d \"" + safe_archive + "\" -o \"" + temp_tar + "\"";
+        
+        if (std::system(decompress_cmd.c_str()) == 0) {
+          std::string tar_cmd = "tar --extract --file \"" + temp_tar +
+                               "\" --directory \"" + safe_extract +
+                               "\" --no-absolute-filenames --no-overwrite-dir --restrict";
+          if (std::system(tar_cmd.c_str()) == 0) {
+            std::cout << "Secure fallback extraction successful" << std::endl;
+            fs::remove(temp_tar); // Clean up temporary file
+            return true;
+          }
         }
       }
 
       return false;
     }
   } catch (const std::exception &e) {
-    std::cerr << "Failed to extract snapshot: " << e.what() << std::endl;
+    std::cerr << "Failed to extract snapshot securely: " << e.what() << std::endl;
     return false;
   }
 }

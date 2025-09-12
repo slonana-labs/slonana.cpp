@@ -1208,6 +1208,7 @@ ExtendedSPLProgramRegistry::ExtendedSPLProgramRegistry() {
 
 bool ExtendedSPLProgramRegistry::is_spl_program(
     const std::string &program_id) const {
+  std::shared_lock<std::shared_mutex> lock(programs_mutex_);
   return programs_.count(program_id) > 0;
 }
 
@@ -1215,6 +1216,7 @@ ExecutionResult ExtendedSPLProgramRegistry::execute_spl_program(
     const std::string &program_id, const std::vector<uint8_t> &instruction_data,
     const std::vector<AccountInfo> &accounts) {
 
+  std::shared_lock<std::shared_mutex> lock(programs_mutex_);
   auto it = programs_.find(program_id);
   if (it == programs_.end()) {
     return spl_utils::create_program_error("Unknown SPL program: " +
@@ -1231,6 +1233,7 @@ ExecutionResult ExtendedSPLProgramRegistry::execute_spl_program(
 
 std::vector<std::string>
 ExtendedSPLProgramRegistry::get_supported_programs() const {
+  std::shared_lock<std::shared_mutex> lock(programs_mutex_);
   std::vector<std::string> program_ids;
   for (const auto &pair : programs_) {
     program_ids.push_back(pair.first);
@@ -1244,6 +1247,7 @@ void ExtendedSPLProgramRegistry::register_custom_program(
                                   const std::vector<AccountInfo> &)>
         executor) {
 
+  std::unique_lock<std::shared_mutex> lock(programs_mutex_);
   programs_[program_id] = executor;
   std::cout << "Registered custom SPL program: " << program_id << std::endl;
 }

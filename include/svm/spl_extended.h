@@ -2,6 +2,7 @@
 
 #include "svm/engine.h"
 #include <memory>
+#include <shared_mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -282,6 +283,7 @@ private:
                                       const std::vector<uint8_t> &,
                                       const std::vector<AccountInfo> &)>>
       programs_;
+  mutable std::shared_mutex programs_mutex_;
 
 public:
   ExtendedSPLProgramRegistry();
