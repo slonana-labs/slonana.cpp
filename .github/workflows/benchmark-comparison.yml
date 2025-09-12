@@ -197,14 +197,14 @@ jobs:
             --ledger test_ledgers/slonana \
             --results benchmark_results/slonana \
             --validator-bin build/slonana_validator \
-            --test-duration 60 \
+            --test-duration 160 \
             --verbose
         else
           echo "Slonana validator not found, using placeholder mode..."
           ./scripts/benchmark_slonana.sh \
             --ledger test_ledgers/slonana \
             --results benchmark_results/slonana \
-            --test-duration 60 \
+            --test-duration 160 \
             --use-placeholder \
             --verbose
         fi
@@ -220,7 +220,7 @@ jobs:
           --ledger test_ledgers/agave \
           --results benchmark_results/agave \
           --validator-bin agave-validator \
-          --test-duration 60 \
+          --test-duration 160 \
           --verbose
           
     - name: Generate comparison report
