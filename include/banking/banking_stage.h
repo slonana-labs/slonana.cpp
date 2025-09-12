@@ -302,7 +302,16 @@ private:
   std::chrono::steady_clock::time_point start_time_;
 
   // Priority queue for priority processing
-  std::priority_queue<std::pair<int, TransactionPtr>> priority_queue_;
+  // Higher priority values processed first
+  using PriorityTransaction = std::pair<int, TransactionPtr>;
+  struct PriorityCompare {
+    bool operator()(const PriorityTransaction& a, const PriorityTransaction& b) {
+      return a.first < b.first;  // Higher priority first
+    }
+  };
+  std::priority_queue<PriorityTransaction, 
+                     std::vector<PriorityTransaction>,
+                     PriorityCompare> priority_queue_;
   std::unordered_map<TransactionPtr, int> transaction_priorities_;
   mutable std::mutex priority_mutex_;
 
