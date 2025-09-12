@@ -6,6 +6,9 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <memory>
+#include <vector>
+#include <string>
 
 namespace slonana {
 namespace wallet {
