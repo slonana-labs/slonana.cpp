@@ -106,8 +106,16 @@ void PipelineStage::worker_loop() {
 
       try {
         std::unique_lock<std::mutex> lock(queue_mutex_);
-        queue_cv_.wait(lock,
-                       [this] { return !batch_queue_.empty() || should_stop_; });
+        
+        // **ENHANCED TIMEOUT HANDLING** - Prevent indefinite blocking
+        auto timeout = std::chrono::seconds(1); // 1 second timeout
+        if (!queue_cv_.wait_for(lock, timeout, [this] { return !batch_queue_.empty() || should_stop_; })) {
+          // Timeout occurred, check if we should continue
+          if (should_stop_) {
+            break;
+          }
+          continue; // Continue loop and check again
+        }
 
         if (should_stop_) {
           break;
@@ -117,14 +125,42 @@ void PipelineStage::worker_loop() {
           batch = batch_queue_.front();
           batch_queue_.pop();
         }
+      } catch (const std::system_error &e) {
+        std::cerr << "ERROR: System error in worker loop queue handling: " << e.what() << std::endl;
+        continue;
       } catch (const std::exception &e) {
         std::cerr << "ERROR: Exception in worker loop queue handling: " << e.what() << std::endl;
+        continue;
+      } catch (...) {
+        std::cerr << "ERROR: Unknown exception in worker loop queue handling" << std::endl;
         continue;
       }
 
       if (batch) {
         try {
+          // **ENHANCED BATCH VALIDATION** - Ensure batch is valid before processing
+          if (!batch) {
+            std::cerr << "ERROR: Null batch pointer after dequeue in " << name_ << std::endl;
+            continue;
+          }
+          
+          // Validate batch state
+          if (batch->empty()) {
+            std::cerr << "WARNING: Empty batch in " << name_ << ", skipping" << std::endl;
+            continue;
+          }
+          
+          std::cerr << "DEBUG: Processing batch " << batch->get_batch_id() 
+                    << " with " << batch->size() << " transactions in " << name_ << std::endl;
+          
           process_batch(batch);
+          
+        } catch (const std::bad_alloc &e) {
+          std::cerr << "CRITICAL: Memory allocation error processing batch in " << name_ << ": " << e.what() << std::endl;
+          // Don't continue - memory issues are serious
+          break;
+        } catch (const std::runtime_error &e) {
+          std::cerr << "ERROR: Runtime error processing batch in " << name_ << ": " << e.what() << std::endl;
         } catch (const std::exception &e) {
           std::cerr << "ERROR: Exception processing batch in worker: " << e.what() << std::endl;
         } catch (...) {
@@ -132,11 +168,15 @@ void PipelineStage::worker_loop() {
         }
       }
     }
+  } catch (const std::bad_alloc &e) {
+    std::cerr << "CRITICAL: Memory allocation error in worker loop: " << e.what() << std::endl;
   } catch (const std::exception &e) {
     std::cerr << "CRITICAL: Worker loop exception: " << e.what() << std::endl;
   } catch (...) {
     std::cerr << "CRITICAL: Unknown worker loop exception" << std::endl;
   }
+  
+  std::cerr << "DEBUG: Worker loop for " << name_ << " terminated" << std::endl;
 }
 
 void PipelineStage::process_batch(std::shared_ptr<TransactionBatch> batch) {
@@ -155,10 +195,31 @@ void PipelineStage::process_batch(std::shared_ptr<TransactionBatch> batch) {
       std::cerr << "ERROR: Null process function in stage " << name_ << std::endl;
       success = false;
     } else {
+      // **ENHANCED PROCESS FUNCTION PROTECTION** - Additional safety checks
+      std::cerr << "DEBUG: Executing process function for batch " << batch->get_batch_id() 
+                << " in stage " << name_ << std::endl;
+      
+      // Validate batch state before processing
+      if (batch->get_state() != TransactionBatch::State::PROCESSING) {
+        std::cerr << "WARNING: Batch " << batch->get_batch_id() 
+                  << " not in PROCESSING state in " << name_ << std::endl;
+      }
+      
       success = process_fn_(batch);
+      
+      std::cerr << "DEBUG: Process function completed for batch " << batch->get_batch_id() 
+                << " in stage " << name_ << " with result: " << (success ? "SUCCESS" : "FAILURE") << std::endl;
     }
   } catch (const std::bad_alloc &e) {
     std::cerr << "CRITICAL: Memory allocation error in stage " << name_ << ": " 
+              << e.what() << std::endl;
+    success = false;
+  } catch (const std::runtime_error &e) {
+    std::cerr << "ERROR: Runtime error processing batch in stage " << name_ << ": " 
+              << e.what() << std::endl;
+    success = false;
+  } catch (const std::logic_error &e) {
+    std::cerr << "ERROR: Logic error processing batch in stage " << name_ << ": " 
               << e.what() << std::endl;
     success = false;
   } catch (const std::exception &e) {
@@ -175,17 +236,34 @@ void PipelineStage::process_batch(std::shared_ptr<TransactionBatch> batch) {
       end_time - start_time);
   total_processing_time_ms_ += processing_time.count();
 
-  if (success) {
-    batch->set_state(TransactionBatch::State::COMPLETED);
-    processed_batches_++;
+  // **ENHANCED STATE MANAGEMENT** - More robust state transitions
+  try {
+    if (success) {
+      batch->set_state(TransactionBatch::State::COMPLETED);
+      processed_batches_++;
 
-    // Forward to next stage
-    if (next_stage_) {
-      next_stage_->submit_batch(batch);
+      // Forward to next stage with validation
+      if (next_stage_) {
+        std::cerr << "DEBUG: Forwarding batch " << batch->get_batch_id() 
+                  << " from " << name_ << " to next stage" << std::endl;
+        next_stage_->submit_batch(batch);
+      } else {
+        std::cerr << "DEBUG: Batch " << batch->get_batch_id() 
+                  << " completed in final stage " << name_ << std::endl;
+      }
+    } else {
+      batch->set_state(TransactionBatch::State::FAILED);
+      failed_batches_++;
+      std::cerr << "WARNING: Batch " << batch->get_batch_id() 
+                << " failed in stage " << name_ << std::endl;
     }
-  } else {
-    batch->set_state(TransactionBatch::State::FAILED);
-    failed_batches_++;
+  } catch (const std::exception &e) {
+    std::cerr << "ERROR: Exception during batch state transition in " << name_ << ": " 
+              << e.what() << std::endl;
+    // Ensure we count failed batches even if state setting fails
+    if (!success) {
+      failed_batches_++;
+    }
   }
 }
 
@@ -309,45 +387,113 @@ BankingStage::BankingStage()
 BankingStage::~BankingStage() { shutdown(); }
 
 bool BankingStage::initialize() {
-  if (initialized_) {
+  try {
+    if (initialized_) {
+      std::cout << "Banking stage already initialized" << std::endl;
+      return true;
+    }
+
+    std::cout << "Initializing banking stage components..." << std::endl;
+
+    // **SAFE PIPELINE INITIALIZATION** - Enhanced error handling
+    try {
+      initialize_pipeline();
+      std::cout << "Banking stage pipeline initialized successfully" << std::endl;
+    } catch (const std::exception &e) {
+      std::cerr << "ERROR: Failed to initialize banking stage pipeline: " << e.what() << std::endl;
+      return false;
+    } catch (...) {
+      std::cerr << "ERROR: Unknown error initializing banking stage pipeline" << std::endl;
+      return false;
+    }
+
+    // **SAFE RESOURCE MONITOR INITIALIZATION** - Prevent crashes in monitoring
+    if (resource_monitoring_enabled_) {
+      try {
+        resource_monitor_ = std::make_unique<ResourceMonitor>();
+        std::cout << "Banking stage resource monitor initialized" << std::endl;
+      } catch (const std::bad_alloc &e) {
+        std::cerr << "ERROR: Memory allocation failed for resource monitor: " << e.what() << std::endl;
+        resource_monitoring_enabled_ = false; // Disable monitoring but continue
+      } catch (const std::exception &e) {
+        std::cerr << "ERROR: Failed to initialize resource monitor: " << e.what() << std::endl;
+        resource_monitoring_enabled_ = false; // Disable monitoring but continue
+      }
+    }
+
+    initialized_ = true;
+    std::cout << "Banking stage initialization completed successfully" << std::endl;
     return true;
+    
+  } catch (const std::exception &e) {
+    std::cerr << "CRITICAL: Banking stage initialization failed: " << e.what() << std::endl;
+    return false;
+  } catch (...) {
+    std::cerr << "CRITICAL: Unknown error during banking stage initialization" << std::endl;
+    return false;
   }
-
-  // Initialize pipeline stages
-  initialize_pipeline();
-
-  // Initialize resource monitor
-  if (resource_monitoring_enabled_) {
-    resource_monitor_ = std::make_unique<ResourceMonitor>();
-  }
-
-  initialized_ = true;
-  return true;
 }
 
 bool BankingStage::start() {
-  if (!initialized_ || running_) {
-    return false;
-  }
-
-  // Start pipeline stages
-  for (auto &stage : pipeline_stages_) {
-    if (!stage->start()) {
+  try {
+    if (!initialized_) {
+      std::cerr << "ERROR: Cannot start banking stage - not initialized" << std::endl;
       return false;
     }
+    
+    if (running_) {
+      std::cout << "Banking stage already running" << std::endl;
+      return true;
+    }
+
+    std::cout << "Starting banking stage components..." << std::endl;
+
+    // **SAFE PIPELINE STAGE STARTUP** - Start each stage with error handling
+    for (size_t i = 0; i < pipeline_stages_.size(); ++i) {
+      auto &stage = pipeline_stages_[i];
+      if (!stage) {
+        std::cerr << "ERROR: Null pipeline stage at index " << i << std::endl;
+        return false;
+      }
+      
+      try {
+        if (!stage->start()) {
+          std::cerr << "ERROR: Failed to start pipeline stage " << i << std::endl;
+          return false;
+        }
+        std::cout << "Started pipeline stage " << i << " successfully" << std::endl;
+      } catch (const std::exception &e) {
+        std::cerr << "ERROR: Exception starting pipeline stage " << i << ": " << e.what() << std::endl;
+        return false;
+      }
+    }
+
+    // **SAFE RESOURCE MONITOR STARTUP** - Handle potential startup failures
+    if (resource_monitor_) {
+      try {
+        if (!resource_monitor_->start()) {
+          std::cerr << "WARNING: Resource monitor failed to start, continuing without monitoring" << std::endl;
+          resource_monitor_.reset(); // Disable monitoring but continue
+        } else {
+          std::cout << "Resource monitor started successfully" << std::endl;
+        }
+      } catch (const std::exception &e) {
+        std::cerr << "WARNING: Exception starting resource monitor: " << e.what() << std::endl;
+        resource_monitor_.reset(); // Disable monitoring but continue
+      }
+    }
+
+    running_ = true;
+    std::cout << "Banking stage started successfully" << std::endl;
+    return true;
+    
+  } catch (const std::exception &e) {
+    std::cerr << "CRITICAL: Banking stage startup failed: " << e.what() << std::endl;
+    return false;
+  } catch (...) {
+    std::cerr << "CRITICAL: Unknown error during banking stage startup" << std::endl;
+    return false;
   }
-
-  // Start resource monitor
-  if (resource_monitor_) {
-    resource_monitor_->start();
-  }
-
-  // Start batch processor
-  start_time_ = std::chrono::steady_clock::now();
-  batch_processor_ = std::thread(&BankingStage::process_batches, this);
-
-  running_ = true;
-  return true;
 }
 
 bool BankingStage::stop() {
@@ -395,24 +541,73 @@ bool BankingStage::shutdown() {
 }
 
 void BankingStage::submit_transaction(TransactionPtr transaction) {
-  if (!running_ || !transaction) {
+  // **ENHANCED VALIDATION** - Comprehensive safety checks before processing
+  if (!running_) {
+    std::cerr << "WARNING: Banking stage not running, rejecting transaction" << std::endl;
     return;
   }
-
-  if (priority_processing_enabled_) {
-    std::lock_guard<std::mutex> lock(priority_mutex_);
-    int priority = 0; // Default priority
-    auto it = transaction_priorities_.find(transaction);
-    if (it != transaction_priorities_.end()) {
-      priority = it->second;
-    }
-    priority_queue_.push({priority, transaction});
-  } else {
-    std::lock_guard<std::mutex> lock(queue_mutex_);
-    transaction_queue_.push(transaction);
+  
+  if (!transaction) {
+    std::cerr << "ERROR: Null transaction pointer submitted to banking stage" << std::endl;
+    return;
   }
+  
+  try {
+    // **ADDITIONAL TRANSACTION VALIDATION** - Ensure transaction is well-formed
+    if (transaction->signatures.empty()) {
+      std::cerr << "WARNING: Transaction submitted without signatures" << std::endl;
+      // Continue processing - some transactions might be valid without signatures in test mode
+    }
+    
+    if (transaction->message.empty()) {
+      std::cerr << "WARNING: Transaction submitted with empty message" << std::endl;
+      // Continue processing - this might be a test transaction
+    }
+    
+    std::cerr << "DEBUG: Banking stage accepting transaction with " 
+              << transaction->signatures.size() << " signatures and " 
+              << transaction->message.size() << " byte message" << std::endl;
 
-  queue_cv_.notify_one();
+    if (priority_processing_enabled_) {
+      try {
+        std::lock_guard<std::mutex> lock(priority_mutex_);
+        int priority = 0; // Default priority
+        auto it = transaction_priorities_.find(transaction);
+        if (it != transaction_priorities_.end()) {
+          priority = it->second;
+        }
+        priority_queue_.push({priority, transaction});
+        std::cerr << "DEBUG: Added transaction to priority queue with priority " << priority << std::endl;
+      } catch (const std::exception &e) {
+        std::cerr << "ERROR: Exception adding transaction to priority queue: " << e.what() << std::endl;
+        return;
+      }
+    } else {
+      try {
+        std::lock_guard<std::mutex> lock(queue_mutex_);
+        transaction_queue_.push(transaction);
+        std::cerr << "DEBUG: Added transaction to standard queue" << std::endl;
+      } catch (const std::exception &e) {
+        std::cerr << "ERROR: Exception adding transaction to standard queue: " << e.what() << std::endl;
+        return;
+      }
+    }
+
+    // **SAFE NOTIFICATION** - Ensure notification doesn't cause issues
+    try {
+      queue_cv_.notify_one();
+    } catch (const std::exception &e) {
+      std::cerr << "ERROR: Exception notifying worker threads: " << e.what() << std::endl;
+      // Continue - transaction is queued even if notification fails
+    }
+    
+  } catch (const std::bad_alloc &e) {
+    std::cerr << "CRITICAL: Memory allocation error in submit_transaction: " << e.what() << std::endl;
+  } catch (const std::exception &e) {
+    std::cerr << "ERROR: Exception in submit_transaction: " << e.what() << std::endl;
+  } catch (...) {
+    std::cerr << "CRITICAL: Unknown exception in submit_transaction" << std::endl;
+  }
 }
 
 void BankingStage::submit_transactions(

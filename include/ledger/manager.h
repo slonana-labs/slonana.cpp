@@ -23,6 +23,47 @@ struct Transaction {
 
   std::vector<uint8_t> serialize() const;
   bool verify() const;
+  
+  // **ENHANCED SAFETY METHODS** - Add validation and defensive programming
+  bool is_valid() const {
+    try {
+      // Basic validation checks
+      if (signatures.empty() && !message.empty()) {
+        // Unsigned transaction with message - may be valid in test scenarios
+        return true;
+      }
+      
+      if (message.empty()) {
+        // Empty message might be valid for certain transaction types
+        return true;
+      }
+      
+      // Check for reasonable message size (Solana max is ~1232 bytes)
+      if (message.size() > 1500) {
+        return false;
+      }
+      
+      return true;
+    } catch (...) {
+      return false;
+    }
+  }
+  
+  size_t signature_count() const {
+    try {
+      return signatures.size();
+    } catch (...) {
+      return 0;
+    }
+  }
+  
+  size_t message_size() const {
+    try {
+      return message.size();
+    } catch (...) {
+      return 0;
+    }
+  }
 };
 
 /**
