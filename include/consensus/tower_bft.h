@@ -4,9 +4,9 @@
 #include "consensus/lockouts.h"
 #include <chrono>
 #include <memory>
+#include <functional>
 #include <mutex>
 #include <vector>
-
 namespace slonana {
 namespace consensus {
 
