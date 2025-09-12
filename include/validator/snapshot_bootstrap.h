@@ -62,6 +62,13 @@ public:
   common::Result<bool> verify_snapshot(const std::string &local_path);
   common::Result<bool> apply_snapshot(const std::string &local_path);
 
+  // **NEW FAST MODE METHODS**: Speed improvements for CI/benchmarking
+  common::Result<bool> bootstrap_fast_mode();
+  common::Result<SnapshotInfo> discover_latest_snapshot_with_timeout(int timeout_seconds);
+  common::Result<bool> download_snapshot_with_timeout(const SnapshotInfo &info, 
+                                                      std::string &local_path_out, 
+                                                      int timeout_seconds);
+
   // Fallback methods for simple discovery/download
   common::Result<SnapshotInfo> discover_latest_snapshot_simple();
   common::Result<bool> download_snapshot_simple(const SnapshotInfo &info,
