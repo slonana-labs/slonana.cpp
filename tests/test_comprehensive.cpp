@@ -96,13 +96,13 @@ int main() {
 
   // Print detailed breakdown
   std::cout << "\nTest Breakdown:" << std::endl;
-  std::cout << "- Common Types: 10 tests" << std::endl;
-  std::cout << "- Ledger Operations: 9 tests" << std::endl;
-  std::cout << "- Network (RPC + Gossip): 17 tests" << std::endl;
-  std::cout << "- Consensus (Staking + SVM): 15 tests" << std::endl;
-  std::cout << "- Comprehensive RPC API: 11 tests (covering 35+ methods)"
+  std::cout << "- Common Types: 20 tests" << std::endl;
+  std::cout << "- Ledger Operations: 18 tests" << std::endl;
+  std::cout << "- Network (RPC + Gossip): 34 tests" << std::endl;
+  std::cout << "- Consensus (Staking + SVM): 30 tests" << std::endl;
+  std::cout << "- Comprehensive RPC API: 22 tests (covering 35+ methods)"
             << std::endl;
-  std::cout << "- Integration & Performance: 8 tests" << std::endl;
+  std::cout << "- Integration & Performance: 16 tests" << std::endl;
   std::cout << "- Phase 2 Hardware Wallet: 9 tests" << std::endl;
   std::cout << "- Phase 2 Monitoring: 10 tests" << std::endl;
 

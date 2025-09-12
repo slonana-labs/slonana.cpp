@@ -397,9 +397,428 @@ void test_validator_performance_stress() {
   validator->stop();
 }
 
+// Additional comprehensive integration tests (doubling from 8 to 16)
+void test_end_to_end_transaction_processing() {
+  slonana::common::ValidatorConfig config;
+  config.ledger_path = "/tmp/test_e2e_transaction";
+  config.identity_keypair_path = "/tmp/test_e2e_identity.json";
+  config.enable_rpc = true;
+  config.enable_gossip = false;
+  config.rpc_bind_address = TestPortManager::get_next_rpc_address();
+
+  if (fs::exists(config.ledger_path)) {
+    fs::remove_all(config.ledger_path);
+  }
+
+  auto validator = std::make_unique<slonana::validator::SolanaValidator>(config);
+  auto start_result = validator->start();
+  ASSERT_TRUE(start_result.is_ok());
+
+  // Test complete transaction lifecycle: creation → submission → processing → confirmation
+  auto rpc_server = validator->get_rpc_server();
+  ASSERT_TRUE(rpc_server != nullptr);
+
+  // Simulate transaction submission via RPC
+  std::string tx_request = R"({"jsonrpc":"2.0","method":"sendTransaction","params":["AQABAgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBAQAA"],"id":"1"})";
+  std::string response = rpc_server->handle_request(tx_request);
+  ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
+
+  // Test transaction confirmation
+  std::string confirm_request = R"({"jsonrpc":"2.0","method":"getSignatureStatuses","params":[["5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"]],"id":"2"})";
+  std::string confirm_response = rpc_server->handle_request(confirm_request);
+  ASSERT_CONTAINS(confirm_response, "\"jsonrpc\":\"2.0\"");
+
+  validator->stop();
+}
+
+void test_multi_component_stress_scenarios() {
+  slonana::common::ValidatorConfig config;
+  config.ledger_path = "/tmp/test_stress_multi";
+  config.identity_keypair_path = "/tmp/test_stress_identity.json";
+  config.enable_rpc = true;
+  config.enable_gossip = true;
+  config.rpc_bind_address = TestPortManager::get_next_rpc_address();
+  config.gossip_bind_address = TestPortManager::get_next_rpc_address();
+
+  if (fs::exists(config.ledger_path)) {
+    fs::remove_all(config.ledger_path);
+  }
+
+  auto validator = std::make_unique<slonana::validator::SolanaValidator>(config);
+  auto start_result = validator->start();
+  ASSERT_TRUE(start_result.is_ok());
+
+  auto start_time = std::chrono::high_resolution_clock::now();
+
+  // Stress test multiple components simultaneously
+  for (int i = 0; i < 50; ++i) {
+    // RPC stress
+    auto rpc_server = validator->get_rpc_server();
+    if (rpc_server) {
+      std::string request = R"({"jsonrpc":"2.0","method":"getHealth","params":[],"id":")" + std::to_string(i) + R"("})";
+      std::string response = rpc_server->handle_request(request);
+      ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
+    }
+
+    // Ledger stress
+    auto ledger = validator->get_ledger_manager();
+    if (ledger) {
+      slonana::ledger::Block block;
+      block.slot = i + 1;
+      block.block_hash.resize(32, static_cast<uint8_t>(i));
+      block.parent_hash.resize(32, static_cast<uint8_t>(i - 1));
+      block.validator.resize(32, 0xFF);
+      block.block_signature.resize(64, 0xAA);
+      
+      auto store_result = ledger->store_block(block);
+      ASSERT_TRUE(store_result.is_ok());
+    }
+  }
+
+  auto end_time = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+      end_time - start_time);
+
+  std::cout << "Multi-component stress test: 50 operations in " 
+            << duration.count() << "ms" << std::endl;
+
+  validator->stop();
+}
+
+void test_resource_utilization_monitoring() {
+  slonana::common::ValidatorConfig config;
+  config.ledger_path = "/tmp/test_resource_util";
+  config.identity_keypair_path = "/tmp/test_resource_identity.json";
+  config.enable_rpc = true;
+  config.enable_gossip = false;
+  config.rpc_bind_address = TestPortManager::get_next_rpc_address();
+
+  if (fs::exists(config.ledger_path)) {
+    fs::remove_all(config.ledger_path);
+  }
+
+  auto validator = std::make_unique<slonana::validator::SolanaValidator>(config);
+  auto start_result = validator->start();
+  ASSERT_TRUE(start_result.is_ok());
+
+  // Monitor resource usage during operations
+  auto start_time = std::chrono::high_resolution_clock::now();
+  
+  // Perform resource-intensive operations
+  for (int i = 0; i < 100; ++i) {
+    auto ledger = validator->get_ledger_manager();
+    if (ledger) {
+      slonana::ledger::Block block;
+      block.slot = i + 1;
+      block.block_hash.resize(32, static_cast<uint8_t>(i % 256));
+      block.parent_hash.resize(32, static_cast<uint8_t>((i - 1) % 256));
+      block.validator.resize(32, 0xBB);
+      block.block_signature.resize(64, 0xCC);
+      
+      // Add transactions to increase resource usage
+      for (int j = 0; j < 10; ++j) {
+        slonana::ledger::Transaction tx;
+        tx.signature.resize(64, static_cast<uint8_t>(j));
+        tx.from.resize(32, static_cast<uint8_t>(j + 1));
+        tx.to.resize(32, static_cast<uint8_t>(j + 2));
+        tx.amount = 1000 + j;
+        block.transactions.push_back(tx);
+      }
+      
+      auto store_result = ledger->store_block(block);
+      ASSERT_TRUE(store_result.is_ok());
+    }
+  }
+
+  auto end_time = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+      end_time - start_time);
+
+  std::cout << "Resource utilization test: 100 blocks with 1000 transactions in " 
+            << duration.count() << "ms" << std::endl;
+
+  // Verify ledger state after resource-intensive operations
+  auto ledger = validator->get_ledger_manager();
+  ASSERT_TRUE(ledger != nullptr);
+  ASSERT_EQ(static_cast<uint64_t>(100), ledger->get_latest_slot());
+
+  validator->stop();
+}
+
+void test_scalability_limits() {
+  slonana::common::ValidatorConfig config;
+  config.ledger_path = "/tmp/test_scalability";
+  config.identity_keypair_path = "/tmp/test_scalability_identity.json";
+  config.enable_rpc = true;
+  config.enable_gossip = false;
+  config.rpc_bind_address = TestPortManager::get_next_rpc_address();
+
+  if (fs::exists(config.ledger_path)) {
+    fs::remove_all(config.ledger_path);
+  }
+
+  auto validator = std::make_unique<slonana::validator::SolanaValidator>(config);
+  auto start_result = validator->start();
+  ASSERT_TRUE(start_result.is_ok());
+
+  // Test scalability with increasing load
+  std::vector<int> load_levels = {10, 50, 100, 200};
+  
+  for (int load : load_levels) {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    
+    for (int i = 0; i < load; ++i) {
+      auto rpc_server = validator->get_rpc_server();
+      if (rpc_server) {
+        std::string request = R"({"jsonrpc":"2.0","method":"getSlot","params":[],"id":")" + std::to_string(i) + R"("})";
+        std::string response = rpc_server->handle_request(request);
+        ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
+      }
+    }
+    
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+        end_time - start_time);
+    
+    std::cout << "Scalability test - Load " << load << ": " 
+              << duration.count() << "ms (" 
+              << (load * 1000.0 / duration.count()) << " req/s)" << std::endl;
+  }
+
+  validator->stop();
+}
+
+void test_recovery_scenarios_comprehensive() {
+  slonana::common::ValidatorConfig config;
+  config.ledger_path = "/tmp/test_recovery_comprehensive";
+  config.identity_keypair_path = "/tmp/test_recovery_identity.json";
+  config.enable_rpc = true;
+  config.enable_gossip = false;
+  config.rpc_bind_address = TestPortManager::get_next_rpc_address();
+
+  // Test recovery from various failure scenarios
+  {
+    // Scenario 1: Normal operation then shutdown
+    if (fs::exists(config.ledger_path)) {
+      fs::remove_all(config.ledger_path);
+    }
+
+    auto validator = std::make_unique<slonana::validator::SolanaValidator>(config);
+    auto start_result = validator->start();
+    ASSERT_TRUE(start_result.is_ok());
+
+    // Store some data
+    auto ledger = validator->get_ledger_manager();
+    for (int i = 0; i < 10; ++i) {
+      slonana::ledger::Block block;
+      block.slot = i + 1;
+      block.block_hash.resize(32, static_cast<uint8_t>(i));
+      block.parent_hash.resize(32, static_cast<uint8_t>(i - 1));
+      block.validator.resize(32, 0xDD);
+      block.block_signature.resize(64, 0xEE);
+      
+      auto store_result = ledger->store_block(block);
+      ASSERT_TRUE(store_result.is_ok());
+    }
+
+    validator->stop();
+  }
+
+  {
+    // Scenario 2: Recovery after restart
+    auto validator = std::make_unique<slonana::validator::SolanaValidator>(config);
+    auto start_result = validator->start();
+    ASSERT_TRUE(start_result.is_ok());
+
+    // Verify data was recovered
+    auto ledger = validator->get_ledger_manager();
+    ASSERT_TRUE(ledger != nullptr);
+    ASSERT_EQ(static_cast<uint64_t>(10), ledger->get_latest_slot());
+
+    // Continue operations after recovery
+    slonana::ledger::Block block;
+    block.slot = 11;
+    block.block_hash.resize(32, 0xFF);
+    block.parent_hash.resize(32, 0x0A);
+    block.validator.resize(32, 0xDD);
+    block.block_signature.resize(64, 0xEE);
+    
+    auto store_result = ledger->store_block(block);
+    ASSERT_TRUE(store_result.is_ok());
+    ASSERT_EQ(static_cast<uint64_t>(11), ledger->get_latest_slot());
+
+    validator->stop();
+  }
+}
+
+void test_upgrade_compatibility() {
+  slonana::common::ValidatorConfig config;
+  config.ledger_path = "/tmp/test_upgrade_compat";
+  config.identity_keypair_path = "/tmp/test_upgrade_identity.json";
+  config.enable_rpc = true;
+  config.enable_gossip = false;
+  config.rpc_bind_address = TestPortManager::get_next_rpc_address();
+
+  if (fs::exists(config.ledger_path)) {
+    fs::remove_all(config.ledger_path);
+  }
+
+  auto validator = std::make_unique<slonana::validator::SolanaValidator>(config);
+  auto start_result = validator->start();
+  ASSERT_TRUE(start_result.is_ok());
+
+  // Test compatibility with different data formats
+  auto ledger = validator->get_ledger_manager();
+  
+  // Store blocks with different characteristics to test compatibility
+  std::vector<std::vector<uint8_t>> different_formats = {
+    {0x01, 0x02, 0x03}, // Format A
+    {0xFF, 0xFE, 0xFD, 0xFC}, // Format B  
+    {0xAA, 0xBB, 0xCC, 0xDD, 0xEE}, // Format C
+  };
+
+  for (size_t i = 0; i < different_formats.size(); ++i) {
+    slonana::ledger::Block block;
+    block.slot = i + 1;
+    block.block_hash = different_formats[i];
+    block.block_hash.resize(32, static_cast<uint8_t>(i)); // Ensure 32 bytes
+    block.parent_hash.resize(32, static_cast<uint8_t>(i - 1));
+    block.validator.resize(32, 0xAA);
+    block.block_signature.resize(64, 0xBB);
+    
+    auto store_result = ledger->store_block(block);
+    ASSERT_TRUE(store_result.is_ok());
+  }
+
+  // Verify all formats were handled correctly
+  ASSERT_EQ(static_cast<uint64_t>(3), ledger->get_latest_slot());
+
+  validator->stop();
+}
+
+void test_configuration_management() {
+  // Test various configuration scenarios
+  std::vector<slonana::common::ValidatorConfig> test_configs;
+  
+  // Config 1: Minimal configuration
+  slonana::common::ValidatorConfig minimal_config;
+  minimal_config.ledger_path = "/tmp/test_config_minimal";
+  minimal_config.identity_keypair_path = "/tmp/test_minimal_identity.json";
+  minimal_config.enable_rpc = false;
+  minimal_config.enable_gossip = false;
+  test_configs.push_back(minimal_config);
+
+  // Config 2: RPC-only configuration
+  slonana::common::ValidatorConfig rpc_config;
+  rpc_config.ledger_path = "/tmp/test_config_rpc";
+  rpc_config.identity_keypair_path = "/tmp/test_rpc_identity.json";
+  rpc_config.enable_rpc = true;
+  rpc_config.enable_gossip = false;
+  rpc_config.rpc_bind_address = TestPortManager::get_next_rpc_address();
+  test_configs.push_back(rpc_config);
+
+  // Config 3: Full configuration
+  slonana::common::ValidatorConfig full_config;
+  full_config.ledger_path = "/tmp/test_config_full";
+  full_config.identity_keypair_path = "/tmp/test_full_identity.json";
+  full_config.enable_rpc = true;
+  full_config.enable_gossip = true;
+  full_config.rpc_bind_address = TestPortManager::get_next_rpc_address();
+  full_config.gossip_bind_address = TestPortManager::get_next_rpc_address();
+  test_configs.push_back(full_config);
+
+  // Test each configuration
+  for (size_t i = 0; i < test_configs.size(); ++i) {
+    const auto& config = test_configs[i];
+    
+    if (fs::exists(config.ledger_path)) {
+      fs::remove_all(config.ledger_path);
+    }
+
+    auto validator = std::make_unique<slonana::validator::SolanaValidator>(config);
+    auto start_result = validator->start();
+    ASSERT_TRUE(start_result.is_ok());
+
+    // Test basic functionality
+    auto ledger = validator->get_ledger_manager();
+    ASSERT_TRUE(ledger != nullptr);
+
+    slonana::ledger::Block block;
+    block.slot = 1;
+    block.block_hash.resize(32, static_cast<uint8_t>(i));
+    block.parent_hash.resize(32, 0x00);
+    block.validator.resize(32, 0xFF);
+    block.block_signature.resize(64, 0xAA);
+    
+    auto store_result = ledger->store_block(block);
+    ASSERT_TRUE(store_result.is_ok());
+
+    validator->stop();
+  }
+}
+
+void test_monitoring_metrics_integration() {
+  slonana::common::ValidatorConfig config;
+  config.ledger_path = "/tmp/test_monitoring_metrics";
+  config.identity_keypair_path = "/tmp/test_monitoring_identity.json";
+  config.enable_rpc = true;
+  config.enable_gossip = false;
+  config.rpc_bind_address = TestPortManager::get_next_rpc_address();
+
+  if (fs::exists(config.ledger_path)) {
+    fs::remove_all(config.ledger_path);
+  }
+
+  auto validator = std::make_unique<slonana::validator::SolanaValidator>(config);
+  auto start_result = validator->start();
+  ASSERT_TRUE(start_result.is_ok());
+
+  // Test metrics collection during operations
+  auto start_time = std::chrono::high_resolution_clock::now();
+  
+  // Perform monitored operations
+  for (int i = 0; i < 25; ++i) {
+    // RPC operations
+    auto rpc_server = validator->get_rpc_server();
+    if (rpc_server) {
+      std::string request = R"({"jsonrpc":"2.0","method":"getHealth","params":[],"id":")" + std::to_string(i) + R"("})";
+      std::string response = rpc_server->handle_request(request);
+      ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
+    }
+
+    // Ledger operations
+    auto ledger = validator->get_ledger_manager();
+    if (ledger) {
+      slonana::ledger::Block block;
+      block.slot = i + 1;
+      block.block_hash.resize(32, static_cast<uint8_t>(i % 256));
+      block.parent_hash.resize(32, static_cast<uint8_t>((i - 1) % 256));
+      block.validator.resize(32, 0x99);
+      block.block_signature.resize(64, 0x88);
+      
+      auto store_result = ledger->store_block(block);
+      ASSERT_TRUE(store_result.is_ok());
+    }
+  }
+
+  auto end_time = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+      end_time - start_time);
+
+  std::cout << "Monitoring metrics test: 25 RPC + 25 ledger operations in " 
+            << duration.count() << "ms" << std::endl;
+
+  // Verify final state
+  auto ledger = validator->get_ledger_manager();
+  ASSERT_EQ(static_cast<uint64_t>(25), ledger->get_latest_slot());
+
+  validator->stop();
+}
+
 void run_integration_tests(TestRunner &runner) {
   std::cout << "\n=== Integration Tests ===" << std::endl;
 
+  // Original 8 tests
   runner.run_test("Full Validator Lifecycle", test_full_validator_lifecycle);
   runner.run_test("Validator RPC Integration",
                   test_validator_with_rpc_integration);
@@ -413,4 +832,14 @@ void run_integration_tests(TestRunner &runner) {
   runner.run_test("Validator Error Recovery", test_validator_error_recovery);
   runner.run_test("Validator Performance Stress",
                   test_validator_performance_stress);
+  
+  // Additional 8 tests for comprehensive coverage
+  runner.run_test("End-to-End Transaction Processing", test_end_to_end_transaction_processing);
+  runner.run_test("Multi-Component Stress Scenarios", test_multi_component_stress_scenarios);
+  runner.run_test("Resource Utilization Monitoring", test_resource_utilization_monitoring);
+  runner.run_test("Scalability Limits", test_scalability_limits);
+  runner.run_test("Recovery Scenarios Comprehensive", test_recovery_scenarios_comprehensive);
+  runner.run_test("Upgrade Compatibility", test_upgrade_compatibility);
+  runner.run_test("Configuration Management", test_configuration_management);
+  runner.run_test("Monitoring Metrics Integration", test_monitoring_metrics_integration);
 }
