@@ -1918,8 +1918,17 @@ EOF
     echo "=========================================="
 }
 
+# Global flag to prevent recursive cleanup
+CLEANUP_IN_PROGRESS=false
+
 # Cleanup validator process and activity generators
 cleanup_validator() {
+    # Prevent recursive cleanup calls
+    if [[ "$CLEANUP_IN_PROGRESS" == "true" ]]; then
+        return 0
+    fi
+    
+    CLEANUP_IN_PROGRESS=true
     log_info "Cleaning up validator and background processes..."
     
     # Set flag to indicate we're in cleanup mode
@@ -1972,11 +1981,14 @@ cleanup_validator() {
     # Clean up any remaining processes
     pkill -f "slonana_validator" 2>/dev/null || true
     
-    log_info "Stopping..."
+    log_info "Cleanup completed successfully"
 }
 
 # Enhanced signal handling for graceful shutdown
 handle_sigterm() {
+    # Clear all traps to prevent recursive calls
+    trap - SIGTERM SIGINT EXIT
+    
     log_info "Received SIGTERM, initiating graceful shutdown..."
     cleanup_validator
     exit 0
@@ -1984,15 +1996,26 @@ handle_sigterm() {
 
 # Enhanced signal handling for interrupt
 handle_sigint() {
+    # Clear all traps to prevent recursive calls
+    trap - SIGTERM SIGINT EXIT
+    
     log_info "Received SIGINT (Ctrl+C), initiating graceful shutdown..."
     cleanup_validator
     exit 0
 }
 
+# Enhanced exit handler
+handle_exit() {
+    # Only cleanup if not already done by signal handlers
+    if [[ "$CLEANUP_IN_PROGRESS" != "true" ]]; then
+        cleanup_validator
+    fi
+}
+
 # Set up signal traps for graceful shutdown
 trap handle_sigterm SIGTERM
 trap handle_sigint SIGINT
-trap cleanup_validator EXIT
+trap handle_exit EXIT
 
 # Main execution
 main() {
