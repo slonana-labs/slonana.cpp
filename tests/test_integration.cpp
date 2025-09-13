@@ -1,12 +1,20 @@
 #include "slonana_validator.h"
 #include "test_framework.h"
 #include <chrono>
+#include <filesystem>
 #include <memory>
 #include <thread>
 
+namespace fs = std::filesystem;
+
 void test_full_validator_lifecycle() {
+  std::string ledger_path = "/tmp/test_integration_validator";
+  
+  // Initialize test ledger with snapshot/genesis fallback
+  TestLedgerInitializer::initialize_test_ledger("full_validator_lifecycle", ledger_path);
+  
   slonana::common::ValidatorConfig config;
-  config.ledger_path = "/tmp/test_integration_validator";
+  config.ledger_path = ledger_path;
   config.identity_keypair_path = "/tmp/test_integration_identity.json";
   config.rpc_bind_address = "127.0.0.1:18899";
   config.gossip_bind_address = "127.0.0.1:18001";
@@ -410,7 +418,7 @@ void test_end_to_end_transaction_processing() {
     fs::remove_all(config.ledger_path);
   }
 
-  auto validator = std::make_unique<slonana::validator::SolanaValidator>(config);
+  auto validator = std::make_unique<slonana::SolanaValidator>(config);
   auto start_result = validator->start();
   ASSERT_TRUE(start_result.is_ok());
 
@@ -444,7 +452,7 @@ void test_multi_component_stress_scenarios() {
     fs::remove_all(config.ledger_path);
   }
 
-  auto validator = std::make_unique<slonana::validator::SolanaValidator>(config);
+  auto validator = std::make_unique<slonana::SolanaValidator>(config);
   auto start_result = validator->start();
   ASSERT_TRUE(start_result.is_ok());
 
@@ -497,7 +505,7 @@ void test_resource_utilization_monitoring() {
     fs::remove_all(config.ledger_path);
   }
 
-  auto validator = std::make_unique<slonana::validator::SolanaValidator>(config);
+  auto validator = std::make_unique<slonana::SolanaValidator>(config);
   auto start_result = validator->start();
   ASSERT_TRUE(start_result.is_ok());
 
@@ -518,10 +526,10 @@ void test_resource_utilization_monitoring() {
       // Add transactions to increase resource usage
       for (int j = 0; j < 10; ++j) {
         slonana::ledger::Transaction tx;
-        tx.signature.resize(64, static_cast<uint8_t>(j));
-        tx.from.resize(32, static_cast<uint8_t>(j + 1));
-        tx.to.resize(32, static_cast<uint8_t>(j + 2));
-        tx.amount = 1000 + j;
+        tx.signatures.resize(1);
+        tx.signatures[0].resize(64, static_cast<uint8_t>(j));
+        tx.message.resize(32, static_cast<uint8_t>(j + 1));
+        tx.hash.resize(32, static_cast<uint8_t>(j + 2));
         block.transactions.push_back(tx);
       }
       
@@ -557,7 +565,7 @@ void test_scalability_limits() {
     fs::remove_all(config.ledger_path);
   }
 
-  auto validator = std::make_unique<slonana::validator::SolanaValidator>(config);
+  auto validator = std::make_unique<slonana::SolanaValidator>(config);
   auto start_result = validator->start();
   ASSERT_TRUE(start_result.is_ok());
 
@@ -603,7 +611,7 @@ void test_recovery_scenarios_comprehensive() {
       fs::remove_all(config.ledger_path);
     }
 
-    auto validator = std::make_unique<slonana::validator::SolanaValidator>(config);
+    auto validator = std::make_unique<slonana::SolanaValidator>(config);
     auto start_result = validator->start();
     ASSERT_TRUE(start_result.is_ok());
 
@@ -626,7 +634,7 @@ void test_recovery_scenarios_comprehensive() {
 
   {
     // Scenario 2: Recovery after restart
-    auto validator = std::make_unique<slonana::validator::SolanaValidator>(config);
+    auto validator = std::make_unique<slonana::SolanaValidator>(config);
     auto start_result = validator->start();
     ASSERT_TRUE(start_result.is_ok());
 
@@ -663,7 +671,7 @@ void test_upgrade_compatibility() {
     fs::remove_all(config.ledger_path);
   }
 
-  auto validator = std::make_unique<slonana::validator::SolanaValidator>(config);
+  auto validator = std::make_unique<slonana::SolanaValidator>(config);
   auto start_result = validator->start();
   ASSERT_TRUE(start_result.is_ok());
 
@@ -735,7 +743,7 @@ void test_configuration_management() {
       fs::remove_all(config.ledger_path);
     }
 
-    auto validator = std::make_unique<slonana::validator::SolanaValidator>(config);
+    auto validator = std::make_unique<slonana::SolanaValidator>(config);
     auto start_result = validator->start();
     ASSERT_TRUE(start_result.is_ok());
 
@@ -769,7 +777,7 @@ void test_monitoring_metrics_integration() {
     fs::remove_all(config.ledger_path);
   }
 
-  auto validator = std::make_unique<slonana::validator::SolanaValidator>(config);
+  auto validator = std::make_unique<slonana::SolanaValidator>(config);
   auto start_result = validator->start();
   ASSERT_TRUE(start_result.is_ok());
 

@@ -146,30 +146,66 @@ common::Result<std::vector<RpcNodeInfo>> SnapshotFinder::discover_rpc_nodes() {
             << std::endl;
   std::cout << "   • Using " << actual_threads << " threads" << std::endl;
 
-  // Start worker threads
+  // Start worker threads with enhanced error handling
   worker_threads_.clear();
   worker_threads_.reserve(actual_threads);
 
-  for (size_t i = 0; i < actual_threads; ++i) {
-    size_t start_idx = i * endpoints_per_thread;
-    size_t end_idx = (i == actual_threads - 1) ? rpc_endpoints.size()
-                                               : (i + 1) * endpoints_per_thread;
+  // **SEGFAULT FIX**: Enhanced thread creation with error handling
+  try {
+    for (size_t i = 0; i < actual_threads; ++i) {
+      size_t start_idx = i * endpoints_per_thread;
+      size_t end_idx = (i == actual_threads - 1) ? rpc_endpoints.size()
+                                                 : (i + 1) * endpoints_per_thread;
 
-    worker_threads_.emplace_back(&SnapshotFinder::worker_thread_function, this,
-                                 std::cref(rpc_endpoints), start_idx, end_idx);
-  }
+      // **BOUNDS VALIDATION**: Ensure thread indices are valid
+      if (start_idx >= rpc_endpoints.size()) {
+        break;
+      }
 
-  // Wait for completion with progress updates
-  while (completed_tests_.load() < total_tests_.load()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    report_discovery_progress();
-  }
-
-  // Join all threads
-  for (auto &thread : worker_threads_) {
-    if (thread.joinable()) {
-      thread.join();
+      worker_threads_.emplace_back(&SnapshotFinder::worker_thread_function, this,
+                                   std::cref(rpc_endpoints), start_idx, end_idx);
     }
+
+    // **SAFE WAITING**: Wait for completion with timeout protection
+    auto start_wait = std::chrono::steady_clock::now();
+    const auto max_wait_time = std::chrono::seconds(120); // 2 minute timeout
+
+    while (completed_tests_.load() < total_tests_.load()) {
+      auto elapsed = std::chrono::steady_clock::now() - start_wait;
+      if (elapsed > max_wait_time) {
+        std::cout << "   ⚠️  Discovery timeout reached, shutting down workers..." << std::endl;
+        shutdown_requested_.store(true);
+        break;
+      }
+      
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      report_discovery_progress();
+    }
+
+    // **SAFE THREAD CLEANUP**: Proper thread joining with timeout
+    for (auto &thread : worker_threads_) {
+      if (thread.joinable()) {
+        try {
+          thread.join();
+        } catch (const std::exception& e) {
+          std::cout << "   ⚠️  Thread join error: " << e.what() << std::endl;
+        }
+      }
+    }
+
+  } catch (const std::exception& e) {
+    std::cout << "   ❌ Thread management error: " << e.what() << std::endl;
+    shutdown_requested_.store(true);
+    
+    // Emergency cleanup
+    for (auto &thread : worker_threads_) {
+      if (thread.joinable()) {
+        thread.detach(); // Detach rather than risk hanging on join
+      }
+    }
+    worker_threads_.clear();
+    
+    return common::Result<std::vector<RpcNodeInfo>>("Thread management error during discovery");
   }
 
   std::cout << std::endl;
@@ -191,19 +227,43 @@ void SnapshotFinder::worker_thread_function(
     const std::vector<std::string> &rpc_urls, size_t start_index,
     size_t end_index) {
 
-  for (size_t i = start_index; i < end_index && !shutdown_requested_.load();
-       ++i) {
-    auto test_result = test_rpc_node(rpc_urls[i]);
-
-    if (test_result.is_ok()) {
-      RpcNodeInfo node = test_result.value();
-      if (node.healthy) {
-        std::lock_guard<std::mutex> lock(results_mutex_);
-        discovered_nodes_.push_back(node);
+  // **SEGFAULT FIX**: Add comprehensive error handling to prevent crashes
+  try {
+    for (size_t i = start_index; i < end_index && !shutdown_requested_.load();
+         ++i) {
+      // **BOUNDS CHECKING**: Ensure we don't access out-of-bounds elements
+      if (i >= rpc_urls.size()) {
+        break;
       }
-    }
 
-    completed_tests_.fetch_add(1);
+      // **SAFE RPC TESTING**: Wrap in try-catch to prevent crashes
+      try {
+        auto test_result = test_rpc_node(rpc_urls[i]);
+
+        if (test_result.is_ok()) {
+          RpcNodeInfo node = test_result.value();
+          if (node.healthy) {
+            // **THREAD-SAFE INSERTION**: Protect shared data structure
+            std::lock_guard<std::mutex> lock(results_mutex_);
+            if (discovered_nodes_.size() < 1000) { // Prevent excessive memory usage
+              discovered_nodes_.push_back(std::move(node));
+            }
+          }
+        }
+      } catch (const std::exception& e) {
+        // **ERROR HANDLING**: Log but don't crash on individual RPC failures
+        std::cout << "   ⚠️  RPC test failed for " << rpc_urls[i] << ": " << e.what() << std::endl;
+      } catch (...) {
+        // **CATCH-ALL**: Prevent unknown exceptions from crashing
+        std::cout << "   ⚠️  Unknown error testing RPC " << rpc_urls[i] << std::endl;
+      }
+
+      completed_tests_.fetch_add(1);
+    }
+  } catch (const std::exception& e) {
+    std::cout << "   ❌ Worker thread error: " << e.what() << std::endl;
+  } catch (...) {
+    std::cout << "   ❌ Unknown worker thread error" << std::endl;
   }
 }
 

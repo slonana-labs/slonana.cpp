@@ -323,6 +323,10 @@ private:
   
   // Utility methods for transaction processing
   std::string encode_base58(const std::vector<uint8_t> &data) const;
+  std::string encode_base58_safe(const std::vector<uint8_t> &data) const;
+
+  // Thread safety for ledger operations
+  mutable std::mutex ledger_mutex_;
 
   // Pipeline stage functions
   bool validate_batch(std::shared_ptr<TransactionBatch> batch);

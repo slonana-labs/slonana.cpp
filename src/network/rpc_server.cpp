@@ -541,21 +541,14 @@ void SolanaRpcServer::register_method(const std::string &method,
 }
 
 std::string SolanaRpcServer::handle_request(const std::string &request_json) {
+  // Try to extract ID early for error responses, even from malformed JSON
+  std::string extracted_id = "";
+  bool id_is_number = false;
+  
   try {
-    // Basic JSON validation - check if it looks like valid JSON
-    if (request_json.empty() ||
-        (request_json.find('{') == std::string::npos &&
-         request_json.find('}') == std::string::npos) ||
-        request_json.find("invalid") != std::string::npos) {
-      return create_error_response("", -32700, "Parse error", false).to_json();
-    }
-
-    RpcRequest request;
-    request.jsonrpc = extract_json_value(request_json, "jsonrpc");
-    request.method = extract_json_value(request_json, "method");
-    request.params = extract_json_array(request_json, "params");
-    request.id = extract_json_value(request_json, "id");
-
+    // Try to extract ID even from potentially malformed JSON
+    extracted_id = extract_json_value(request_json, "id");
+    
     // Check if ID is a number by looking at the original JSON
     std::regex id_pattern("\"id\"\\s*:\\s*([^,}]+)");
     std::smatch id_match;
@@ -565,9 +558,30 @@ std::string SolanaRpcServer::handle_request(const std::string &request_json) {
       id_value.erase(0, id_value.find_first_not_of(" \t"));
       id_value.erase(id_value.find_last_not_of(" \t") + 1);
       // Check if it starts with a digit or negative sign (not a quote)
-      request.id_is_number = !id_value.empty() &&
-                             (std::isdigit(id_value[0]) || id_value[0] == '-');
+      id_is_number = !id_value.empty() &&
+                     (std::isdigit(id_value[0]) || id_value[0] == '-');
     }
+  } catch (...) {
+    // If we can't extract ID, use empty string
+    extracted_id = "";
+    id_is_number = false;
+  }
+
+  try {
+    // Basic JSON validation - check if it looks like valid JSON
+    if (request_json.empty() ||
+        (request_json.find('{') == std::string::npos &&
+         request_json.find('}') == std::string::npos) ||
+        request_json.find("invalid") != std::string::npos) {
+      return create_error_response(extracted_id, -32700, "Parse error", id_is_number).to_json();
+    }
+
+    RpcRequest request;
+    request.jsonrpc = extract_json_value(request_json, "jsonrpc");
+    request.method = extract_json_value(request_json, "method");
+    request.params = extract_json_array(request_json, "params");
+    request.id = extracted_id;
+    request.id_is_number = id_is_number;
 
     // Validate required fields
     if (request.method.empty()) {
@@ -595,7 +609,7 @@ std::string SolanaRpcServer::handle_request(const std::string &request_json) {
     return response.to_json();
 
   } catch (const std::exception &e) {
-    return create_error_response("", -32700, "Parse error", false).to_json();
+    return create_error_response(extracted_id, -32700, "Parse error", id_is_number).to_json();
   }
 }
 
