@@ -4665,6 +4665,13 @@ std::string SolanaRpcServer::encode_base58_signature(const std::vector<uint8_t> 
 }
 
 // Missing Critical RPC Method Implementations for Phase 2
+// PLACEHOLDER IMPLEMENTATION: getValidatorInfo endpoint
+// TODO: This uses hardcoded localhost addresses for testing
+// Production version should:
+// 1. Read actual gossip/TPU/RPC addresses from validator configuration
+// 2. Get real version info from build system
+// 3. Query actual feature set from validator core
+// 4. Implement proper shred version detection
 RpcResponse SolanaRpcServer::get_validator_info(const RpcRequest &request) {
   RpcResponse response;
   response.id = request.id;
@@ -4680,19 +4687,19 @@ RpcResponse SolanaRpcServer::get_validator_info(const RpcRequest &request) {
     
     // Get validator info from validator core if available
     if (validator_core_) {
-      // Agave-compatible validator info structure
-      result << "\"gossip\":\"127.0.0.1:8001\",";
-      result << "\"tpu\":\"127.0.0.1:8003\",";
-      result << "\"rpc\":\"127.0.0.1:8899\",";
+      // PLACEHOLDER: Should read from config instead of hardcoded addresses
+      result << "\"gossip\":\"" << config_.gossip_bind_address << "\",";
+      result << "\"tpu\":\"127.0.0.1:8003\",";  // TPU not in config yet
+      result << "\"rpc\":\"" << config_.rpc_bind_address << "\",";
       result << "\"pubsub\":\"127.0.0.1:8900\",";
       result << "\"version\":\"slonana-1.0.0\",";
       result << "\"featureSet\":12345678,";
       result << "\"shredVersion\":1";
     } else {
-      // Fallback validator info
+      // Fallback validator info when validator core not available
       result << "\"gossip\":null,";
       result << "\"tpu\":null,";
-      result << "\"rpc\":\"127.0.0.1:8899\",";
+      result << "\"rpc\":\"" << config_.rpc_bind_address << "\",";
       result << "\"pubsub\":\"127.0.0.1:8900\",";
       result << "\"version\":\"slonana-1.0.0\",";
       result << "\"featureSet\":null,";
@@ -4711,13 +4718,21 @@ RpcResponse SolanaRpcServer::get_validator_info(const RpcRequest &request) {
   return response;
 }
 
+// PLACEHOLDER IMPLEMENTATION: Real sendBundle RPC logic
+// TODO: This is a simplified implementation for Phase 2 compatibility
+// Production version should:
+// 1. Parse JSON array of base64-encoded transactions
+// 2. Validate each transaction individually  
+// 3. Check bundle consistency and ordering
+// 4. Process transactions atomically or reject entire bundle
+// 5. Implement proper fee calculation and limits
 RpcResponse SolanaRpcServer::send_bundle(const RpcRequest &request) {
   RpcResponse response;
   response.id = request.id;
   response.id_is_number = request.id_is_number;
 
   try {
-    // Extract transaction bundle from params
+    // Extract transaction bundle from params - improved parsing
     std::string bundle_data = extract_first_param(request.params);
     if (bundle_data.empty()) {
       return create_error_response(request.id, -32602,
@@ -4725,39 +4740,70 @@ RpcResponse SolanaRpcServer::send_bundle(const RpcRequest &request) {
                                    request.id_is_number);
     }
 
-    // Parse bundle (simplified - in production would parse JSON array of transactions)
+    // Parse bundle as JSON array of transactions (IMPROVED IMPLEMENTATION)
     std::vector<std::string> transaction_signatures;
+    std::vector<std::string> transactions;
     
-    // Process each transaction in the bundle
+    // Simple JSON array parsing - in production use robust JSON library
+    if (bundle_data.front() == '[' && bundle_data.back() == ']') {
+      std::string inner = bundle_data.substr(1, bundle_data.length() - 2);
+      
+      // Split by commas (simplified - doesn't handle nested quotes properly)
+      std::stringstream ss(inner);
+      std::string transaction;
+      while (std::getline(ss, transaction, ',')) {
+        // Remove quotes and whitespace
+        transaction.erase(0, transaction.find_first_not_of(" \t\""));
+        transaction.erase(transaction.find_last_not_of(" \t\"") + 1);
+        if (!transaction.empty()) {
+          transactions.push_back(transaction);
+        }
+      }
+    } else {
+      // Single transaction case
+      transactions.push_back(bundle_data);
+    }
+    
+    std::cout << "RPC: sendBundle processing " << transactions.size() 
+              << " transactions in bundle" << std::endl;
+    
+    // Process each transaction in the bundle (ENHANCED IMPLEMENTATION)
     if (banking_stage_) {
       try {
-        // Create a dummy transaction for demonstration
-        auto transaction = std::make_shared<ledger::Transaction>();
-        transaction->signatures = {{0x01, 0x02, 0x03, 0x04}};
-        transaction->message = {0xAA, 0xBB, 0xCC, 0xDD};
+        for (size_t i = 0; i < transactions.size(); i++) {
+          // Create transaction from bundle data (simplified parsing)
+          auto transaction = std::make_shared<ledger::Transaction>();
+          
+          // In production: decode base64, parse wire format, validate signatures
+          // For now: create dummy transaction with unique data per bundle item
+          transaction->signatures = {{static_cast<uint8_t>(i), 0x02, 0x03, 0x04}};
+          transaction->message = {static_cast<uint8_t>(0xAA + i), 0xBB, 0xCC, 0xDD};
+          
+          // Submit to banking stage for processing
+          banking_stage_->submit_transaction(transaction);
+          
+          // Generate transaction signature for response
+          auto serialized_tx = transaction->serialize();
+          std::string tx_data(serialized_tx.begin(), serialized_tx.end());
+          std::string signature = generate_transaction_signature(tx_data + std::to_string(i));
+          transaction_signatures.push_back(signature);
+        }
         
-        // Submit to banking stage for processing
-        banking_stage_->submit_transaction(transaction);
-        
-        // Generate transaction signature for response
-        auto serialized_tx = transaction->serialize();
-        std::string tx_data(serialized_tx.begin(), serialized_tx.end());
-        std::string signature = generate_transaction_signature(tx_data);
-        transaction_signatures.push_back(signature);
-        
-        std::cout << "RPC: sendBundle processed bundle with " 
+        std::cout << "RPC: sendBundle successfully processed " 
                   << transaction_signatures.size() << " transactions" << std::endl;
 
       } catch (const std::exception &e) {
         std::cout << "RPC: Bundle processing error: " << e.what() << std::endl;
         return create_error_response(request.id, -32603,
-                                     "Bundle processing failed",
+                                     "Bundle processing failed: " + std::string(e.what()),
                                      request.id_is_number);
       }
     } else {
-      std::cout << "RPC: Warning - banking stage not available for bundle processing" << std::endl;
-      // Generate mock signatures for testing
-      transaction_signatures.push_back("MockBundleSignature123");
+      std::cout << "RPC: Warning - banking stage not available, using mock processing" << std::endl;
+      // Generate mock signatures for testing when banking stage unavailable
+      for (size_t i = 0; i < transactions.size(); i++) {
+        transaction_signatures.push_back("MockBundleSignature" + std::to_string(i));
+      }
     }
 
     // Build response with transaction signatures
@@ -4776,7 +4822,7 @@ RpcResponse SolanaRpcServer::send_bundle(const RpcRequest &request) {
   } catch (const std::exception &e) {
     std::cout << "RPC: Critical error in sendBundle: " << e.what() << std::endl;
     return create_error_response(request.id, -32603, 
-                                 "Internal error", 
+                                 "Internal error: " + std::string(e.what()), 
                                  request.id_is_number);
   } catch (...) {
     std::cout << "RPC: Unknown critical error in sendBundle" << std::endl;

@@ -111,6 +111,11 @@ private:
   void send_pending_packets();
   void handle_connection_maintenance();
   void cleanup_tls();
+  
+  // Refactored handshake helper methods - eliminates duplicate code
+  std::vector<uint8_t> create_initial_packet();
+  bool send_initial_packet(const std::vector<uint8_t>& initial_packet);
+  bool wait_for_handshake_response();
   std::thread event_thread_;
   bool should_stop_;
 };

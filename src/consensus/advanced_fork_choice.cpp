@@ -596,5 +596,64 @@ void AdvancedForkChoice::print_fork_tree() const {
   std::cout << "=================" << std::endl;
 }
 
+// Cache management with configurable TTLs and automated expiry  
+void AdvancedForkChoice::expire_stale_cache_entries() {
+  auto now = std::chrono::steady_clock::now();
+  
+  // Expire weight cache entries based on TTL
+  {
+    std::lock_guard<std::mutex> lock(weight_cache_mutex_);
+    auto it = weight_cache_.begin();
+    while (it != weight_cache_.end()) {
+      auto age = now - it->second.second;
+      if (age > config_.weight_cache_ttl) {
+        it = weight_cache_.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+  
+  // Expire fork weights cache based on TTL
+  {
+    std::lock_guard<std::mutex> lock(fork_weights_mutex_);
+    auto age_since_update = now - last_weight_update_;
+    if (age_since_update > config_.fork_weights_cache_ttl) {
+      cached_weights_.clear();
+      last_weight_update_ = now;
+    }
+  }
+  
+  // Limit cache sizes to prevent unbounded growth
+  {
+    std::lock_guard<std::mutex> lock(weight_cache_mutex_);
+    if (weight_cache_.size() > config_.max_cache_entries) {
+      // Remove oldest entries (simple LRU approximation)
+      auto cutoff_count = weight_cache_.size() - config_.max_cache_entries;
+      auto it = weight_cache_.begin();
+      for (size_t i = 0; i < cutoff_count && it != weight_cache_.end(); ++i) {
+        it = weight_cache_.erase(it);
+      }
+    }
+  }
+}
+
+void AdvancedForkChoice::clear_weight_cache() {
+  std::lock_guard<std::mutex> lock(weight_cache_mutex_);
+  weight_cache_.clear();
+}
+
+void AdvancedForkChoice::clear_confirmation_cache() {
+  std::lock_guard<std::mutex> lock(fork_weights_mutex_);
+  cached_weights_.clear();
+  last_weight_update_ = std::chrono::steady_clock::now();
+}
+
+size_t AdvancedForkChoice::get_cache_size() const {
+  std::lock_guard<std::mutex> weight_lock(weight_cache_mutex_);
+  std::lock_guard<std::mutex> fork_lock(fork_weights_mutex_);
+  return weight_cache_.size() + cached_weights_.size();
+}
+
 } // namespace consensus
 } // namespace slonana

@@ -77,6 +77,41 @@ struct BlockMetadata {
 /**
  * Advanced Fork Choice Algorithm
  * Implements Agave-compatible weighted fork selection with optimistic confirmation
+ * 
+ * CONCURRENCY MODEL DOCUMENTATION:
+ * ================================
+ * 
+ * LOCK HIERARCHY (acquire in this order to prevent deadlocks):
+ * 1. vote_processing_mutex_     - Protects vote processing operations
+ * 2. data_mutex_ (shared/unique) - Protects main data structures (blocks_, forks_, etc.)
+ * 3. weight_cache_mutex_        - Protects weight_cache_ operations
+ * 4. fork_weights_mutex_        - Protects cached_weights_ and related state
+ * 
+ * LOCK RESPONSIBILITIES:
+ * ---------------------
+ * - vote_processing_mutex_: Serializes add_vote() and process_votes_batch()
+ * - data_mutex_: Guards blocks_, forks_, block_to_fork_map_, recent_votes_, current_head_, etc.
+ *   * Shared lock: For read operations (get_head, get_statistics, etc.)
+ *   * Unique lock: For write operations (add_block, garbage_collect, etc.)
+ * - weight_cache_mutex_: Protects the weight_cache_ from concurrent access
+ * - fork_weights_mutex_: Protects instance-based weight caching state
+ * 
+ * THREAD SAFETY RULES:
+ * --------------------
+ * 1. All public methods are thread-safe
+ * 2. Multiple readers can proceed concurrently (shared_mutex usage)
+ * 3. Writers are exclusive (unique_lock usage)
+ * 4. Cache operations use separate mutexes to reduce contention
+ * 5. No lock upgrades/downgrades - prevents deadlocks
+ * 6. RAII lock guards ensure exception safety
+ * 
+ * PERFORMANCE OPTIMIZATIONS:
+ * -------------------------
+ * - Reader-writer locks allow concurrent reads
+ * - Separate cache mutexes reduce lock contention
+ * - O(1) block-to-fork mapping eliminates linear searches
+ * - Configurable TTL-based cache expiry prevents stale data
+ * - Bounded data structures prevent unbounded memory growth
  */
 class AdvancedForkChoice {
 public:
@@ -91,6 +126,13 @@ public:
     bool enable_aggressive_rooting;
     uint64_t total_stake;
     
+    // Weight caching configuration with configurable TTLs
+    std::chrono::milliseconds weight_cache_ttl;
+    std::chrono::milliseconds fork_weights_cache_ttl;
+    std::chrono::milliseconds confirmation_cache_ttl;
+    bool enable_weight_caching;
+    size_t max_cache_entries;
+    
     Configuration() 
         : optimistic_confirmation_threshold(67)
         , supermajority_threshold(67)
@@ -100,7 +142,12 @@ public:
         , gc_frequency_slots(100)
         , enable_optimistic_confirmation(true)
         , enable_aggressive_rooting(true)
-        , total_stake(1000000) {}
+        , total_stake(1000000)
+        , weight_cache_ttl(std::chrono::milliseconds(500))
+        , fork_weights_cache_ttl(std::chrono::milliseconds(1000))
+        , confirmation_cache_ttl(std::chrono::milliseconds(2000))
+        , enable_weight_caching(true)
+        , max_cache_entries(10000) {}
   };
   
   struct Statistics {
@@ -187,6 +234,12 @@ public:
   void garbage_collect();
   void compact_data_structures();
   void update_stake_weights(const std::unordered_map<PublicKey, uint64_t>& stake_map);
+  
+  // Cache management with configurable TTLs and automated expiry
+  void expire_stale_cache_entries();
+  void clear_weight_cache();
+  void clear_confirmation_cache();
+  size_t get_cache_size() const;
   
   // Statistics and monitoring
   Statistics get_statistics() const;
