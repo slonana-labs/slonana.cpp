@@ -54,14 +54,14 @@ public:
                         }
                         case 1: {
                             // Test get_current_entry
-                            PohEntry entry = GlobalProofOfHistory::get_current_entry();
-                            if (entry.sequence_number >= 0) successful_operations.fetch_add(1, std::memory_order_relaxed);
+                            (void)GlobalProofOfHistory::get_current_entry();
+                            successful_operations.fetch_add(1, std::memory_order_relaxed);
                             break;
                         }
                         case 2: {
                             // Test get_current_slot
-                            Slot slot = GlobalProofOfHistory::get_current_slot();
-                            if (slot >= 0) successful_operations.fetch_add(1, std::memory_order_relaxed);
+                            (void)GlobalProofOfHistory::get_current_slot();
+                            successful_operations.fetch_add(1, std::memory_order_relaxed);
                             break;
                         }
                         case 3: {
