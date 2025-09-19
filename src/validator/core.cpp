@@ -521,7 +521,7 @@ common::Result<bool> ValidatorCore::start() {
 
   // Set up PoH callbacks for metrics using thread-safe methods
   bool tick_callback_set = consensus::GlobalProofOfHistory::set_tick_callback(
-      [this](const consensus::PohEntry &entry) {
+      [](const consensus::PohEntry &entry) {
         monitoring::GlobalConsensusMetrics::instance()
             .increment_poh_ticks_generated();
         monitoring::GlobalConsensusMetrics::instance().set_poh_sequence_number(
