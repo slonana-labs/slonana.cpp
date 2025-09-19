@@ -137,6 +137,7 @@ private:
   // Transaction Methods
   RpcResponse get_transaction(const RpcRequest &request);
   RpcResponse send_transaction(const RpcRequest &request);
+  RpcResponse send_bundle(const RpcRequest &request);
   RpcResponse simulate_transaction(const RpcRequest &request);
   RpcResponse get_signature_statuses(const RpcRequest &request);
   RpcResponse get_confirmed_signatures_for_address2(const RpcRequest &request);
@@ -151,6 +152,7 @@ private:
 
   // Validator Methods
   RpcResponse get_vote_accounts(const RpcRequest &request);
+  RpcResponse get_validator_info(const RpcRequest &request);
   RpcResponse get_leader_schedule(const RpcRequest &request);
   RpcResponse get_epoch_info(const RpcRequest &request);
   RpcResponse get_epoch_schedule(const RpcRequest &request);
