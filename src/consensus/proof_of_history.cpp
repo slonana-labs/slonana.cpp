@@ -221,7 +221,9 @@ uint64_t ProofOfHistory::get_current_sequence() const {
 Slot ProofOfHistory::get_current_slot() const { return current_slot_.load(std::memory_order_acquire); }
 
 uint64_t ProofOfHistory::mix_data(const Hash &data) {
-  lock_attempts_.fetch_add(1, std::memory_order_relaxed);
+  if (config_.enable_lock_contention_tracking) {
+    lock_attempts_.fetch_add(1, std::memory_order_relaxed);
+  }
 
 #if HAS_LOCKFREE_QUEUE
   if (config_.enable_lock_free_structures && lock_free_mix_queue_) {
@@ -231,7 +233,9 @@ uint64_t ProofOfHistory::mix_data(const Hash &data) {
       return current_sequence_.load(std::memory_order_acquire) + 1;
     } else {
       delete data_ptr;
-      lock_contention_count_.fetch_add(1, std::memory_order_relaxed);
+      if (config_.enable_lock_contention_tracking) {
+        lock_contention_count_.fetch_add(1, std::memory_order_relaxed);
+      }
       // Fallback to traditional queue
     }
   }
@@ -463,11 +467,15 @@ void ProofOfHistory::process_tick_batch() {
                                 (stats_.batches_processed * config_.batch_size);
     }
 
-    // Calculate lock contention ratio
-    uint64_t attempts = lock_attempts_.load(std::memory_order_relaxed);
-    uint64_t contentions = lock_contention_count_.load(std::memory_order_relaxed);
-    if (attempts > 0) {
-      stats_.lock_contention_ratio = (double)contentions / attempts;
+    // Calculate lock contention ratio only if tracking is enabled
+    if (config_.enable_lock_contention_tracking) {
+      uint64_t attempts = lock_attempts_.load(std::memory_order_relaxed);
+      uint64_t contentions = lock_contention_count_.load(std::memory_order_relaxed);
+      if (attempts > 0) {
+        stats_.lock_contention_ratio = (double)contentions / attempts;
+      }
+    } else {
+      stats_.lock_contention_ratio = 0.0; // Not tracked
     }
 
     stats_.pending_data_mixes = mixed_data_batch.size();
@@ -671,13 +679,22 @@ ProofOfHistory &GlobalProofOfHistory::instance() {
   return *instance_;
 }
 
-bool GlobalProofOfHistory::initialize(const PohConfig &config) {
+bool GlobalProofOfHistory::initialize(const PohConfig &config, const Hash &initial_hash) {
   std::lock_guard<std::mutex> lock(instance_mutex_);
   if (instance_) {
     return false; // Already initialized
   }
 
   instance_ = std::make_unique<ProofOfHistory>(config);
+  
+  // Start the PoH instance immediately with the provided initial hash
+  auto start_result = instance_->start(initial_hash);
+  if (!start_result.is_ok()) {
+    // If start fails, clean up and return failure
+    instance_.reset();
+    return false;
+  }
+  
   return true;
 }
 

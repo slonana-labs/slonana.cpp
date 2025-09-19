@@ -60,6 +60,7 @@ struct PohConfig {
   bool enable_batch_processing = true;     // Batch process multiple hashes
   uint32_t batch_size = 8;                 // Number of hashes to batch process
   bool enable_lock_free_structures = true; // Use lock-free data structures
+  bool enable_lock_contention_tracking = false; // Track lock contention metrics
 };
 
 /**
@@ -112,7 +113,10 @@ public:
   /**
    * Mix data into the next PoH hash
    * @param data Data to mix into the hash chain
-   * @return sequence number where data was mixed
+   * @return Estimated sequence number where data will be mixed (best-effort).
+   *         This is an immediate estimate and may not reflect the actual
+   *         committed sequence if the data is still pending processing.
+   *         Returns 0 if the PoH generator is not running.
    */
   uint64_t mix_data(const Hash &data);
 
@@ -132,11 +136,17 @@ public:
 
   /**
    * Register callback for each tick
+   * WARNING: Callbacks are invoked while holding internal locks.
+   * Callbacks should NOT call back into ProofOfHistory methods to avoid deadlock.
+   * Keep callbacks fast and simple.
    */
   void set_tick_callback(TickCallback callback);
 
   /**
    * Register callback for slot completion
+   * WARNING: Callbacks are invoked while holding internal locks.
+   * Callbacks should NOT call back into ProofOfHistory methods to avoid deadlock.
+   * Keep callbacks fast and simple.
    */
   void set_slot_callback(SlotCallback callback);
 
@@ -265,7 +275,7 @@ public:
 class GlobalProofOfHistory {
 public:
   static ProofOfHistory &instance();
-  static bool initialize(const PohConfig &config = {});
+  static bool initialize(const PohConfig &config = {}, const Hash &initial_hash = Hash(32, 0x42));
   static void shutdown();
   static bool is_initialized();
 
@@ -275,6 +285,8 @@ public:
   static Slot get_current_slot();
   
   // Safe callback setup
+  // WARNING: Callbacks are invoked while holding internal locks.
+  // Callbacks should NOT call back into ProofOfHistory methods to avoid deadlock.
   static bool set_tick_callback(ProofOfHistory::TickCallback callback);
   static bool set_slot_callback(ProofOfHistory::SlotCallback callback);
 

@@ -6,6 +6,15 @@
 #include <thread>
 #include <vector>
 
+using std::atomic;
+using std::chrono::high_resolution_clock;
+using std::chrono::milliseconds;
+using std::chrono::microseconds;
+using std::mt19937;
+using std::random_device;
+using std::thread;
+using std::uniform_int_distribution;
+using std::vector;
 using namespace slonana::consensus;
 
 class ConcurrencyStressTest {
@@ -15,15 +24,16 @@ public:
         
         const int num_threads = 8;
         const int operations_per_thread = 1000;
-        std::atomic<int> successful_operations{0};
-        std::atomic<int> failed_operations{0};
+        atomic<int> successful_operations{0};
+        atomic<int> failed_operations{0};
         
-        // Initialize GlobalProofOfHistory
+        // Initialize GlobalProofOfHistory with default genesis hash
         PohConfig config;
         config.ticks_per_slot = 8;
         config.enable_lock_free_structures = true;
+        Hash genesis_hash(32, 0x42); // Genesis hash for testing
         
-        if (!GlobalProofOfHistory::initialize(config)) {
+        if (!GlobalProofOfHistory::initialize(config, genesis_hash)) {
             std::cout << "❌ Failed to initialize GlobalProofOfHistory\n";
             return;
         }
@@ -32,9 +42,9 @@ public:
         
         // Thread function that performs concurrent operations
         auto worker = [&](int thread_id) {
-            std::random_device rd;
-            std::mt19937 gen(rd());
-            std::uniform_int_distribution<> dis(0, 255);
+            random_device rd;
+            mt19937 gen(rd());
+            uniform_int_distribution<> dis(0, 255);
             
             for (int i = 0; i < operations_per_thread; ++i) {
                 try {
@@ -192,9 +202,10 @@ public:
         for (int i = 0; i < num_iterations; ++i) {
             PohConfig config;
             config.ticks_per_slot = 4;
+            Hash test_genesis_hash(32, static_cast<uint8_t>(i % 256));
             
-            // Initialize
-            if (!GlobalProofOfHistory::initialize(config)) {
+            // Initialize with test genesis hash
+            if (!GlobalProofOfHistory::initialize(config, test_genesis_hash)) {
                 continue;
             }
             
@@ -241,7 +252,7 @@ public:
 };
 
 int main() {
-    std::cout << "🧪 CONCURRENCY STRESS TEST SUITE\n";
+    std::cout << "🧪 Concurrency Stress Test Suite\n";
     std::cout << "==================================================\n";
     
     try {
