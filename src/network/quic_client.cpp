@@ -216,13 +216,17 @@ bool QuicConnection::connect() {
     }
 
     // Perform QUIC handshake
+    std::cout << "🔄 Starting QUIC handshake..." << std::endl;
     if (!perform_quic_handshake()) {
+      std::cerr << "❌ QUIC handshake failed" << std::endl;
       cleanup_tls();
       close(socket_fd_);
       return false;
     }
+    std::cout << "✅ QUIC handshake completed successfully" << std::endl;
 
     connected_ = true;
+    std::cout << "✅ QUIC connection established" << std::endl;
 
     // Start event handling thread
     event_thread_ =
@@ -332,7 +336,7 @@ void QuicConnection::handle_connection_events() {
 }
 
 bool QuicConnection::perform_quic_handshake() {
-  // Production QUIC handshake implementation
+  // Production QUIC handshake implementation with retries
   try {
     // Send Initial packet with client hello
     std::vector<uint8_t> initial_packet;
@@ -371,36 +375,61 @@ bool QuicConnection::perform_quic_handshake() {
     initial_packet.push_back(0x00);
     initial_packet.push_back(0x01);
 
-    // Send initial packet
-    ssize_t sent =
-        sendto(socket_fd_, initial_packet.data(), initial_packet.size(), 0,
-               (struct sockaddr *)&server_addr_, sizeof(server_addr_));
-
-    if (sent < 0) {
-      std::cerr << "Failed to send QUIC initial packet: " << strerror(errno)
-                << std::endl;
-      return false;
-    }
-
-    // Wait for response (simplified handshake)
-    uint8_t response[2048];
-    struct sockaddr_in from_addr;
-    socklen_t from_len = sizeof(from_addr);
-
-    // Set timeout for handshake
+    // Set timeout for handshake (shorter for retry logic)
     struct timeval timeout;
-    timeout.tv_sec = 5;
-    timeout.tv_usec = 0;
+    timeout.tv_sec = 0;  
+    timeout.tv_usec = 200000; // 200ms timeout per attempt
     setsockopt(socket_fd_, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
-    ssize_t received = recvfrom(socket_fd_, response, sizeof(response), 0,
-                                (struct sockaddr *)&from_addr, &from_len);
+    // Retry handshake multiple times
+    for (int attempt = 0; attempt < 5; attempt++) {
+      std::cout << "📤 Handshake attempt " << (attempt + 1) << "/5" << std::endl;
+      
+      // Send initial packet
+      std::cout << "📤 Sending QUIC Initial packet to " 
+                << inet_ntoa(server_addr_.sin_addr) << ":" << ntohs(server_addr_.sin_port) << std::endl;
+      ssize_t sent =
+          sendto(socket_fd_, initial_packet.data(), initial_packet.size(), 0,
+                 (struct sockaddr *)&server_addr_, sizeof(server_addr_));
 
-    if (received > 0) {
-      // Process handshake response (simplified)
-      return true;
+      if (sent < 0) {
+        std::cerr << "Failed to send QUIC initial packet: " << strerror(errno)
+                  << std::endl;
+        continue; // Try again
+      }
+      std::cout << "✅ Sent " << sent << " bytes" << std::endl;
+
+      // Wait for response
+      uint8_t response[2048];
+      struct sockaddr_in from_addr;
+      socklen_t from_len = sizeof(from_addr);
+
+      std::cout << "🔄 Waiting for handshake response..." << std::endl;
+      ssize_t received = recvfrom(socket_fd_, response, sizeof(response), 0,
+                                  (struct sockaddr *)&from_addr, &from_len);
+      std::cout << "📥 Received " << received << " bytes" << std::endl;
+
+      if (received > 0) {
+        // Process handshake response (simplified)
+        std::cout << "✅ QUIC client received handshake response (" << received << " bytes)" << std::endl;
+        
+        // Validate the response is from the correct server
+        if (from_addr.sin_addr.s_addr == server_addr_.sin_addr.s_addr &&
+            from_addr.sin_port == server_addr_.sin_port) {
+          std::cout << "✅ Handshake response validated - connection established!" << std::endl;
+          return true;
+        } else {
+          std::cerr << "❌ Handshake response from incorrect address" << std::endl;
+        }
+      } else {
+        std::cout << "⏰ Attempt " << (attempt + 1) << " timed out, retrying..." << std::endl;
+      }
+      
+      // Small delay before retry
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
+    std::cerr << "❌ All handshake attempts failed" << std::endl;
     return false;
   } catch (const std::exception &e) {
     std::cerr << "QUIC handshake error: " << e.what() << std::endl;
