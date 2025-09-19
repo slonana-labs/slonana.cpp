@@ -1,6 +1,0 @@
-# Slonana Bootstrap Snapshot Marker
-# This file indicates that snapshot download failed
-# and bootstrap mode should be used instead
-network=devnet
-slot=407149523
-created=1757606390

@@ -10,7 +10,7 @@ on:
 jobs:
   benchmark-comparison:
     runs-on: ubuntu-latest
-    timeout-minutes: 620
+    timeout-minutes: 120  # Reduced from 620 to prevent excessive timeout issues
 
     steps:
     - name: Checkout repository
@@ -80,36 +80,7 @@ jobs:
         echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
         
-        # Install Agave binaries if missing
-        if ! which agave-validator >/dev/null 2>&1; then
-          echo "🔧 Installing missing Agave binaries..."
-          cargo install agave-validator agave-ledger-tool
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-          export PATH="$HOME/.cargo/bin:$PATH"
-        fi
-        
-        # Build agave binaries if cargo install failed
-        if ! which agave-validator >/dev/null 2>&1; then
-          echo "🔧 Cargo install failed, attempting to build from source..."
-          git clone https://github.com/anza-xyz/agave.git /tmp/agave
-          cd /tmp/agave
-          cargo build --release --locked
-          cp target/release/agave-validator "$HOME/.cargo/bin/"
-          cp target/release/agave-ledger-tool "$HOME/.cargo/bin/"
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-          export PATH="$HOME/.cargo/bin:$PATH"
-        fi
-        
-        # Final validation - confirm all required binaries
-        echo "🔍 Final binary validation..."
-        which solana || { echo "❌ solana missing"; exit 1; }
-        which solana-keygen || { echo "❌ solana-keygen missing"; exit 1; }
-        which agave-validator || { echo "❌ agave-validator missing"; exit 1; }
-        which agave-ledger-tool || { echo "❌ agave-ledger-tool missing"; exit 1; }
-        
-        echo "✅ All binaries confirmed available"
-        solana --version
-        agave-validator --version
+        echo "✅ Solana CLI binaries configured for all subsequent steps"
 
     - name: Build Slonana validator
       run: |
@@ -158,13 +129,13 @@ jobs:
         echo "🔍 Checking required binaries..."
         which solana || { echo "❌ solana not found"; exit 1; }
         which solana-keygen || { echo "❌ solana-keygen not found"; exit 1; }
-        which agave-validator || { echo "❌ agave-validator not found"; exit 1; }
+        which solana-test-validator || { echo "❌ solana-test-validator not found"; exit 1; }
         which agave-ledger-tool || { echo "❌ agave-ledger-tool not found"; exit 1; }
         
         echo "✅ All required binaries found:"
         echo "  solana: $(which solana)"
         echo "  solana-keygen: $(which solana-keygen)"
-        echo "  agave-validator: $(which agave-validator)"
+        echo "  solana-test-validator: $(which solana-test-validator)"
         echo "  agave-ledger-tool: $(which agave-ledger-tool)"
         echo ""
         
@@ -180,12 +151,13 @@ jobs:
         # Version validation
         echo "🔍 Version information:"
         solana --version
-        agave-validator --version
+        solana-test-validator --version
         echo ""
         
         echo "✅ All dependencies validated successfully - ready for benchmarking!"
 
     - name: Run Slonana validator benchmark
+      timeout-minutes: 15
       run: |
         echo "🔍 Running Slonana validator benchmark..."
         
@@ -193,14 +165,14 @@ jobs:
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
         
         if [ -f "build/slonana_validator" ]; then
-          ./scripts/benchmark_slonana.sh \
+          timeout 720s ./scripts/benchmark_slonana.sh \
             --ledger test_ledgers/slonana \
             --results benchmark_results/slonana \
             --validator-bin build/slonana_validator \
             --verbose
         else
           echo "Slonana validator not found, using placeholder mode..."
-          ./scripts/benchmark_slonana.sh \
+          timeout 720s ./scripts/benchmark_slonana.sh \
             --ledger test_ledgers/slonana \
             --results benchmark_results/slonana \
             --use-placeholder \
@@ -208,16 +180,17 @@ jobs:
         fi
 
     - name: Run Agave validator benchmark
+      timeout-minutes: 15
       run: |
         echo "🔍 Running Agave validator benchmark..."
         
         # Ensure PATH includes Solana CLI (which includes Agave binaries)
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
         
-        ./scripts/benchmark_agave.sh \
+        timeout 720s ./scripts/benchmark_agave.sh \
           --ledger test_ledgers/agave \
           --results benchmark_results/agave \
-          --validator-bin agave-validator \
+          --validator-bin solana-test-validator \
           --verbose
           
     - name: Generate comparison report

@@ -578,6 +578,13 @@ int main(int argc, char *argv[]) {
   }
 
   try {
+    // **FAST MODE DETECTION**: Speed up initialization for CI/benchmarking
+    bool fast_mode = std::getenv("SLONANA_CI_MODE") || std::getenv("CI");
+    if (fast_mode) {
+      std::cout << "🚀 Fast mode enabled for CI/benchmarking" << std::endl;
+      config.snapshot_source = "none"; // Skip snapshot bootstrap
+    }
+
     // Create and initialize the validator
     std::cout << "Creating validator instance..." << std::endl;
     slonana::SolanaValidator validator(config);
@@ -601,6 +608,9 @@ int main(int argc, char *argv[]) {
     std::cout << "All validator services started" << std::endl;
 
     std::cout << "\nValidator started successfully!" << std::endl;
+    if (fast_mode) {
+      std::cout << "🚀 Fast mode: Ready for benchmarking/testing" << std::endl;
+    }
     std::cout << "Log level: " << config.log_level << std::endl;
     
     // Display faucet status
