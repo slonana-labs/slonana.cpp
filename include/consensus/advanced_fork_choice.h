@@ -219,6 +219,10 @@ private:
   mutable std::shared_mutex data_mutex_;
   mutable std::mutex vote_processing_mutex_;
   
+  // Cache for fork weights (thread-safe)
+  mutable std::unordered_map<Hash, std::pair<uint64_t, std::chrono::steady_clock::time_point>> weight_cache_;
+  mutable std::mutex weight_cache_mutex_;
+  
   // Internal operations
   void update_fork_weights();
   Fork* find_best_fork() const;

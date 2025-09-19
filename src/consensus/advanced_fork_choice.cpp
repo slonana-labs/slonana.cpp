@@ -81,8 +81,16 @@ void AdvancedForkChoice::add_vote(const VoteInfo& vote) {
     std::lock_guard<std::mutex> vote_lock(vote_processing_mutex_);
     std::unique_lock<std::shared_mutex> lock(data_mutex_);
     
-    // Add to recent votes
+    // Add to recent votes with size limit
     recent_votes_.push_back(vote);
+    
+    // Cap recent_votes_ size to prevent unbounded growth
+    constexpr size_t MAX_RECENT_VOTES = 10000;
+    if (recent_votes_.size() > MAX_RECENT_VOTES) {
+      // Remove oldest votes (FIFO)
+      recent_votes_.erase(recent_votes_.begin(), 
+                         recent_votes_.begin() + (recent_votes_.size() - MAX_RECENT_VOTES));
+    }
     
     // Update validator stake
     validator_stakes_[vote.validator_identity] = vote.stake_weight;
@@ -143,6 +151,14 @@ void AdvancedForkChoice::process_votes_batch(const std::vector<VoteInfo>& votes)
       }
       
       stats_.total_votes++;
+    }
+    
+    // Cap recent_votes_ size to prevent unbounded growth
+    constexpr size_t MAX_RECENT_VOTES = 10000;
+    if (recent_votes_.size() > MAX_RECENT_VOTES) {
+      // Remove oldest votes (FIFO)
+      recent_votes_.erase(recent_votes_.begin(), 
+                         recent_votes_.begin() + (recent_votes_.size() - MAX_RECENT_VOTES));
     }
   }
   
@@ -306,12 +322,12 @@ Fork* AdvancedForkChoice::find_best_fork() const {
 }
 
 uint64_t AdvancedForkChoice::calculate_fork_weight(const Fork& fork) const {
-  // Use cached weight if available and recent
-  static std::unordered_map<Hash, std::pair<uint64_t, std::chrono::steady_clock::time_point>> weight_cache;
+  // Thread-safe weight caching
+  std::lock_guard<std::mutex> cache_lock(weight_cache_mutex_);
   auto now = std::chrono::steady_clock::now();
   
-  auto cache_it = weight_cache.find(fork.head_hash);
-  if (cache_it != weight_cache.end()) {
+  auto cache_it = weight_cache_.find(fork.head_hash);
+  if (cache_it != weight_cache_.end()) {
     auto age = std::chrono::duration_cast<std::chrono::milliseconds>(now - cache_it->second.second);
     if (age.count() < 500) { // 500ms cache validity
       return cache_it->second.first;
@@ -345,7 +361,7 @@ uint64_t AdvancedForkChoice::calculate_fork_weight(const Fork& fork) const {
   weight += fork.confirmation_count * 1000;
   
   // Cache the result
-  weight_cache[fork.head_hash] = {weight, now};
+  weight_cache_[fork.head_hash] = {weight, now};
   
   return weight;
 }
@@ -377,15 +393,21 @@ void AdvancedForkChoice::process_optimistic_confirmations() {
 }
 
 void AdvancedForkChoice::process_rooting_candidates() {
-  std::unique_lock<std::shared_mutex> lock(data_mutex_);
+  std::vector<Hash> candidates_to_root;
   
-  for (const auto& [hash, block] : blocks_) {
-    if (!block->is_confirmed && check_rooting_conditions(hash)) {
-      // Release lock before calling try_root_block to avoid recursive locking
-      lock.unlock();
-      try_root_block(hash);
-      lock.lock();
+  // First, collect candidates under lock
+  {
+    std::shared_lock<std::shared_mutex> lock(data_mutex_);
+    for (const auto& [hash, block] : blocks_) {
+      if (!block->is_confirmed && check_rooting_conditions(hash)) {
+        candidates_to_root.push_back(hash);
+      }
     }
+  }
+  
+  // Then process candidates without holding lock to avoid deadlock
+  for (const Hash& candidate : candidates_to_root) {
+    try_root_block(candidate);
   }
 }
 

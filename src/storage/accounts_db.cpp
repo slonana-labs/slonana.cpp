@@ -47,11 +47,20 @@ std::vector<uint8_t> AccountData::serialize() const {
 }
 
 bool AccountData::deserialize(const std::vector<uint8_t>& raw_data) {
+  // Enhanced bounds checking and validation
   if (raw_data.size() < 61) { // Minimum size: 8+32+1+8+8+4 = 61 bytes
     return false;
   }
   
+  // Maximum reasonable data size (10MB)
+  if (raw_data.size() > 10 * 1024 * 1024) {
+    return false;
+  }
+  
   size_t offset = 0;
+  
+  // Bounds check before each access
+  if (offset + 8 > raw_data.size()) return false;
   
   // Deserialize lamports
   lamports = 0;
@@ -60,13 +69,27 @@ bool AccountData::deserialize(const std::vector<uint8_t>& raw_data) {
   }
   offset += 8;
   
+  // Validate lamports (reasonable maximum)
+  if (lamports > UINT64_MAX / 2) {  // Sanity check for overflow protection
+    return false;
+  }
+  
+  // Bounds check for owner
+  if (offset + 32 > raw_data.size()) return false;
+  
   // Deserialize owner
   owner.assign(raw_data.begin() + offset, raw_data.begin() + offset + 32);
   offset += 32;
   
+  // Bounds check for executable
+  if (offset + 1 > raw_data.size()) return false;
+  
   // Deserialize executable
   executable = raw_data[offset] != 0;
   offset += 1;
+  
+  // Bounds check for rent_epoch
+  if (offset + 8 > raw_data.size()) return false;
   
   // Deserialize rent_epoch
   rent_epoch = 0;
@@ -75,6 +98,14 @@ bool AccountData::deserialize(const std::vector<uint8_t>& raw_data) {
   }
   offset += 8;
   
+  // Validate rent_epoch (reasonable maximum)
+  if (rent_epoch > 1000000) {  // Sanity check for reasonable epoch
+    return false;
+  }
+  
+  // Bounds check for version
+  if (offset + 8 > raw_data.size()) return false;
+  
   // Deserialize version
   version = 0;
   for (int i = 0; i < 8; ++i) {
@@ -82,12 +113,20 @@ bool AccountData::deserialize(const std::vector<uint8_t>& raw_data) {
   }
   offset += 8;
   
+  // Bounds check for data length
+  if (offset + 4 > raw_data.size()) return false;
+  
   // Deserialize data length
   uint32_t data_len = 0;
   for (int i = 0; i < 4; ++i) {
     data_len |= static_cast<uint32_t>(raw_data[offset + i]) << (i * 8);
   }
   offset += 4;
+  
+  // Validate data length (reasonable maximum: 1MB)
+  if (data_len > 1024 * 1024) {
+    return false;
+  }
   
   // Deserialize data
   if (offset + data_len > raw_data.size()) {
