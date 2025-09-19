@@ -11,7 +11,8 @@ namespace consensus {
 
 AdvancedForkChoice::AdvancedForkChoice(const Configuration& config) 
     : config_(config), current_head_slot_(0), current_root_slot_(0),
-      last_weight_update_(std::chrono::steady_clock::now()) {
+      last_weight_update_(std::chrono::steady_clock::now()),
+      stake_aggregation_dirty_(true) {
   
   stats_.last_fork_switch = std::chrono::steady_clock::now();
   stats_.last_gc_run = std::chrono::steady_clock::now();
@@ -70,6 +71,12 @@ void AdvancedForkChoice::add_block(const Hash& block_hash, const Hash& parent_ha
     stats_.active_forks++;
   }
   
+  // Add block to pending confirmation tracking for event-driven processing
+  add_pending_confirmation_block(block_hash);
+  
+  // Mark stake aggregation as dirty since we added a new block
+  stake_aggregation_dirty_ = true;
+  
   // Update fork weights and head selection
   update_fork_weights();
   
@@ -97,6 +104,12 @@ void AdvancedForkChoice::add_vote(const VoteInfo& vote) {
     // Update validator stake
     validator_stakes_[vote.validator_identity] = vote.stake_weight;
     
+    // Mark stake aggregation as dirty since we added a new vote
+    stake_aggregation_dirty_ = true;
+    
+    // Update stake aggregation incrementally for efficiency
+    update_stake_aggregation_for_vote(vote);
+    
     // Update block metadata if exists
     auto block_it = blocks_.find(vote.block_hash);
     if (block_it != blocks_.end()) {
@@ -116,7 +129,7 @@ void AdvancedForkChoice::add_vote(const VoteInfo& vote) {
   
   // Now process optimistic confirmations and rooting without holding locks
   if (config_.enable_optimistic_confirmation) {
-    process_optimistic_confirmations();
+    process_pending_confirmations();
   }
   
   if (config_.enable_aggressive_rooting) {
@@ -140,6 +153,10 @@ void AdvancedForkChoice::process_votes_batch(const std::vector<VoteInfo>& votes)
     for (const auto& vote : votes) {
       recent_votes_.push_back(vote);
       validator_stakes_[vote.validator_identity] = vote.stake_weight;
+      
+      // Mark stake aggregation as dirty and update incrementally
+      stake_aggregation_dirty_ = true;
+      update_stake_aggregation_for_vote(vote);
       
       auto block_it = blocks_.find(vote.block_hash);
       if (block_it != blocks_.end()) {
@@ -166,7 +183,7 @@ void AdvancedForkChoice::process_votes_batch(const std::vector<VoteInfo>& votes)
   
   // Now batch update operations without holding locks
   if (config_.enable_optimistic_confirmation) {
-    process_optimistic_confirmations();
+    process_pending_confirmations();
   }
   
   if (config_.enable_aggressive_rooting) {
@@ -323,7 +340,7 @@ Fork* AdvancedForkChoice::find_best_fork() const {
 }
 
 uint64_t AdvancedForkChoice::calculate_fork_weight(const Fork& fork) const {
-  // Thread-safe weight caching
+  // Thread-safe weight caching with LRU eviction
   std::lock_guard<std::mutex> cache_lock(weight_cache_mutex_);
   auto now = std::chrono::steady_clock::now();
   
@@ -331,6 +348,8 @@ uint64_t AdvancedForkChoice::calculate_fork_weight(const Fork& fork) const {
   if (cache_it != weight_cache_.end()) {
     auto age = std::chrono::duration_cast<std::chrono::milliseconds>(now - cache_it->second.second);
     if (age.count() < 500) { // 500ms cache validity
+      // Update LRU order - move to front
+      update_weight_cache_lru(fork.head_hash);
       return cache_it->second.first;
     }
   }
@@ -361,8 +380,14 @@ uint64_t AdvancedForkChoice::calculate_fork_weight(const Fork& fork) const {
   // Bonus for confirmation count
   weight += fork.confirmation_count * 1000;
   
-  // Cache the result
+  // Cache the result and update LRU
   weight_cache_[fork.head_hash] = {weight, now};
+  update_weight_cache_lru(fork.head_hash);
+  
+  // Check if we need to evict old entries
+  if (weight_cache_.size() > config_.max_cache_entries) {
+    evict_weight_cache_lru();
+  }
   
   return weight;
 }
@@ -454,6 +479,18 @@ uint64_t AdvancedForkChoice::count_stake_supporting_block(const Hash& block_hash
 }
 
 uint64_t AdvancedForkChoice::count_stake_supporting_block_unsafe(const Hash& block_hash) const {
+  // Use stake aggregation for efficient stake counting
+  if (stake_aggregation_dirty_) {
+    rebuild_stake_aggregation();
+    stake_aggregation_dirty_ = false;
+  }
+  
+  auto agg_it = block_stake_aggregation_.find(block_hash);
+  if (agg_it != block_stake_aggregation_.end()) {
+    return agg_it->second;
+  }
+  
+  // Fallback to traditional counting for new blocks not in aggregation
   uint64_t total_stake = 0;
   
   // Count stake from votes for this block and its descendants
@@ -624,16 +661,11 @@ void AdvancedForkChoice::expire_stale_cache_entries() {
     }
   }
   
-  // Limit cache sizes to prevent unbounded growth
+  // Limit cache sizes to prevent unbounded growth using proper LRU eviction
   {
     std::lock_guard<std::mutex> lock(weight_cache_mutex_);
-    if (weight_cache_.size() > config_.max_cache_entries) {
-      // Remove oldest entries (simple LRU approximation)
-      auto cutoff_count = weight_cache_.size() - config_.max_cache_entries;
-      auto it = weight_cache_.begin();
-      for (size_t i = 0; i < cutoff_count && it != weight_cache_.end(); ++i) {
-        it = weight_cache_.erase(it);
-      }
+    while (weight_cache_.size() > config_.max_cache_entries) {
+      evict_weight_cache_lru();
     }
   }
 }
@@ -641,6 +673,8 @@ void AdvancedForkChoice::expire_stale_cache_entries() {
 void AdvancedForkChoice::clear_weight_cache() {
   std::lock_guard<std::mutex> lock(weight_cache_mutex_);
   weight_cache_.clear();
+  weight_cache_lru_list_.clear();
+  weight_cache_lru_map_.clear();
 }
 
 void AdvancedForkChoice::clear_confirmation_cache() {
@@ -653,6 +687,120 @@ size_t AdvancedForkChoice::get_cache_size() const {
   std::lock_guard<std::mutex> weight_lock(weight_cache_mutex_);
   std::lock_guard<std::mutex> fork_lock(fork_weights_mutex_);
   return weight_cache_.size() + cached_weights_.size();
+}
+
+// LRU cache management implementation
+void AdvancedForkChoice::update_weight_cache_lru(const Hash& block_hash) const {
+  // Remove from current position if exists
+  auto lru_map_it = weight_cache_lru_map_.find(block_hash);
+  if (lru_map_it != weight_cache_lru_map_.end()) {
+    weight_cache_lru_list_.erase(lru_map_it->second);
+  }
+  
+  // Add to front (most recently used)
+  weight_cache_lru_list_.push_front(block_hash);
+  weight_cache_lru_map_[block_hash] = weight_cache_lru_list_.begin();
+}
+
+void AdvancedForkChoice::evict_weight_cache_lru() const {
+  if (weight_cache_lru_list_.empty()) {
+    return;
+  }
+  
+  // Remove least recently used (back of list)
+  Hash lru_hash = weight_cache_lru_list_.back();
+  weight_cache_lru_list_.pop_back();
+  weight_cache_lru_map_.erase(lru_hash);
+  weight_cache_.erase(lru_hash);
+}
+
+// Event-driven confirmation implementation
+void AdvancedForkChoice::add_pending_confirmation_block(const Hash& block_hash) {
+  // Add block to pending confirmation set (already under data_mutex_)
+  pending_confirmation_blocks_.insert(block_hash);
+}
+
+void AdvancedForkChoice::process_pending_confirmations() {
+  std::unique_lock<std::shared_mutex> lock(data_mutex_);
+  
+  // Process only blocks that need confirmation check
+  auto it = pending_confirmation_blocks_.begin();
+  while (it != pending_confirmation_blocks_.end()) {
+    const Hash& block_hash = *it;
+    auto block_it = blocks_.find(block_hash);
+    
+    if (block_it != blocks_.end() && !block_it->second->is_confirmed) {
+      if (check_optimistic_confirmation_conditions(block_hash)) {
+        block_it->second->is_confirmed = true;
+        stats_.optimistic_confirmations++;
+        
+        // Mark fork as optimistically confirmed
+        for (auto& [fork_hash, fork] : forks_) {
+          if (std::find(fork->blocks.begin(), fork->blocks.end(), block_hash) != fork->blocks.end()) {
+            fork->is_optimistically_confirmed = true;
+            break;
+          }
+        }
+        
+        std::cout << "Block optimistically confirmed: " << block_it->second->slot << std::endl;
+      }
+    }
+    
+    // Remove from pending set if confirmed or no longer exists
+    if (block_it == blocks_.end() || block_it->second->is_confirmed) {
+      it = pending_confirmation_blocks_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+// Stake aggregation implementation
+void AdvancedForkChoice::rebuild_stake_aggregation() const {
+  block_stake_aggregation_.clear();
+  
+  // Aggregate stake for each block from all recent votes
+  for (const auto& vote : recent_votes_) {
+    // Add stake for the voted block
+    block_stake_aggregation_[vote.block_hash] += vote.stake_weight;
+    
+    // Also add stake for all ancestors (blocks this vote supports)
+    Hash current = vote.block_hash;
+    while (!current.empty()) {
+      auto block_it = blocks_.find(current);
+      if (block_it == blocks_.end()) {
+        break;
+      }
+      
+      Hash parent = block_it->second->parent_hash;
+      if (!parent.empty()) {
+        block_stake_aggregation_[parent] += vote.stake_weight;
+      }
+      current = parent;
+    }
+  }
+}
+
+void AdvancedForkChoice::update_stake_aggregation_for_vote(const VoteInfo& vote) const {
+  if (!stake_aggregation_dirty_) {
+    // Incrementally update aggregation for this vote
+    block_stake_aggregation_[vote.block_hash] += vote.stake_weight;
+    
+    // Also update stake for all ancestors
+    Hash current = vote.block_hash;
+    while (!current.empty()) {
+      auto block_it = blocks_.find(current);
+      if (block_it == blocks_.end()) {
+        break;
+      }
+      
+      Hash parent = block_it->second->parent_hash;
+      if (!parent.empty()) {
+        block_stake_aggregation_[parent] += vote.stake_weight;
+      }
+      current = parent;
+    }
+  }
 }
 
 } // namespace consensus

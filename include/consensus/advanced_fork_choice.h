@@ -4,6 +4,7 @@
 #include "consensus/tower_bft.h"
 #include <atomic>
 #include <chrono>
+#include <list>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
@@ -262,6 +263,13 @@ private:
   std::vector<VoteInfo> recent_votes_;
   std::unordered_map<PublicKey, uint64_t> validator_stakes_;
   
+  // Event-driven confirmation tracking
+  std::unordered_set<Hash> pending_confirmation_blocks_;
+  
+  // Stake aggregation for efficient stake counting
+  mutable std::unordered_map<Hash, uint64_t> block_stake_aggregation_;
+  mutable bool stake_aggregation_dirty_;
+  
   // Optimization: Block-to-Fork mapping for O(1) fork lookups
   std::unordered_map<Hash, Fork*> block_to_fork_map_;
   
@@ -275,8 +283,10 @@ private:
   mutable std::shared_mutex data_mutex_;
   mutable std::mutex vote_processing_mutex_;
   
-  // Cache for fork weights (thread-safe)
+  // Cache for fork weights with LRU eviction (thread-safe)
   mutable std::unordered_map<Hash, std::pair<uint64_t, std::chrono::steady_clock::time_point>> weight_cache_;
+  mutable std::list<Hash> weight_cache_lru_list_;  // For LRU tracking
+  mutable std::unordered_map<Hash, std::list<Hash>::iterator> weight_cache_lru_map_;  // Hash to iterator mapping
   mutable std::mutex weight_cache_mutex_;
   
   // Fork weights update state (moved from static to instance members)
@@ -310,6 +320,18 @@ private:
   bool is_ancestor_unsafe(const Hash& potential_ancestor, const Hash& descendant) const;
   void update_fork_metrics(Fork& fork);
   bool is_valid_fork_transition(const Hash& from, const Hash& to) const;
+  
+  // LRU cache management
+  void update_weight_cache_lru(const Hash& block_hash) const;
+  void evict_weight_cache_lru() const;
+  
+  // Event-driven confirmation
+  void add_pending_confirmation_block(const Hash& block_hash);
+  void process_pending_confirmations();
+  
+  // Stake aggregation
+  void rebuild_stake_aggregation() const;
+  void update_stake_aggregation_for_vote(const VoteInfo& vote) const;
 };
 
 } // namespace consensus
