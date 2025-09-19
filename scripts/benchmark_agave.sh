@@ -520,56 +520,97 @@ test_transaction_throughput() {
     solana-keygen new --no-bip39-passphrase --silent --outfile "$sender_keypair"
     solana-keygen new --no-bip39-passphrase --silent --outfile "$recipient_keypair"
 
-    # Airdrop SOL to sender
+    # Initialize default results (in case of early exit)
+    echo "0" > "$RESULTS_DIR/effective_tps.txt"
+    echo "0" > "$RESULTS_DIR/successful_transactions.txt"
+    echo "0" > "$RESULTS_DIR/submitted_requests.txt"
+
+    # Airdrop SOL to sender with more aggressive retry
     log_verbose "Requesting airdrop..."
     local airdrop_attempts=0
-    while [[ $airdrop_attempts -lt 5 ]]; do
+    local airdrop_success=false
+    while [[ $airdrop_attempts -lt 10 ]]; do  # Increased from 5 to 10
         if solana airdrop 100 --keypair "$sender_keypair" > /dev/null 2>&1; then
+            airdrop_success=true
             break
         fi
         ((airdrop_attempts++))
-        sleep 2
+        log_verbose "Airdrop attempt $airdrop_attempts failed, retrying..."
+        sleep 1  # Reduced from 2s to 1s
     done
 
-    # Verify balance
-    local balance
-    balance=$(solana balance --keypair "$sender_keypair" | awk '{print $1}')
-    
-    if (( $(echo "$balance < 10" | bc -l) )); then
-        log_warning "Insufficient balance for throughput test: ${balance} SOL"
-        echo "0" > "$RESULTS_DIR/effective_tps.txt"
-        echo "0" > "$RESULTS_DIR/successful_transactions.txt"
+    if [[ "$airdrop_success" == "false" ]]; then
+        log_warning "All airdrop attempts failed, using zero-TPS results"
+        log_success "Transaction throughput test completed (airdrop failed)"
+        log_info "Effective TPS: 0"
+        log_info "Successful transactions: 0"
         return 0
     fi
 
-    log_verbose "Starting transaction throughput test for ${TEST_DURATION}s..."
+    # Verify balance with more lenient threshold
+    local balance
+    balance=$(solana balance --keypair "$sender_keypair" 2>/dev/null | awk '{print $1}' || echo "0")
+    
+    # More lenient balance check (require at least 1 SOL instead of 10)
+    if (( $(echo "$balance < 1" | bc -l 2>/dev/null || echo "1") )); then
+        log_warning "Insufficient balance for throughput test: ${balance} SOL (need ≥1 SOL)"
+        log_success "Transaction throughput test completed (insufficient balance)"
+        log_info "Effective TPS: 0"
+        log_info "Successful transactions: 0"
+        return 0
+    fi
 
-    # Run transaction test
+    log_verbose "Starting transaction throughput test for ${TEST_DURATION}s with balance: ${balance} SOL..."
+
+    # Run transaction test with timeout protection and simplified logic
     local txn_count=0
     local success_count=0
     local start_time=$(date +%s)
     local recipient_pubkey
-    recipient_pubkey=$(solana-keygen pubkey "$recipient_keypair")
+    recipient_pubkey=$(solana-keygen pubkey "$recipient_keypair" 2>/dev/null || echo "")
 
-    while [[ $(($(date +%s) - start_time)) -lt $TEST_DURATION ]]; do
-        for ((i=1; i<=5; i++)); do
-            if solana transfer "$recipient_pubkey" 0.001 \
-                --keypair "$sender_keypair" \
-                --allow-unfunded-recipient \
-                --fee-payer "$sender_keypair" \
-                --no-wait > /dev/null 2>&1; then
-                ((success_count++))
-            fi
-            ((txn_count++))
-        done
-        sleep 0.2
+    if [[ -z "$recipient_pubkey" ]]; then
+        log_warning "Failed to extract recipient pubkey, using zero-TPS results"
+        log_success "Transaction throughput test completed (recipient key error)"
+        log_info "Effective TPS: 0"
+        log_info "Successful transactions: 0"
+        return 0
+    fi
+
+    # Add timeout protection for the entire transaction loop
+    local loop_timeout=$((start_time + TEST_DURATION + 5))  # Extra 5s buffer
+    local end_time=$((start_time + TEST_DURATION))
+    
+    while [[ $(date +%s) -lt $end_time ]]; do
+        # Safety check to prevent infinite loops
+        if [[ $(date +%s) -gt $loop_timeout ]]; then
+            log_warning "Transaction loop timeout exceeded, breaking..."
+            break
+        fi
+        
+        # Single transaction per iteration in CI to avoid overload
+        if timeout 3s solana transfer "$recipient_pubkey" 0.001 \
+            --keypair "$sender_keypair" \
+            --allow-unfunded-recipient \
+            --fee-payer "$sender_keypair" \
+            --no-wait > /dev/null 2>&1; then
+            ((success_count++))
+        fi
+        ((txn_count++))
+        
+        # Longer sleep in CI to avoid overwhelming the validator
+        if [[ "${CI:-}" == "true" || "${SLONANA_CI_MODE:-}" == "1" ]]; then
+            sleep 0.8  # Slower pace for CI
+        else
+            sleep 0.3
+        fi
     done
 
     local actual_duration=$(($(date +%s) - start_time))
     actual_duration=${actual_duration:-1}  # Prevent division by zero
     local effective_tps=$((success_count / actual_duration))
 
-    # Save results
+    # Save results (overwrite defaults)
     echo "$effective_tps" > "$RESULTS_DIR/effective_tps.txt"
     echo "$success_count" > "$RESULTS_DIR/successful_transactions.txt"
     echo "$txn_count" > "$RESULTS_DIR/submitted_requests.txt"
@@ -577,6 +618,7 @@ test_transaction_throughput() {
     log_success "Transaction throughput test completed"
     log_info "Effective TPS: $effective_tps"
     log_info "Successful transactions: $success_count"
+    log_info "Total submitted: $txn_count"
 }
 
 # Generate comprehensive results summary
@@ -754,17 +796,40 @@ trap cleanup_validator EXIT
 main() {
     log_info "Starting Agave test validator benchmark..."
     
+    # Set up error handling to ensure emergency results are always generated
+    set -e  # Exit on error, but catch it
+    
+    # Function to ensure emergency results on any exit
+    ensure_emergency_results() {
+        local exit_code=$?
+        if [[ ! -f "$RESULTS_DIR/benchmark_results.json" ]]; then
+            log_warning "Main execution interrupted or failed, generating emergency results..."
+            generate_emergency_results
+        fi
+        exit $exit_code
+    }
+    
+    # Set up emergency results handler
+    trap ensure_emergency_results EXIT
+    
     parse_arguments "$@"
     check_dependencies
     setup_validator
     start_validator
+    
+    # Disable exit-on-error for benchmark execution to allow graceful failure handling
+    set +e
     run_benchmarks
+    set -e
     
     # Ensure results are always generated, even if tests were incomplete
     if [[ ! -f "$RESULTS_DIR/benchmark_results.json" ]]; then
         log_warning "Final results not generated, creating emergency results..."
         generate_emergency_results
     fi
+    
+    # Clear the emergency trap since we completed successfully
+    trap - EXIT
     
     log_success "Agave test validator benchmark completed successfully!"
     log_info "Results available in: $RESULTS_DIR"

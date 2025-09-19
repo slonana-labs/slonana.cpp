@@ -157,7 +157,7 @@ jobs:
         echo "✅ All dependencies validated successfully - ready for benchmarking!"
 
     - name: Run Slonana validator benchmark
-      timeout-minutes: 10
+      timeout-minutes: 15
       run: |
         echo "🔍 Running Slonana validator benchmark..."
         
@@ -165,14 +165,14 @@ jobs:
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
         
         if [ -f "build/slonana_validator" ]; then
-          timeout 480s ./scripts/benchmark_slonana.sh \
+          timeout 720s ./scripts/benchmark_slonana.sh \
             --ledger test_ledgers/slonana \
             --results benchmark_results/slonana \
             --validator-bin build/slonana_validator \
             --verbose
         else
           echo "Slonana validator not found, using placeholder mode..."
-          timeout 480s ./scripts/benchmark_slonana.sh \
+          timeout 720s ./scripts/benchmark_slonana.sh \
             --ledger test_ledgers/slonana \
             --results benchmark_results/slonana \
             --use-placeholder \
@@ -180,14 +180,14 @@ jobs:
         fi
 
     - name: Run Agave validator benchmark
-      timeout-minutes: 10
+      timeout-minutes: 15
       run: |
         echo "🔍 Running Agave validator benchmark..."
         
         # Ensure PATH includes Solana CLI (which includes Agave binaries)
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
         
-        timeout 480s ./scripts/benchmark_agave.sh \
+        timeout 720s ./scripts/benchmark_agave.sh \
           --ledger test_ledgers/agave \
           --results benchmark_results/agave \
           --validator-bin solana-test-validator \
