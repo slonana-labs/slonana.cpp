@@ -115,6 +115,19 @@ bool AccountData::is_valid() const {
     return false;
   }
   
+  // Validate lamports (should not be negative or unreasonably large)
+  // SOL has 9 decimal places, so max reasonable is ~500M SOL = 500M * 10^9 lamports
+  const uint64_t MAX_REASONABLE_LAMPORTS = 500000000ULL * 1000000000ULL;
+  if (lamports > MAX_REASONABLE_LAMPORTS) {
+    return false;
+  }
+  
+  // Validate rent_epoch (should be reasonable - not in far future)
+  // Current epoch is typically < 500, allow some headroom
+  if (rent_epoch > 100000) {
+    return false;
+  }
+  
   return true;
 }
 
@@ -243,7 +256,11 @@ bool AccountsDB::delete_account(const PublicKey& account_key, uint64_t slot) {
   
   // Remove from cache
   std::lock_guard<std::mutex> cache_lock(cache_mutex_);
-  account_cache_.erase(account_key);
+  auto map_it = cache_map_.find(account_key);
+  if (map_it != cache_map_.end()) {
+    cache_list_.erase(map_it->second);
+    cache_map_.erase(map_it);
+  }
   
   return true;
 }
@@ -454,32 +471,53 @@ bool AccountsDB::is_version_eligible_for_gc(const AccountVersion& version, uint6
 void AccountsDB::update_cache(const PublicKey& account_key, std::shared_ptr<AccountData> data) {
   std::lock_guard<std::mutex> lock(cache_mutex_);
   
-  account_cache_[account_key] = data;
-  
-  // Evict if cache is too large
-  if (account_cache_.size() > config_.index_cache_size) {
-    evict_cache_if_needed();
+  auto map_it = cache_map_.find(account_key);
+  if (map_it != cache_map_.end()) {
+    // Update existing entry and move to front
+    auto list_it = map_it->second;
+    list_it->data = data;
+    list_it->access_time = std::chrono::steady_clock::now();
+    
+    cache_list_.splice(cache_list_.begin(), cache_list_, list_it);
+    cache_map_[account_key] = cache_list_.begin();
+  } else {
+    // Add new entry at front
+    cache_list_.emplace_front(account_key, data);
+    cache_map_[account_key] = cache_list_.begin();
+    
+    // Check if we need to evict
+    if (cache_list_.size() > config_.index_cache_size) {
+      evict_cache_if_needed();
+    }
   }
 }
 
 std::optional<std::shared_ptr<AccountData>> AccountsDB::get_from_cache(const PublicKey& account_key) {
   std::lock_guard<std::mutex> lock(cache_mutex_);
   
-  auto it = account_cache_.find(account_key);
-  if (it != account_cache_.end()) {
-    return it->second;
+  auto map_it = cache_map_.find(account_key);
+  if (map_it != cache_map_.end()) {
+    // Move to front (most recently used)
+    auto list_it = map_it->second;
+    list_it->access_time = std::chrono::steady_clock::now();
+    
+    // Move to front of list for LRU ordering
+    cache_list_.splice(cache_list_.begin(), cache_list_, list_it);
+    cache_map_[account_key] = cache_list_.begin();
+    
+    return list_it->data;
   }
   
   return std::nullopt;
 }
 
 void AccountsDB::evict_cache_if_needed() {
-  // Simple LRU eviction - remove 10% of entries
-  size_t to_remove = account_cache_.size() / 10;
-  auto it = account_cache_.begin();
-  
-  for (size_t i = 0; i < to_remove && it != account_cache_.end(); ++i) {
-    it = account_cache_.erase(it);
+  // Proper LRU eviction - remove least recently used entries
+  while (cache_list_.size() > config_.index_cache_size) {
+    // Remove from back (least recently used)
+    auto last_it = std::prev(cache_list_.end());
+    cache_map_.erase(last_it->key);
+    cache_list_.erase(last_it);
   }
 }
 

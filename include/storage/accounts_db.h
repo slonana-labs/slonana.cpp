@@ -3,6 +3,7 @@
 #include "common/types.h"
 #include <atomic>
 #include <chrono>
+#include <list>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -192,12 +193,23 @@ private:
   Configuration config_;
   mutable Statistics stats_;
   
+  // LRU Cache implementation for accounts
+  struct LRUCacheEntry {
+    PublicKey key;
+    std::shared_ptr<AccountData> data;
+    std::chrono::steady_clock::time_point access_time;
+    
+    LRUCacheEntry(const PublicKey& k, std::shared_ptr<AccountData> d)
+        : key(k), data(d), access_time(std::chrono::steady_clock::now()) {}
+  };
+  
   // Account storage
   std::unordered_map<PublicKey, std::shared_ptr<AccountIndex>> account_index_;
   mutable std::shared_mutex index_mutex_;
   
-  // Cache for frequently accessed accounts
-  mutable std::unordered_map<PublicKey, std::shared_ptr<AccountData>> account_cache_;
+  // LRU Cache for frequently accessed accounts
+  mutable std::list<LRUCacheEntry> cache_list_;
+  mutable std::unordered_map<PublicKey, std::list<LRUCacheEntry>::iterator> cache_map_;
   mutable std::mutex cache_mutex_;
   
   // Garbage collection

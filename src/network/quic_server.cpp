@@ -7,6 +7,7 @@
 #include <netinet/in.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+#include <poll.h>
 #include <random>
 #include <sstream>
 #include <sys/socket.h>
@@ -83,6 +84,31 @@ void QuicListener::listen_loop() {
   socklen_t client_len = sizeof(client_addr);
 
   while (listening_) {
+    // Use poll() for efficient socket readiness detection
+    struct pollfd pfd;
+    pfd.fd = server_socket_;
+    pfd.events = POLLIN;
+    pfd.revents = 0;
+
+    // Poll with 1 second timeout to allow periodic checks
+    int poll_result = poll(&pfd, 1, 1000);
+    
+    if (poll_result < 0) {
+      std::cerr << "QUIC poll error: " << strerror(errno) << std::endl;
+      break;
+    }
+    
+    if (poll_result == 0) {
+      // Timeout - continue to check listening_ flag
+      continue;
+    }
+    
+    if (!(pfd.revents & POLLIN)) {
+      // No data ready, continue
+      continue;
+    }
+
+    // Data is ready to read
     ssize_t received =
         recvfrom(server_socket_, buffer, sizeof(buffer), 0,
                  reinterpret_cast<sockaddr *>(&client_addr), &client_len);
@@ -132,13 +158,11 @@ void QuicListener::listen_loop() {
         std::cerr << "QUIC packet processing error: " << e.what() << std::endl;
       }
     } else if (received < 0) {
-      // Handle errors (non-blocking socket)
+      // Handle errors (should be rare with poll())
       if (errno != EAGAIN && errno != EWOULDBLOCK) {
         std::cerr << "QUIC receive error: " << strerror(errno) << std::endl;
         break; // Exit on real errors
       }
-      // For EAGAIN/EWOULDBLOCK, continue the loop with a short sleep
-      std::this_thread::sleep_for(std::chrono::microseconds(100)); // Very short delay
     }
   }
 
@@ -735,17 +759,27 @@ void QuicListener::handle_initial_packet(
         handshake_response.push_back(data[i]);
       }
     } else {
-      // Fallback: generate dummy CIDs
+      // Fallback: generate secure random CIDs
+      std::random_device rd;
+      std::mt19937 gen(rd());
+      std::uniform_int_distribution<uint8_t> dis(0, 255);
+      
       for (int i = 0; i < 8; i++) {
-        handshake_response.push_back(static_cast<uint8_t>(std::rand() & 0xFF));
+        handshake_response.push_back(dis(gen));
       }
     }
     
     handshake_response.push_back(0x08); // Source CID length
     
-    // Generate server source CID
-    for (int i = 0; i < 8; i++) {
-      handshake_response.push_back(static_cast<uint8_t>(std::rand() & 0xFF));
+    // Generate secure random server source CID
+    {
+      std::random_device rd;
+      std::mt19937 gen(rd());
+      std::uniform_int_distribution<uint8_t> dis(0, 255);
+      
+      for (int i = 0; i < 8; i++) {
+        handshake_response.push_back(dis(gen));
+      }
     }
     
     // Length field (simplified)
