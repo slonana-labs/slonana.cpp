@@ -273,6 +273,10 @@ public:
   static uint64_t mix_transaction(const Hash &tx_hash);
   static PohEntry get_current_entry();
   static Slot get_current_slot();
+  
+  // Safe callback setup
+  static bool set_tick_callback(ProofOfHistory::TickCallback callback);
+  static bool set_slot_callback(ProofOfHistory::SlotCallback callback);
 
 private:
   static std::unique_ptr<ProofOfHistory> instance_;

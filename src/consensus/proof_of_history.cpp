@@ -723,5 +723,23 @@ Slot GlobalProofOfHistory::get_current_slot() {
   return instance_->get_current_slot();
 }
 
+bool GlobalProofOfHistory::set_tick_callback(ProofOfHistory::TickCallback callback) {
+  std::lock_guard<std::mutex> lock(instance_mutex_);
+  if (!instance_) {
+    return false; // Cannot set callback when uninitialized
+  }
+  instance_->set_tick_callback(std::move(callback));
+  return true;
+}
+
+bool GlobalProofOfHistory::set_slot_callback(ProofOfHistory::SlotCallback callback) {
+  std::lock_guard<std::mutex> lock(instance_mutex_);
+  if (!instance_) {
+    return false; // Cannot set callback when uninitialized
+  }
+  instance_->set_slot_callback(std::move(callback));
+  return true;
+}
+
 } // namespace consensus
 } // namespace slonana
