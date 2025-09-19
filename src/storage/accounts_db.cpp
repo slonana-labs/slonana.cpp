@@ -473,12 +473,14 @@ void AccountsDB::update_cache(const PublicKey& account_key, std::shared_ptr<Acco
   
   auto map_it = cache_map_.find(account_key);
   if (map_it != cache_map_.end()) {
-    // Update existing entry and move to front
+    // Update existing entry and move to front safely
     auto list_it = map_it->second;
     list_it->data = data;
     list_it->access_time = std::chrono::steady_clock::now();
     
+    // Safe move to front - splice preserves iterator validity
     cache_list_.splice(cache_list_.begin(), cache_list_, list_it);
+    // Update map to point to new position (beginning)
     cache_map_[account_key] = cache_list_.begin();
   } else {
     // Add new entry at front
@@ -497,12 +499,13 @@ std::optional<std::shared_ptr<AccountData>> AccountsDB::get_from_cache(const Pub
   
   auto map_it = cache_map_.find(account_key);
   if (map_it != cache_map_.end()) {
-    // Move to front (most recently used)
+    // Update access time and move to front (most recently used)
     auto list_it = map_it->second;
     list_it->access_time = std::chrono::steady_clock::now();
     
-    // Move to front of list for LRU ordering
+    // Safe move to front of list for LRU ordering
     cache_list_.splice(cache_list_.begin(), cache_list_, list_it);
+    // Update map to point to new position (beginning)
     cache_map_[account_key] = cache_list_.begin();
     
     return list_it->data;

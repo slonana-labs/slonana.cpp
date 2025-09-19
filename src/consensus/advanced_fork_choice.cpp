@@ -3,6 +3,8 @@
 #include <iostream>
 #include <sstream>
 #include <queue>
+#include <unordered_map>
+#include <chrono>
 
 namespace slonana {
 namespace consensus {
@@ -34,12 +36,17 @@ void AdvancedForkChoice::add_block(const Hash& block_hash, const Hash& parent_ha
   // Create or update fork
   bool fork_created = false;
   
-  // Find parent fork
+  // Find parent fork efficiently using block-to-fork mapping
   Fork* parent_fork = nullptr;
-  for (auto& [fork_hash, fork] : forks_) {
-    if (std::find(fork->blocks.begin(), fork->blocks.end(), parent_hash) != fork->blocks.end()) {
-      parent_fork = fork.get();
-      break;
+  auto parent_block_it = blocks_.find(parent_hash);
+  if (parent_block_it != blocks_.end()) {
+    // Use cached fork reference from block metadata
+    for (auto& [fork_hash, fork] : forks_) {
+      if (fork->head_hash == parent_hash || 
+          (fork->blocks.size() > 0 && fork->blocks.back() == parent_hash)) {
+        parent_fork = fork.get();
+        break;
+      }
     }
   }
   
@@ -252,6 +259,17 @@ bool AdvancedForkChoice::try_optimistic_confirmation(const Hash& block_hash) {
 }
 
 void AdvancedForkChoice::update_fork_weights() {
+  // Cache fork weights to avoid recalculation
+  static std::unordered_map<Hash, uint64_t> cached_weights;
+  static auto last_update = std::chrono::steady_clock::now();
+  auto now = std::chrono::steady_clock::now();
+  
+  // Only recalculate if significant time has passed
+  if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update).count() < 100) {
+    return;
+  }
+  last_update = now;
+  
   // Find the best fork based on stake weight and other criteria
   Fork* best_fork = find_best_fork();
   
@@ -288,14 +306,26 @@ Fork* AdvancedForkChoice::find_best_fork() const {
 }
 
 uint64_t AdvancedForkChoice::calculate_fork_weight(const Fork& fork) const {
+  // Use cached weight if available and recent
+  static std::unordered_map<Hash, std::pair<uint64_t, std::chrono::steady_clock::time_point>> weight_cache;
+  auto now = std::chrono::steady_clock::now();
+  
+  auto cache_it = weight_cache.find(fork.head_hash);
+  if (cache_it != weight_cache.end()) {
+    auto age = std::chrono::duration_cast<std::chrono::milliseconds>(now - cache_it->second.second);
+    if (age.count() < 500) { // 500ms cache validity
+      return cache_it->second.first;
+    }
+  }
+  
   uint64_t weight = 0;
   
   // Base weight from slot height
   weight += fork.head_slot * 1000;
   
-  // Add stake weight from all blocks in fork
-  for (const auto& block_hash : fork.blocks) {
-    auto block_it = blocks_.find(block_hash);
+  // Add stake weight only from head block (most recent)
+  if (!fork.blocks.empty()) {
+    auto block_it = blocks_.find(fork.head_hash);
     if (block_it != blocks_.end()) {
       weight += block_it->second->stake_weight;
     }
@@ -313,6 +343,9 @@ uint64_t AdvancedForkChoice::calculate_fork_weight(const Fork& fork) const {
   
   // Bonus for confirmation count
   weight += fork.confirmation_count * 1000;
+  
+  // Cache the result
+  weight_cache[fork.head_hash] = {weight, now};
   
   return weight;
 }
