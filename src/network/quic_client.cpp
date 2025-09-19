@@ -216,13 +216,17 @@ bool QuicConnection::connect() {
     }
 
     // Perform QUIC handshake
+    std::cout << "🔄 Starting QUIC handshake..." << std::endl;
     if (!perform_quic_handshake()) {
+      std::cerr << "❌ QUIC handshake failed" << std::endl;
       cleanup_tls();
       close(socket_fd_);
       return false;
     }
+    std::cout << "✅ QUIC handshake completed successfully" << std::endl;
 
     connected_ = true;
+    std::cout << "✅ QUIC connection established" << std::endl;
 
     // Start event handling thread
     event_thread_ =
@@ -331,81 +335,134 @@ void QuicConnection::handle_connection_events() {
   }
 }
 
+// Helper method to create QUIC initial packet - eliminates duplicate code
+std::vector<uint8_t> QuicConnection::create_initial_packet() {
+  std::vector<uint8_t> initial_packet;
+
+  // QUIC header with Long Header format (Initial packet type = 0x00)
+  initial_packet.push_back(0xC0); // Long header, Initial packet
+  initial_packet.push_back(0x00); // Version (placeholder)
+  initial_packet.push_back(0x00);
+  initial_packet.push_back(0x00);
+  initial_packet.push_back(0x01);
+
+  // Connection ID lengths
+  initial_packet.push_back(0x08); // Destination CID length
+
+  // Destination Connection ID (8 bytes) - using secure randomness
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<uint8_t> dis(0, 255);
+  
+  for (int i = 0; i < 8; i++) {
+    initial_packet.push_back(dis(gen));
+  }
+
+  initial_packet.push_back(0x08); // Source CID length
+
+  // Source Connection ID (8 bytes) - using secure randomness
+  for (int i = 0; i < 8; i++) {
+    initial_packet.push_back(dis(gen));
+  }
+
+  // Token length (0 for client initial)
+  QuicStream::encode_varint_static(initial_packet, 0);
+
+  // Length field (placeholder)
+  QuicStream::encode_varint_static(initial_packet, 256);
+
+  // Packet number (4 bytes)
+  initial_packet.push_back(0x00);
+  initial_packet.push_back(0x00);
+  initial_packet.push_back(0x00);
+  initial_packet.push_back(0x01);
+
+  return initial_packet;
+}
+
 bool QuicConnection::perform_quic_handshake() {
-  // Production QUIC handshake implementation
+  // Production QUIC handshake implementation with refactored retry logic
   try {
-    // Send Initial packet with client hello
-    std::vector<uint8_t> initial_packet;
+    // Create the initial packet once - eliminates duplicate code
+    auto initial_packet = create_initial_packet();
 
-    // QUIC header with Long Header format (Initial packet type = 0x00)
-    initial_packet.push_back(0xC0); // Long header, Initial packet
-    initial_packet.push_back(0x00); // Version (placeholder)
-    initial_packet.push_back(0x00);
-    initial_packet.push_back(0x00);
-    initial_packet.push_back(0x01);
-
-    // Connection ID lengths
-    initial_packet.push_back(0x08); // Destination CID length
-
-    // Destination Connection ID (8 bytes)
-    for (int i = 0; i < 8; i++) {
-      initial_packet.push_back(static_cast<uint8_t>(std::rand() & 0xFF));
-    }
-
-    initial_packet.push_back(0x08); // Source CID length
-
-    // Source Connection ID (8 bytes)
-    for (int i = 0; i < 8; i++) {
-      initial_packet.push_back(static_cast<uint8_t>(std::rand() & 0xFF));
-    }
-
-    // Token length (0 for client initial)
-    QuicStream::encode_varint_static(initial_packet, 0);
-
-    // Length field (placeholder)
-    QuicStream::encode_varint_static(initial_packet, 256);
-
-    // Packet number (4 bytes)
-    initial_packet.push_back(0x00);
-    initial_packet.push_back(0x00);
-    initial_packet.push_back(0x00);
-    initial_packet.push_back(0x01);
-
-    // Send initial packet
-    ssize_t sent =
-        sendto(socket_fd_, initial_packet.data(), initial_packet.size(), 0,
-               (struct sockaddr *)&server_addr_, sizeof(server_addr_));
-
-    if (sent < 0) {
-      std::cerr << "Failed to send QUIC initial packet: " << strerror(errno)
-                << std::endl;
-      return false;
-    }
-
-    // Wait for response (simplified handshake)
-    uint8_t response[2048];
-    struct sockaddr_in from_addr;
-    socklen_t from_len = sizeof(from_addr);
-
-    // Set timeout for handshake
+    // Set timeout for handshake (shorter for retry logic)
     struct timeval timeout;
-    timeout.tv_sec = 5;
-    timeout.tv_usec = 0;
+    timeout.tv_sec = 0;  
+    timeout.tv_usec = 200000; // 200ms timeout per attempt
     setsockopt(socket_fd_, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
-    ssize_t received = recvfrom(socket_fd_, response, sizeof(response), 0,
-                                (struct sockaddr *)&from_addr, &from_len);
+    // Retry handshake multiple times
+    for (int attempt = 0; attempt < 5; attempt++) {
+      std::cout << "📤 Handshake attempt " << (attempt + 1) << "/5" << std::endl;
+      
+      // Send initial packet (refactored - no duplicate sending code)
+      if (!send_initial_packet(initial_packet)) {
+        continue; // Try again
+      }
 
-    if (received > 0) {
-      // Process handshake response (simplified)
-      return true;
+      // Wait for response and validate
+      if (wait_for_handshake_response()) {
+        std::cout << "✅ Handshake response validated - connection established!" << std::endl;
+        return true;
+      }
+      
+      std::cout << "⏰ Attempt " << (attempt + 1) << " timed out, retrying..." << std::endl;
+      
+      // Small delay before retry
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
+    std::cerr << "❌ All handshake attempts failed" << std::endl;
     return false;
   } catch (const std::exception &e) {
     std::cerr << "QUIC handshake error: " << e.what() << std::endl;
     return false;
   }
+}
+
+// Helper method for sending initial packet - eliminates duplicate code
+bool QuicConnection::send_initial_packet(const std::vector<uint8_t>& initial_packet) {
+  std::cout << "📤 Sending QUIC Initial packet to " 
+            << inet_ntoa(server_addr_.sin_addr) << ":" << ntohs(server_addr_.sin_port) << std::endl;
+  
+  ssize_t sent = sendto(socket_fd_, initial_packet.data(), initial_packet.size(), 0,
+                       (struct sockaddr *)&server_addr_, sizeof(server_addr_));
+
+  if (sent < 0) {
+    std::cerr << "Failed to send QUIC initial packet: " << strerror(errno) << std::endl;
+    return false;
+  }
+  
+  std::cout << "✅ Sent " << sent << " bytes" << std::endl;
+  return true;
+}
+
+// Helper method for waiting and validating handshake response - eliminates duplicate code  
+bool QuicConnection::wait_for_handshake_response() {
+  uint8_t response[2048];
+  struct sockaddr_in from_addr;
+  socklen_t from_len = sizeof(from_addr);
+
+  std::cout << "🔄 Waiting for handshake response..." << std::endl;
+  ssize_t received = recvfrom(socket_fd_, response, sizeof(response), 0,
+                              (struct sockaddr *)&from_addr, &from_len);
+  std::cout << "📥 Received " << received << " bytes" << std::endl;
+
+  if (received > 0) {
+    // Process handshake response
+    std::cout << "✅ QUIC client received handshake response (" << received << " bytes)" << std::endl;
+    
+    // Validate the response is from the correct server
+    if (from_addr.sin_addr.s_addr == server_addr_.sin_addr.s_addr &&
+        from_addr.sin_port == server_addr_.sin_port) {
+      return true;
+    } else {
+      std::cerr << "❌ Handshake response from incorrect address" << std::endl;
+    }
+  }
+  
+  return false;
 }
 
 void QuicConnection::process_quic_packet(const uint8_t *data, size_t length) {

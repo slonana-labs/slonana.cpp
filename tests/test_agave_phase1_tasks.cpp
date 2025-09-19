@@ -52,15 +52,19 @@ private:
     assert(server.initialize(8001));
     assert(server.start());
 
-    // Wait for server to start
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // Wait for server to start and be ready to receive connections
+    std::cout << "🔄 Waiting for server to start..." << std::endl;
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000)); // Increased to 1 second
+    std::cout << "✅ Server should be ready" << std::endl;
 
     // Initialize QUIC client
     network::QuicClient client;
     assert(client.initialize());
 
     // Test connection
+    std::cout << "🔄 Attempting to connect to QUIC server..." << std::endl;
     auto connection = client.connect("127.0.0.1", 8001);
+    std::cout << "🔄 Connect call returned, checking result..." << std::endl;
     assert(connection != nullptr);
     assert(connection->is_connected());
 

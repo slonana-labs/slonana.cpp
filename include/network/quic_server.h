@@ -36,6 +36,7 @@ private:
   uint16_t port_;
   bool listening_;
   std::thread listener_thread_;
+  int server_socket_; // Added to store socket for sending responses
 
   void listen_loop();
 

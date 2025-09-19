@@ -38,6 +38,7 @@ file(GLOB_RECURSE CORE_SOURCES
     "${SRC_DIR}/cluster/*.cpp"
     "${SRC_DIR}/genesis/*.cpp"
     "${SRC_DIR}/banking/*.cpp"
+    "${SRC_DIR}/storage/*.cpp"
     "${SRC_DIR}/slonana_validator.cpp"
 )
 

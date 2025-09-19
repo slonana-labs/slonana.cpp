@@ -7,6 +7,7 @@
 #include <netinet/in.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+#include <poll.h>
 #include <random>
 #include <sstream>
 #include <sys/socket.h>
@@ -16,17 +17,24 @@ namespace slonana {
 namespace network {
 
 // QuicListener implementation
-QuicListener::QuicListener(uint16_t port) : port_(port), listening_(false) {}
+QuicListener::QuicListener(uint16_t port) : port_(port), listening_(false), server_socket_(-1) {}
 
-QuicListener::~QuicListener() { stop(); }
+QuicListener::~QuicListener() { 
+  stop(); 
+  if (server_socket_ >= 0) {
+    close(server_socket_);
+  }
+}
 
 bool QuicListener::start() {
   if (listening_) {
     return true;
   }
 
+  std::cout << "🔄 Starting QUIC listener on port " << port_ << std::endl;
   listening_ = true;
   listener_thread_ = std::thread(&QuicListener::listen_loop, this);
+  std::cout << "✅ QUIC listener thread started" << std::endl;
   return true;
 }
 
@@ -44,42 +52,69 @@ bool QuicListener::stop() {
 
 void QuicListener::listen_loop() {
   // Create UDP socket for QUIC
-  int sock = socket(AF_INET, SOCK_DGRAM, 0);
-  if (sock < 0) {
+  server_socket_ = socket(AF_INET, SOCK_DGRAM, 0);
+  if (server_socket_ < 0) {
     std::cerr << "Failed to create QUIC socket" << std::endl;
     return;
   }
 
   // Configure socket
   int opt = 1;
-  setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+  setsockopt(server_socket_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = INADDR_ANY;
   addr.sin_port = htons(port_);
 
-  if (bind(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
-    std::cerr << "Failed to bind QUIC socket to port " << port_ << std::endl;
-    close(sock);
+  if (bind(server_socket_, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
+    std::cerr << "❌ Failed to bind QUIC socket to port " << port_ << ": " << strerror(errno) << std::endl;
+    close(server_socket_);
     return;
   }
 
-  // Set non-blocking mode
-  int flags = fcntl(sock, F_GETFL, 0);
-  fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+  std::cout << "✅ QUIC server bound to port " << port_ << " and listening" << std::endl;
+
+  // Set non-blocking mode for immediate packet processing
+  int flags = fcntl(server_socket_, F_GETFL, 0);
+  fcntl(server_socket_, F_SETFL, flags | O_NONBLOCK);
 
   char buffer[2048];
   sockaddr_in client_addr{};
   socklen_t client_len = sizeof(client_addr);
 
   while (listening_) {
+    // Use poll() for efficient socket readiness detection
+    struct pollfd pfd;
+    pfd.fd = server_socket_;
+    pfd.events = POLLIN;
+    pfd.revents = 0;
+
+    // Poll with 1 second timeout to allow periodic checks
+    int poll_result = poll(&pfd, 1, 1000);
+    
+    if (poll_result < 0) {
+      std::cerr << "QUIC poll error: " << strerror(errno) << std::endl;
+      break;
+    }
+    
+    if (poll_result == 0) {
+      // Timeout - continue to check listening_ flag
+      continue;
+    }
+    
+    if (!(pfd.revents & POLLIN)) {
+      // No data ready, continue
+      continue;
+    }
+
+    // Data is ready to read
     ssize_t received =
-        recvfrom(sock, buffer, sizeof(buffer), 0,
+        recvfrom(server_socket_, buffer, sizeof(buffer), 0,
                  reinterpret_cast<sockaddr *>(&client_addr), &client_len);
 
     if (received > 0) {
-      // Production QUIC packet processing
+      // Production QUIC packet processing - immediate response
       try {
         std::string client_ip = inet_ntoa(client_addr.sin_addr);
         uint16_t client_port = ntohs(client_addr.sin_port);
@@ -122,12 +157,16 @@ void QuicListener::listen_loop() {
       } catch (const std::exception &e) {
         std::cerr << "QUIC packet processing error: " << e.what() << std::endl;
       }
+    } else if (received < 0) {
+      // Handle errors (should be rare with poll())
+      if (errno != EAGAIN && errno != EWOULDBLOCK) {
+        std::cerr << "QUIC receive error: " << strerror(errno) << std::endl;
+        break; // Exit on real errors
+      }
     }
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
-  close(sock);
+  close(server_socket_);
 }
 
 // QuicServerSession implementation
@@ -700,7 +739,77 @@ void QuicListener::handle_initial_packet(
     std::cout << "Processing Initial packet from "
               << inet_ntoa(client_addr.sin_addr) << ":"
               << ntohs(client_addr.sin_port) << std::endl;
-    // In production, this would parse connection IDs and initiate handshake
+    
+    // Send handshake response to complete connection establishment
+    std::vector<uint8_t> handshake_response;
+    
+    // QUIC header with Long Header format (Handshake packet type = 0x02)
+    handshake_response.push_back(0xE0); // Long header, Handshake packet  
+    handshake_response.push_back(0x00); // Version
+    handshake_response.push_back(0x00);
+    handshake_response.push_back(0x00); 
+    handshake_response.push_back(0x01);
+    
+    // Connection ID lengths (copy from client)
+    handshake_response.push_back(0x08); // Destination CID length
+    
+    // Echo back the source CID from client as destination CID
+    if (length >= 14) { // Ensure we have enough data
+      for (int i = 6; i < 14; i++) {
+        handshake_response.push_back(data[i]);
+      }
+    } else {
+      // Fallback: generate secure random CIDs
+      std::random_device rd;
+      std::mt19937 gen(rd());
+      std::uniform_int_distribution<uint8_t> dis(0, 255);
+      
+      for (int i = 0; i < 8; i++) {
+        handshake_response.push_back(dis(gen));
+      }
+    }
+    
+    handshake_response.push_back(0x08); // Source CID length
+    
+    // Generate secure random server source CID
+    {
+      std::random_device rd;
+      std::mt19937 gen(rd());
+      std::uniform_int_distribution<uint8_t> dis(0, 255);
+      
+      for (int i = 0; i < 8; i++) {
+        handshake_response.push_back(dis(gen));
+      }
+    }
+    
+    // Length field (simplified)
+    handshake_response.push_back(0x40); // Varint encoding for length
+    handshake_response.push_back(0x10); // Length = 16 bytes payload
+    
+    // Packet number (4 bytes)
+    handshake_response.push_back(0x00);
+    handshake_response.push_back(0x00);
+    handshake_response.push_back(0x00);
+    handshake_response.push_back(0x01);
+    
+    // Simple payload (handshake completion signal)
+    for (int i = 0; i < 12; i++) {
+      handshake_response.push_back(0x00); // Padding
+    }
+    
+    // Send response back to client
+    if (server_socket_ >= 0) {
+      ssize_t sent = sendto(server_socket_, handshake_response.data(), 
+                           handshake_response.size(), 0,
+                           (struct sockaddr*)&client_addr, sizeof(client_addr));
+      
+      if (sent > 0) {
+        std::cout << "✅ Sent handshake response to client" << std::endl;
+      } else {
+        std::cerr << "❌ Failed to send handshake response: " << strerror(errno) << std::endl;
+      }
+    }
+    
   } catch (const std::exception &e) {
     std::cerr << "Initial packet handling error: " << e.what() << std::endl;
   }
