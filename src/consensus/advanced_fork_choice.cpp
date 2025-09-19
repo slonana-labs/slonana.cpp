@@ -10,7 +10,8 @@ namespace slonana {
 namespace consensus {
 
 AdvancedForkChoice::AdvancedForkChoice(const Configuration& config) 
-    : config_(config), current_head_slot_(0), current_root_slot_(0) {
+    : config_(config), current_head_slot_(0), current_root_slot_(0),
+      last_weight_update_(std::chrono::steady_clock::now()) {
   
   stats_.last_fork_switch = std::chrono::steady_clock::now();
   stats_.last_gc_run = std::chrono::steady_clock::now();
@@ -36,18 +37,11 @@ void AdvancedForkChoice::add_block(const Hash& block_hash, const Hash& parent_ha
   // Create or update fork
   bool fork_created = false;
   
-  // Find parent fork efficiently using block-to-fork mapping
+  // Find parent fork efficiently using block-to-fork mapping (O(1) lookup)
   Fork* parent_fork = nullptr;
-  auto parent_block_it = blocks_.find(parent_hash);
-  if (parent_block_it != blocks_.end()) {
-    // Use cached fork reference from block metadata
-    for (auto& [fork_hash, fork] : forks_) {
-      if (fork->head_hash == parent_hash || 
-          (fork->blocks.size() > 0 && fork->blocks.back() == parent_hash)) {
-        parent_fork = fork.get();
-        break;
-      }
-    }
+  auto parent_fork_it = block_to_fork_map_.find(parent_hash);
+  if (parent_fork_it != block_to_fork_map_.end()) {
+    parent_fork = parent_fork_it->second;
   }
   
   if (parent_fork && parent_fork->head_hash == parent_hash) {
@@ -55,12 +49,20 @@ void AdvancedForkChoice::add_block(const Hash& block_hash, const Hash& parent_ha
     parent_fork->blocks.push_back(block_hash);
     parent_fork->head_hash = block_hash;
     parent_fork->head_slot = slot;
+    
+    // Update block-to-fork mapping for the new block
+    block_to_fork_map_[block_hash] = parent_fork;
   } else {
     // Create new fork
     auto new_fork = std::make_unique<Fork>(block_hash, parent_hash, slot, 
                                           parent_fork ? parent_fork->root_slot : slot);
     new_fork->blocks.push_back(block_hash);
+    Fork* new_fork_ptr = new_fork.get();
     forks_[block_hash] = std::move(new_fork);
+    
+    // Update block-to-fork mapping for the new block
+    block_to_fork_map_[block_hash] = new_fork_ptr;
+    
     fork_created = true;
   }
   
@@ -275,16 +277,15 @@ bool AdvancedForkChoice::try_optimistic_confirmation(const Hash& block_hash) {
 }
 
 void AdvancedForkChoice::update_fork_weights() {
-  // Cache fork weights to avoid recalculation
-  static std::unordered_map<Hash, uint64_t> cached_weights;
-  static auto last_update = std::chrono::steady_clock::now();
+  // Thread-safe weight update using instance members
+  std::lock_guard<std::mutex> weights_lock(fork_weights_mutex_);
   auto now = std::chrono::steady_clock::now();
   
-  // Only recalculate if significant time has passed
-  if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update).count() < 100) {
+  // Only recalculate if significant time has passed (rate limiting)
+  if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_weight_update_).count() < 100) {
     return;
   }
-  last_update = now;
+  last_weight_update_ = now;
   
   // Find the best fork based on stake weight and other criteria
   Fork* best_fork = find_best_fork();
@@ -529,6 +530,8 @@ void AdvancedForkChoice::prune_old_blocks() {
     const auto& [hash, block] = *it;
     
     if (active_blocks.find(hash) == active_blocks.end() && is_block_expired(*block)) {
+      // Also remove from block-to-fork mapping
+      block_to_fork_map_.erase(hash);
       it = blocks_.erase(it);
     } else {
       ++it;
@@ -545,6 +548,11 @@ void AdvancedForkChoice::cleanup_old_forks() {
     const auto& [hash, fork] = *it;
     
     if (fork->head_slot < cutoff_slot && !fork->is_rooted) {
+      // Remove all blocks from this fork from the block-to-fork mapping
+      for (const Hash& block_hash : fork->blocks) {
+        block_to_fork_map_.erase(block_hash);
+      }
+      
       stats_.active_forks--;
       it = forks_.erase(it);
     } else {

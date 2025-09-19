@@ -209,6 +209,9 @@ private:
   std::vector<VoteInfo> recent_votes_;
   std::unordered_map<PublicKey, uint64_t> validator_stakes_;
   
+  // Optimization: Block-to-Fork mapping for O(1) fork lookups
+  std::unordered_map<Hash, Fork*> block_to_fork_map_;
+  
   // Current state
   Hash current_head_;
   Hash current_root_;
@@ -222,6 +225,11 @@ private:
   // Cache for fork weights (thread-safe)
   mutable std::unordered_map<Hash, std::pair<uint64_t, std::chrono::steady_clock::time_point>> weight_cache_;
   mutable std::mutex weight_cache_mutex_;
+  
+  // Fork weights update state (moved from static to instance members)
+  mutable std::unordered_map<Hash, uint64_t> cached_weights_;
+  mutable std::chrono::steady_clock::time_point last_weight_update_;
+  mutable std::mutex fork_weights_mutex_;
   
   // Internal operations
   void update_fork_weights();
