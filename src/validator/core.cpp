@@ -529,7 +529,7 @@ common::Result<bool> ValidatorCore::start() {
       });
 
   bool slot_callback_set = consensus::GlobalProofOfHistory::set_slot_callback(
-      [this](Slot slot, const std::vector<consensus::PohEntry> &entries) {
+      [](Slot slot, const std::vector<consensus::PohEntry> &entries) {
         monitoring::GlobalConsensusMetrics::instance().set_poh_current_slot(
             static_cast<int64_t>(slot));
         std::cout << "PoH completed slot " << slot << " with " << entries.size()
