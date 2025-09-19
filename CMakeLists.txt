@@ -171,6 +171,12 @@ add_executable(slonana_proof_of_history_tests
 target_link_libraries(slonana_proof_of_history_tests slonana_core)
 target_include_directories(slonana_proof_of_history_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 
+# Concurrency stress test
+add_executable(slonana_concurrency_stress_test 
+    "${CMAKE_SOURCE_DIR}/tests/concurrency_stress_test.cpp"
+)
+target_link_libraries(slonana_concurrency_stress_test slonana_core)
+
 # Find OpenSSL for PoH cryptographic operations
 find_package(OpenSSL REQUIRED)
 target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto)
