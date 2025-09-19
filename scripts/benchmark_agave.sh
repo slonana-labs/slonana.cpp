@@ -744,8 +744,16 @@ handle_sigint() {
 
 # Generate emergency results when interrupted
 generate_emergency_results() {
+    # Guard against calling this when RESULTS_DIR is not set (e.g., during --help)
+    if [[ -z "${RESULTS_DIR:-}" ]]; then
+        return 0
+    fi
+    
     if [[ ! -f "$RESULTS_DIR/benchmark_results.json" ]]; then
         log_info "Generating emergency results from partial data..."
+        
+        # Ensure results directory exists
+        mkdir -p "$RESULTS_DIR"
         
         # Use available metrics or defaults
         local rpc_latency_ms=$(cat "$RESULTS_DIR/rpc_latency_ms.txt" 2>/dev/null || echo "5")
@@ -767,7 +775,7 @@ generate_emergency_results() {
 {
   "validator_type": "agave-test",
   "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "test_duration_seconds": $TEST_DURATION,
+  "test_duration_seconds": ${TEST_DURATION:-30},
   "rpc_latency_ms": $rpc_latency_ms,
   "effective_tps": $effective_tps,
   "submitted_requests": $submitted_requests,
@@ -796,23 +804,27 @@ trap cleanup_validator EXIT
 main() {
     log_info "Starting Agave test validator benchmark..."
     
+    # Parse arguments first to handle --help properly
+    parse_arguments "$@"
+    
+    # Only set up emergency results handling after arguments are parsed
     # Set up error handling to ensure emergency results are always generated
     set -e  # Exit on error, but catch it
     
     # Function to ensure emergency results on any exit
     ensure_emergency_results() {
         local exit_code=$?
-        if [[ ! -f "$RESULTS_DIR/benchmark_results.json" ]]; then
+        # Guard against calling this when RESULTS_DIR is not set (e.g., during --help)
+        if [[ -n "${RESULTS_DIR:-}" ]] && [[ ! -f "$RESULTS_DIR/benchmark_results.json" ]]; then
             log_warning "Main execution interrupted or failed, generating emergency results..."
             generate_emergency_results
         fi
         exit $exit_code
     }
     
-    # Set up emergency results handler
+    # Set up emergency results handler (after arguments are parsed)
     trap ensure_emergency_results EXIT
     
-    parse_arguments "$@"
     check_dependencies
     setup_validator
     start_validator
