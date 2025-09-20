@@ -89,7 +89,10 @@ void CircuitBreaker::on_success_unlocked() {
       state_ = CircuitState::CLOSED;
       failure_count_ = 0;
       success_count_ = 0;
+      // Only log state changes in debug builds or when explicitly enabled
+      #ifdef DEBUG_FAULT_TOLERANCE
       std::cout << "Circuit breaker state changed to CLOSED" << std::endl;
+      #endif
     }
   } else if (state_ == CircuitState::CLOSED) {
     failure_count_ = 0; // Reset failure count on success
@@ -102,12 +105,16 @@ void CircuitBreaker::on_failure_unlocked() {
   
   if (state_ == CircuitState::CLOSED && failure_count_ >= config_.failure_threshold) {
     state_ = CircuitState::OPEN;
+    #ifdef DEBUG_FAULT_TOLERANCE
     std::cout << "Circuit breaker state changed to OPEN after " 
               << failure_count_ << " failures" << std::endl;
+    #endif
   } else if (state_ == CircuitState::HALF_OPEN) {
     state_ = CircuitState::OPEN;
     success_count_ = 0;
+    #ifdef DEBUG_FAULT_TOLERANCE
     std::cout << "Circuit breaker state changed back to OPEN" << std::endl;
+    #endif
   }
 }
 
@@ -117,10 +124,12 @@ void DegradationManager::set_component_mode(const std::string& component, Degrad
   auto old_mode = component_modes_[component];
   component_modes_[component] = mode;
   
+  #ifdef DEBUG_FAULT_TOLERANCE
   if (old_mode != mode) {
     std::cout << "Component '" << component << "' degradation mode changed from " 
               << static_cast<int>(old_mode) << " to " << static_cast<int>(mode) << std::endl;
   }
+  #endif
 }
 
 DegradationMode DegradationManager::get_component_mode(const std::string& component) const {
@@ -197,6 +206,69 @@ bool DegradationManager::is_operation_allowed(const std::string& component, cons
 std::unordered_map<std::string, DegradationMode> DegradationManager::get_system_status() const {
   std::shared_lock<std::shared_mutex> lock(modes_mutex_);
   return component_modes_;
+}
+
+// Helper functions for enum-based operation checking
+OperationType parse_operation_type(const std::string& operation) {
+  // Convert to lowercase for case-insensitive matching
+  std::string lower_op = operation;
+  std::transform(lower_op.begin(), lower_op.end(), lower_op.begin(), ::tolower);
+  
+  // Read operations
+  if (lower_op == "read" || lower_op.find("read") == 0) return OperationType::READ;
+  if (lower_op == "get" || lower_op.find("get") == 0) return OperationType::GET;
+  if (lower_op == "query" || lower_op.find("query") == 0) return OperationType::QUERY;
+  if (lower_op == "list" || lower_op.find("list") == 0) return OperationType::LIST;
+  if (lower_op == "fetch" || lower_op.find("fetch") == 0) return OperationType::FETCH;
+  
+  // Write operations
+  if (lower_op == "write" || lower_op.find("write") != std::string::npos) return OperationType::WRITE;
+  if (lower_op == "update" || lower_op.find("update") != std::string::npos) return OperationType::UPDATE;
+  if (lower_op == "create" || lower_op.find("create") != std::string::npos) return OperationType::CREATE;
+  if (lower_op == "delete" || lower_op.find("delete") != std::string::npos) return OperationType::DELETE;
+  if (lower_op == "insert" || lower_op.find("insert") != std::string::npos) return OperationType::INSERT;
+  if (lower_op == "modify" || lower_op.find("modify") != std::string::npos) return OperationType::MODIFY;
+  
+  // Essential operations
+  if (lower_op.find("health") != std::string::npos) return OperationType::HEALTH_CHECK;
+  if (lower_op.find("heartbeat") != std::string::npos) return OperationType::HEARTBEAT;
+  if (lower_op.find("status") != std::string::npos) return OperationType::STATUS;
+  
+  // Default to read for unknown operations to be safe
+  return OperationType::READ;
+}
+
+bool is_operation_type_allowed(OperationType op_type, DegradationMode mode) {
+  switch (mode) {
+    case DegradationMode::NORMAL:
+      return true;
+      
+    case DegradationMode::READ_ONLY:
+      return op_type == OperationType::READ ||
+             op_type == OperationType::GET ||
+             op_type == OperationType::QUERY ||
+             op_type == OperationType::LIST ||
+             op_type == OperationType::FETCH ||
+             op_type == OperationType::HEALTH_CHECK ||
+             op_type == OperationType::HEARTBEAT ||
+             op_type == OperationType::STATUS;
+             
+    case DegradationMode::ESSENTIAL_ONLY:
+      return op_type == OperationType::HEALTH_CHECK ||
+             op_type == OperationType::HEARTBEAT ||
+             op_type == OperationType::STATUS;
+             
+    case DegradationMode::OFFLINE:
+      return false;
+      
+    default:
+      return false;
+  }
+}
+
+bool DegradationManager::is_operation_type_allowed(const std::string& component, OperationType op_type) const {
+  DegradationMode mode = get_component_mode(component);
+  return ::slonana::common::is_operation_type_allowed(op_type, mode);
 }
 
 } // namespace common

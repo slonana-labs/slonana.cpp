@@ -27,7 +27,7 @@ private:
   Result<bool> write_metadata(const std::string& checkpoint_id, const std::string& data_hash) const;
   
   /**
-   * Read and verify checkpoint metadata (temporarily disabled due to Result<string> ambiguity)
+   * Read and verify checkpoint metadata (temporarily returns empty for Result<string> ambiguity)
    */
   // Result<std::string> read_metadata(const std::string& checkpoint_id) const;
 

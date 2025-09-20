@@ -54,6 +54,14 @@ class FaultTolerance {
 public:
   /**
    * Execute an operation with retry logic and exponential backoff
+   * 
+   * WARNING: This method blocks the calling thread during retry delays.
+   * Avoid using in hot paths or thread pools where thread starvation 
+   * could occur. Consider async retry patterns for high-throughput scenarios.
+   * 
+   * @param operation The operation to retry (should return Result<T>)
+   * @param policy Retry configuration including max attempts and delays
+   * @return Result of the operation after potential retries
    */
   template<typename F, typename R = std::invoke_result_t<F>>
   static R retry_with_backoff(F&& operation, const RetryPolicy& policy = {}) {
@@ -197,6 +205,36 @@ public:
 };
 
 /**
+ * Operation types for degradation manager
+ */
+enum class OperationType {
+  // Read operations
+  READ,
+  GET,
+  QUERY,
+  LIST,
+  FETCH,
+  
+  // Write operations  
+  WRITE,
+  UPDATE,
+  CREATE,
+  DELETE,
+  INSERT,
+  MODIFY,
+  
+  // Essential operations
+  HEALTH_CHECK,
+  HEARTBEAT,
+  STATUS,
+  
+  // Administrative operations
+  SHUTDOWN,
+  RESTART,
+  CONFIG_UPDATE
+};
+
+/**
  * Graceful degradation modes for different components
  */
 enum class DegradationMode {
@@ -205,6 +243,16 @@ enum class DegradationMode {
   ESSENTIAL_ONLY,   // Only critical operations
   OFFLINE           // Component unavailable
 };
+
+/**
+ * Helper to convert string operation names to types
+ */
+OperationType parse_operation_type(const std::string& operation);
+
+/**
+ * Helper to check if operation type is allowed in degradation mode
+ */
+bool is_operation_type_allowed(OperationType op_type, DegradationMode mode);
 
 /**
  * Degradation manager for handling partial failures
@@ -226,9 +274,15 @@ public:
   DegradationMode get_component_mode(const std::string& component) const;
   
   /**
-   * Check if operation is allowed in current degradation mode
+   * Check if operation is allowed in current degradation mode (string-based)
+   * @deprecated Use is_operation_type_allowed with OperationType for better safety
    */
   bool is_operation_allowed(const std::string& component, const std::string& operation) const;
+  
+  /**
+   * Check if operation type is allowed in current degradation mode (enum-based)
+   */
+  bool is_operation_type_allowed(const std::string& component, OperationType op_type) const;
   
   /**
    * Get overall system health status

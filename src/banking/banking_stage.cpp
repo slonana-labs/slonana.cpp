@@ -1,5 +1,7 @@
 #include "banking/banking_stage.h"
 #include <algorithm>
+#include <cstdlib>
+#include <cstring>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -10,6 +12,26 @@
 
 namespace slonana {
 namespace banking {
+
+// Helper function to get configurable checkpoint directory
+static std::string get_checkpoint_directory() {
+  // Check environment variable first
+  const char* env_path = std::getenv("SLONANA_CHECKPOINT_DIR");
+  if (env_path && strlen(env_path) > 0) {
+    return std::string(env_path) + "/banking_checkpoints";
+  }
+  
+  // Use platform-appropriate default
+#ifdef _WIN32
+  const char* temp_dir = std::getenv("TEMP");
+  if (temp_dir) {
+    return std::string(temp_dir) + "\\slonana\\banking_checkpoints";
+  }
+  return "C:\\temp\\slonana\\banking_checkpoints";
+#else
+  return "/var/lib/slonana/banking_checkpoints";
+#endif
+}
 
 // TransactionBatch implementation
 std::atomic<uint64_t> TransactionBatch::next_batch_id_(1);
@@ -386,7 +408,7 @@ BankingStage::BankingStage()
       total_processing_time_ms_(0),
       transaction_processor_breaker_(common::CircuitBreakerConfig{10, std::chrono::milliseconds(5000), 3}),
       transaction_retry_policy_(common::FaultTolerance::create_rpc_retry_policy()),
-      state_checkpoint_(std::make_shared<common::FileCheckpoint>("/tmp/banking_checkpoints")) {
+      state_checkpoint_(std::make_shared<common::FileCheckpoint>(get_checkpoint_directory())) {
   
   std::cout << "Banking Stage initialized with fault tolerance mechanisms" << std::endl;
 }

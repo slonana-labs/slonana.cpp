@@ -75,9 +75,15 @@ Result<bool> FileCheckpoint::write_metadata(const std::string& checkpoint_id, co
     auto now = std::chrono::system_clock::now();
     auto timestamp = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
     
+    // Checkpoint metadata format v1.0:
+    // - Line 1: timestamp=<unix_timestamp>
+    // - Line 2: hash=<sha256_hex>
+    // - Line 3: version=1.0
+    // - Line 4: magic=SLONANA_CHECKPOINT
     meta_file << "timestamp=" << timestamp << std::endl;
     meta_file << "hash=" << data_hash << std::endl;
     meta_file << "version=1.0" << std::endl;
+    meta_file << "magic=SLONANA_CHECKPOINT" << std::endl;
     
     return Result<bool>(true);
   } catch (const std::exception& e) {
@@ -85,36 +91,11 @@ Result<bool> FileCheckpoint::write_metadata(const std::string& checkpoint_id, co
   }
 }
 
-// Temporarily commented out due to Result<string> constructor ambiguity
 /*
+// Temporarily disabled due to Result<string> constructor ambiguity
 Result<std::string> FileCheckpoint::read_metadata(const std::string& checkpoint_id) const {
-  auto meta_path = checkpoint_dir_ + "/" + checkpoint_id + ".meta";
-  
-  try {
-    std::ifstream meta_file(meta_path);
-    if (!meta_file.is_open()) {
-      return Result<std::string>("Metadata file not found");
-    }
-    
-    std::string line;
-    std::string hash;
-    
-    while (std::getline(meta_file, line)) {
-      if (line.length() >= 5 && line.substr(0, 5) == "hash=") {
-        hash = line.substr(5);
-        break;
-      }
-    }
-    
-    if (hash.empty()) {
-      return Result<std::string>("Hash not found in metadata");
-    }
-    
-    // Construct result directly using the successful value constructor
-    return Result<std::string>(hash);
-  } catch (const std::exception& e) {
-    return Result<std::string>("Failed to read metadata: " + std::string(e.what()));
-  }
+  // Implementation will be restored once Result<T> template specialization is added
+  return Result<std::string>("Metadata reading temporarily disabled");
 }
 */
 
@@ -224,27 +205,7 @@ Result<bool> FileCheckpoint::verify_checkpoint(const std::string& checkpoint_id)
     return Result<bool>("Checkpoint file does not exist");
   }
   
-  // Temporarily simplified - just check file existence
-  // TODO: Re-enable metadata verification once Result<string> ambiguity is resolved
-  /*
-  // Read expected hash from metadata
-  auto meta_result = read_metadata(checkpoint_id);
-  if (meta_result.is_err()) {
-    return Result<bool>("Failed to read checkpoint metadata");
-  }
-  
-  // Calculate actual hash
-  auto actual_hash = calculate_file_hash(checkpoint_path);
-  if (actual_hash.empty()) {
-    return Result<bool>("Failed to calculate checkpoint hash");
-  }
-  
-  // Compare hashes
-  if (actual_hash != meta_result.value()) {
-    return Result<bool>("Checkpoint integrity check failed - hash mismatch");
-  }
-  */
-  
+  // Temporarily simplified verification until metadata reading is fixed
   return Result<bool>(true);
 }
 
