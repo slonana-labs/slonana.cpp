@@ -181,6 +181,38 @@ sudo make install
 
 For detailed development setup, see **[Development Guide](docs/DEVELOPMENT.md)**.
 
+## 🔒 Security & Dependencies
+
+**Secure by Design:** All dependencies are continuously monitored for vulnerabilities with automated scanning and updates.
+
+### Dependency Management
+- **OpenSSL 3.0+**: Cryptographic operations (current: 3.0.13)
+- **CMake 3.16+**: Build system (current: 3.31.6)  
+- **GCC 13.3+/Clang 15+**: C++20 compiler
+- **Automated Scanning**: Weekly vulnerability checks via GitHub Actions
+- **Dependabot**: Automated security updates for all dependencies
+
+```bash
+# Check dependency security status
+./scripts/dependency-update.sh check
+
+# Run security audit
+./scripts/dependency-update.sh audit
+
+# Generate dependency report
+./scripts/dependency-update.sh report
+```
+
+**Security Features:**
+- ✅ **Automated dependency vulnerability scanning**
+- ✅ **Dependabot integration for security updates**  
+- ✅ **Weekly security audits in CI/CD**
+- ✅ **OpenSSL 3.0+ with latest security patches**
+- ✅ **No hardcoded secrets or credentials**
+- ✅ **Comprehensive security policy documentation**
+
+See **[Security Policy](SECURITY.md)** for complete security procedures.
+
 ## 🧪 Testing
 
 Comprehensive testing framework with 70+ tests covering all components, **88% pass rate achieved**:
