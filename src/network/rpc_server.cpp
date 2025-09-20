@@ -475,7 +475,7 @@ Result<bool> SolanaRpcServer::start() {
   return Result<bool>(true);
 }
 
-void SolanaRpcServer::stop() {
+void SolanaRpcServer::stop() noexcept {
   if (impl_->running_.load()) {
     std::cout << "Stopping Solana RPC server" << std::endl;
     impl_->running_.store(false);
@@ -492,7 +492,9 @@ void SolanaRpcServer::stop() {
   }
 }
 
-bool SolanaRpcServer::is_running() const { return impl_->running_.load(); }
+bool SolanaRpcServer::is_running() const noexcept {
+  return impl_->running_.load();
+}
 
 bool SolanaRpcServer::start_websocket_server() {
   if (websocket_server_) {
@@ -501,7 +503,7 @@ bool SolanaRpcServer::start_websocket_server() {
   return false;
 }
 
-void SolanaRpcServer::stop_websocket_server() {
+void SolanaRpcServer::stop_websocket_server() noexcept {
   if (websocket_server_) {
     websocket_server_->stop();
   }
