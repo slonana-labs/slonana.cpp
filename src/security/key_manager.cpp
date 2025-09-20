@@ -7,6 +7,7 @@
 #include <sstream>
 #include <iomanip>
 #include <filesystem>
+#include <cmath>
 
 #ifdef __linux__
 #include <sys/mman.h>
@@ -130,25 +131,32 @@ bool SecureBuffer::compare(const SecureBuffer& other) const {
     return key_utils::secure_compare(data_.data(), other.data_.data(), data_.size());
 }
 
+size_t SecureBuffer::hash() const {
+    size_t seed = data_.size();
+    for (auto byte : data_) {
+        seed ^= byte + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+    }
+    return seed;
+}
+
 // ============================================================================
 // EncryptedFileKeyStore Implementation
 // ============================================================================
 
 EncryptedFileKeyStore::EncryptedFileKeyStore(const std::string& storage_path)
-    : storage_path_(storage_path) {
+    : storage_path_(storage_path), master_key_(32) { // Initialize with size 32
     // Generate a random master key - in production this should be derived from user input
     auto key_result = key_utils::generate_secure_random(32);
     if (key_result.is_ok()) {
-        master_key_ = std::move(key_result.value());
+        // Use move semantics to get the value
+        auto key_data = std::move(key_result).value();
+        std::copy(key_data.data(), key_data.data() + key_data.size(), master_key_.data());
     }
 }
 
 EncryptedFileKeyStore::EncryptedFileKeyStore(const std::string& storage_path, 
                                            const SecureBuffer& master_key)
-    : storage_path_(storage_path) {
-    // Use move constructor for master_key
-    SecureBuffer temp_key(master_key.copy()); // Copy the data to a new buffer
-    master_key_ = std::move(temp_key);
+    : storage_path_(storage_path), master_key_(master_key.copy()) { // Use copy method
 }
 
 EncryptedFileKeyStore::~EncryptedFileKeyStore() {
@@ -377,14 +385,28 @@ Result<KeyMetadata> EncryptedFileKeyStore::get_key_metadata(const std::string& k
 
 Result<bool> EncryptedFileKeyStore::update_metadata(const std::string& key_id, 
                                                    const KeyMetadata& metadata) {
-    // Reuse store logic for metadata update
-    SecureBuffer dummy_key(1); // We don't actually update the key
-    auto current_key = load_key(key_id);
-    if (!current_key.is_ok()) {
-        return Result<bool>("Key not found for metadata update");
+    // Write metadata directly without touching the key file
+    std::string meta_path = get_metadata_file_path(key_id);
+    std::ofstream meta_file(meta_path);
+    if (!meta_file) {
+        return Result<bool>("Failed to open metadata file for writing");
     }
-    
-    return store_key(key_id, current_key.value(), metadata);
+
+    // Simple serialization of metadata
+    meta_file << "key_id=" << metadata.key_id << "\n";
+    meta_file << "key_type=" << metadata.key_type << "\n";
+    meta_file << "created_at=" << std::chrono::duration_cast<std::chrono::seconds>(
+        metadata.created_at.time_since_epoch()).count() << "\n";
+    meta_file << "expires_at=" << std::chrono::duration_cast<std::chrono::seconds>(
+        metadata.expires_at.time_since_epoch()).count() << "\n";
+    meta_file << "last_used=" << std::chrono::duration_cast<std::chrono::seconds>(
+        metadata.last_used.time_since_epoch()).count() << "\n";
+    meta_file << "use_count=" << metadata.use_count << "\n";
+    meta_file << "is_revoked=" << (metadata.is_revoked ? "true" : "false") << "\n";
+    meta_file << "revocation_reason=" << metadata.revocation_reason << "\n";
+    meta_file.close();
+
+    return Result<bool>(true);
 }
 
 Result<bool> EncryptedFileKeyStore::delete_key(const std::string& key_id) {
@@ -398,9 +420,29 @@ Result<bool> EncryptedFileKeyStore::delete_key(const std::string& key_id) {
 }
 
 Result<std::vector<std::string>> EncryptedFileKeyStore::list_keys() {
-    // This is a simplified implementation
-    // In production, you'd properly scan the directory
     std::vector<std::string> keys;
+    
+    try {
+        if (!std::filesystem::exists(storage_path_)) {
+            return Result<std::vector<std::string>>(keys); // Return empty list if directory doesn't exist
+        }
+        
+        // Scan directory for .key files and extract key IDs
+        for (const auto& entry : std::filesystem::directory_iterator(storage_path_)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".key") {
+                std::string filename = entry.path().stem().string();
+                
+                // Verify corresponding metadata file exists
+                std::string meta_path = get_metadata_file_path(filename);
+                if (std::filesystem::exists(meta_path)) {
+                    keys.push_back(filename);
+                }
+            }
+        }
+    } catch (const std::filesystem::filesystem_error& e) {
+        return Result<std::vector<std::string>>("Failed to scan key directory: " + std::string(e.what()));
+    }
+    
     return Result<std::vector<std::string>>(keys);
 }
 
@@ -442,38 +484,62 @@ Result<bool> EncryptedFileKeyStore::change_master_key(const SecureBuffer& new_ma
     // 2. Securely wipe the old master key
     // For this minimal implementation, we'll just update the key
     
-    SecureBuffer new_key(new_master_key.copy());
-    master_key_ = std::move(new_key);
+    // Clear the current master key and copy the new one
+    master_key_.secure_wipe();
+    auto new_data = new_master_key.copy();
+    std::copy(new_data.begin(), new_data.end(), master_key_.data());
     
     return Result<bool>(true);
 }
 
 Result<bool> EncryptedFileKeyStore::secure_delete_file(const std::string& file_path) const {
-    // First, overwrite the file with random data
-    std::ifstream file(file_path, std::ios::binary | std::ios::ate);
-    if (!file) {
-        return Result<bool>(true); // File doesn't exist, consider it deleted
-    }
-    
-    size_t file_size = file.tellg();
-    file.close();
-    
-    if (file_size > 0) {
-        std::ofstream out_file(file_path, std::ios::binary);
-        if (out_file) {
-            std::vector<uint8_t> random_data(file_size);
-            RAND_bytes(random_data.data(), file_size);
-            out_file.write(reinterpret_cast<const char*>(random_data.data()), file_size);
+    try {
+        std::ifstream file(file_path, std::ios::binary | std::ios::ate);
+        if (!file) {
+            return Result<bool>(true); // File doesn't exist, consider it deleted
+        }
+        
+        size_t file_size = file.tellg();
+        file.close();
+        
+        if (file_size > 0) {
+            // DOD 5220.22-M standard: 3-pass secure deletion
+            std::ofstream out_file(file_path, std::ios::binary);
+            if (!out_file) {
+                return Result<bool>("Failed to open file for secure deletion");
+            }
+            
+            // Pass 1: All bits set to 1 (0xFF)
+            std::vector<uint8_t> pass1_data(file_size, 0xFF);
+            out_file.write(reinterpret_cast<const char*>(pass1_data.data()), file_size);
+            out_file.flush();
+            out_file.seekp(0);
+            
+            // Pass 2: All bits set to 0 (0x00)
+            std::vector<uint8_t> pass2_data(file_size, 0x00);
+            out_file.write(reinterpret_cast<const char*>(pass2_data.data()), file_size);
+            out_file.flush();
+            out_file.seekp(0);
+            
+            // Pass 3: Random data
+            std::vector<uint8_t> pass3_data(file_size);
+            if (RAND_bytes(pass3_data.data(), file_size) == 1) {
+                out_file.write(reinterpret_cast<const char*>(pass3_data.data()), file_size);
+                out_file.flush();
+            }
+            
             out_file.close();
         }
+        
+        // Now delete the file
+        if (std::remove(file_path.c_str()) == 0) {
+            return Result<bool>(true);
+        }
+        
+        return Result<bool>("Failed to delete file after secure wiping");
+    } catch (const std::exception& e) {
+        return Result<bool>("Secure deletion failed: " + std::string(e.what()));
     }
-    
-    // Now delete the file
-    if (std::remove(file_path.c_str()) == 0) {
-        return Result<bool>(true);
-    }
-    
-    return Result<bool>("Failed to delete file");
 }
 
 // ============================================================================
@@ -559,22 +625,67 @@ bool validate_key_strength(const SecureBuffer& key) {
 }
 
 bool check_entropy_quality() {
-    // Simple entropy check - in production you'd want more sophisticated checks
-    std::vector<uint8_t> test_data(64);
+    // Enhanced entropy check with multiple statistical tests
+    const size_t test_size = 1024; // Larger sample for better statistics
+    std::vector<uint8_t> test_data(test_size);
+    
     if (RAND_bytes(test_data.data(), test_data.size()) != 1) {
         return false;
     }
     
-    // Basic entropy test - check for patterns
+    // Test 1: Frequency analysis (chi-square test approximation)
     std::unordered_map<uint8_t, int> frequency;
     for (auto byte : test_data) {
         frequency[byte]++;
     }
     
-    // If any byte appears too frequently, entropy might be low
-    for (const auto& pair : frequency) {
-        if (pair.second > 8) { // More than 12.5% frequency
-            return false;
+    // Expected frequency for uniform distribution
+    double expected_freq = static_cast<double>(test_size) / 256.0;
+    double chi_square = 0.0;
+    
+    for (int i = 0; i < 256; ++i) {
+        int observed = frequency[static_cast<uint8_t>(i)];
+        double diff = observed - expected_freq;
+        chi_square += (diff * diff) / expected_freq;
+    }
+    
+    // Chi-square critical value for 255 degrees of freedom at 95% confidence
+    // This is a simplified check - in practice you'd use proper chi-square tables
+    if (chi_square > 400.0) { // Very rough approximation
+        return false;
+    }
+    
+    // Test 2: Run test (consecutive identical bits)
+    int runs = 0;
+    bool current_bit = (test_data[0] & 1);
+    for (size_t i = 1; i < test_size; ++i) {
+        bool next_bit = (test_data[i] & 1);
+        if (current_bit != next_bit) {
+            runs++;
+            current_bit = next_bit;
+        }
+    }
+    
+    // For good entropy, runs should be approximately test_size/2
+    double expected_runs = static_cast<double>(test_size) / 2.0;
+    if (std::abs(runs - expected_runs) > expected_runs * 0.2) { // 20% tolerance
+        return false;
+    }
+    
+    // Test 3: Check for repeating patterns
+    for (size_t i = 0; i < test_size - 3; ++i) {
+        bool pattern_found = false;
+        for (size_t j = i + 1; j < test_size - 3; ++j) {
+            if (test_data[i] == test_data[j] && 
+                test_data[i+1] == test_data[j+1] && 
+                test_data[i+2] == test_data[j+2] && 
+                test_data[i+3] == test_data[j+3]) {
+                pattern_found = true;
+                break;
+            }
+        }
+        if (pattern_found) {
+            return false; // 4-byte pattern found, suspicious
         }
     }
     

@@ -11,7 +11,7 @@ namespace security {
 // ============================================================================
 
 KeyRotationScheduler::KeyRotationScheduler(std::shared_ptr<KeyStore> key_store)
-    : key_store_(key_store), is_running_(false) {
+    : key_store_(key_store), is_running_(false), rotation_thread_(nullptr) {
     // Set default rotation policy
     policy_.rotation_interval = std::chrono::hours(24 * 30); // 30 days
     policy_.max_use_count = UINT64_MAX;
@@ -41,6 +41,8 @@ KeyRotationPolicy KeyRotationScheduler::get_policy(const std::string& key_id) co
 }
 
 Result<bool> KeyRotationScheduler::start_scheduler() {
+    std::lock_guard<std::mutex> lock(scheduler_mutex_);
+    
     if (is_running_) {
         return Result<bool>("Scheduler already running");
     }
@@ -48,14 +50,46 @@ Result<bool> KeyRotationScheduler::start_scheduler() {
     is_running_ = true;
     last_check_ = std::chrono::steady_clock::now();
     
-    // In a real implementation, you'd start a background thread here
-    // For this minimal implementation, we'll rely on periodic manual checks
+    // Start background rotation thread
+    rotation_thread_ = std::make_unique<std::thread>(&KeyRotationScheduler::rotation_worker_thread, this);
     
     return Result<bool>(true);
 }
 
 void KeyRotationScheduler::stop_scheduler() {
-    is_running_ = false;
+    {
+        std::lock_guard<std::mutex> lock(scheduler_mutex_);
+        is_running_ = false;
+    }
+    
+    scheduler_cv_.notify_all();
+    
+    if (rotation_thread_ && rotation_thread_->joinable()) {
+        rotation_thread_->join();
+        rotation_thread_.reset();
+    }
+}
+
+void KeyRotationScheduler::rotation_worker_thread() {
+    std::unique_lock<std::mutex> lock(scheduler_mutex_);
+    
+    while (is_running_) {
+        // Wait for 1 hour or until stopped
+        if (scheduler_cv_.wait_for(lock, std::chrono::hours(1), [this] { return !is_running_; })) {
+            break; // Stopped
+        }
+        
+        if (!is_running_) break;
+        
+        // Release lock while doing rotation work
+        lock.unlock();
+        
+        // Perform rotation checks
+        check_rotations();
+        
+        // Re-acquire lock for the next iteration
+        lock.lock();
+    }
 }
 
 bool KeyRotationScheduler::should_rotate_key(const std::string& key_id, const KeyMetadata& metadata) const {

@@ -6,6 +6,9 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
 
 namespace slonana {
 namespace security {
@@ -50,6 +53,13 @@ public:
     // Utility
     std::vector<uint8_t> copy() const { return data_; }
     bool compare(const SecureBuffer& other) const;
+    
+    // Efficient access methods to reduce copying
+    const std::vector<uint8_t>& get_data_ref() const { return data_; }
+    std::vector<uint8_t>&& move_data() && { return std::move(data_); }
+    
+    // Hash function for use in containers
+    size_t hash() const;
 };
 
 /**
@@ -157,9 +167,13 @@ private:
     std::unordered_map<std::string, KeyRotationPolicy> key_policies_;
     bool is_running_;
     std::chrono::steady_clock::time_point last_check_;
+    std::unique_ptr<std::thread> rotation_thread_;
+    std::mutex scheduler_mutex_;
+    std::condition_variable scheduler_cv_;
 
     bool should_rotate_key(const std::string& key_id, const KeyMetadata& metadata) const;
     Result<SecureBuffer> generate_new_key(const std::string& key_type) const;
+    void rotation_worker_thread(); // Background rotation worker
 
 public:
     explicit KeyRotationScheduler(std::shared_ptr<KeyStore> key_store);

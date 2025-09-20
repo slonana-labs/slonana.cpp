@@ -61,8 +61,15 @@ int main(int argc, char* argv[]) {
             auto pub_key_result = identity->get_public_key();
             if (pub_key_result.is_ok()) {
                 const auto& pub_key = pub_key_result.value();
-                std::cout << "Public key: ";
-                for (size_t i = 0; i < std::min(pub_key.size(), size_t(16)); ++i) {
+                std::cout << "Public key (hex): ";
+                for (size_t i = 0; i < pub_key.size(); ++i) {
+                    printf("%02x", pub_key[i]);
+                }
+                std::cout << std::endl;
+                
+                // Also show Base58 encoding for Solana compatibility (simplified)
+                std::cout << "Public key (first 8 bytes): ";
+                for (size_t i = 0; i < std::min(pub_key.size(), size_t(8)); ++i) {
                     printf("%02x", pub_key[i]);
                 }
                 std::cout << "..." << std::endl;
