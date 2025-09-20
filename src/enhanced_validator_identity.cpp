@@ -151,7 +151,7 @@ std::vector<uint8_t> EnhancedValidatorIdentity::generate_validator_identity() {
 
 common::Result<std::string> EnhancedValidatorIdentity::create_secure_identity() {
     if (!use_secure_management_ || !secure_identity_) {
-        return common::Result<std::string>("Secure key management not enabled");
+        return common::Result<std::string>("Not enabled");
     }
     
     auto result = secure_identity_->create_new_identity();
@@ -169,17 +169,18 @@ common::Result<std::string> EnhancedValidatorIdentity::create_secure_identity() 
 
 common::Result<std::string> EnhancedValidatorIdentity::rotate_identity_if_needed() {
     if (!use_secure_management_ || !secure_identity_) {
-        return common::Result<std::string>("Secure key management not enabled");
+        return common::Result<std::string>("Not enabled");
     }
     
     // Check if rotation is needed
     auto status_result = secure_identity_->get_status();
     if (!status_result.is_ok()) {
-        return common::Result<std::string>("Failed to get identity status"); // Use const char* to avoid ambiguity
+        return common::Result<std::string>("Check failed");
     }
     
     if (!status_result.value().needs_rotation) {
-        return common::Result<std::string>("No rotation needed");
+        std::string msg = "No rotation needed";
+        return common::Result<std::string>(std::move(msg), common::success_tag{});
     }
     
     std::cout << "🔄 Identity rotation needed, performing automatic rotation..." << "\

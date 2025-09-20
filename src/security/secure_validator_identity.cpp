@@ -1,5 +1,6 @@
 #include "security/secure_validator_identity.h"
 #include <filesystem>
+#include <fstream>
 
 namespace slonana {
 namespace security {

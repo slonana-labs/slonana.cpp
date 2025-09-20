@@ -140,6 +140,11 @@ public:
     // Configuration
     Result<bool> initialize_storage();
     Result<bool> change_master_key(const SecureBuffer& new_master_key);
+    
+    // Public encryption interface for backup operations
+    Result<SecureBuffer> encrypt_data_for_backup(const SecureBuffer& plaintext) const {
+        return encrypt_data(plaintext);
+    }
 };
 
 /**

@@ -1,6 +1,7 @@
 #include "security/key_manager.h"
 #include <filesystem>
 #include <thread>
+#include <fstream>
 
 namespace slonana {
 namespace security {
@@ -448,7 +449,8 @@ Result<std::string> CryptographicKeyManager::import_legacy_key(const std::string
     file.close();
     
     // Extract private key (first 32 bytes in Solana format)
-    SecureBuffer private_key(file_data.begin(), file_data.begin() + 32);
+    std::vector<uint8_t> private_key_data(file_data.begin(), file_data.begin() + 32);
+    SecureBuffer private_key(private_key_data);
     
     // Create key ID and metadata
     std::string key_id = generate_key_id(key_type + "_legacy");
@@ -477,7 +479,7 @@ Result<bool> CryptographicKeyManager::export_key_for_backup(const std::string& k
     }
     
     // For security, we'll encrypt the backup
-    auto encrypted_result = static_cast<EncryptedFileKeyStore*>(key_store_.get())->encrypt_data(key_result.value());
+    auto encrypted_result = static_cast<EncryptedFileKeyStore*>(key_store_.get())->encrypt_data_for_backup(key_result.value());
     if (!encrypted_result.is_ok()) {
         return Result<bool>("Failed to encrypt backup: " + encrypted_result.error());
     }

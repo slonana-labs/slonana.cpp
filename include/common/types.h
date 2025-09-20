@@ -88,6 +88,10 @@ struct ValidatorConfig {
   std::string rpc_faucet_address = "127.0.0.1:9900"; // Faucet bind address
 };
 
+// Disambiguation tags
+struct success_tag {};
+struct error_tag {};
+
 /**
  * Result type for operations that can fail
  */
@@ -98,9 +102,17 @@ private:
   std::string error_;
 
 public:
-  explicit Result(T value) : success_(true), value_(std::move(value)) {}
+  // Success constructor with disambiguation
+  Result(T value, success_tag) : success_(true), value_(std::move(value)) {}
+  
+  // Error constructors
   explicit Result(const char *error) : success_(false), error_(error) {}
   explicit Result(const std::string &error) : success_(false), error_(error) {}
+  
+  // Legacy success constructor for non-string types
+  template<typename U = T>
+  Result(U value, typename std::enable_if<!std::is_same<U, std::string>::value>::type* = nullptr) 
+      : success_(true), value_(std::move(value)) {}
 
   // Copy constructor
   Result(const Result &other)

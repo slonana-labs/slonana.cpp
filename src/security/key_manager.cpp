@@ -6,6 +6,7 @@
 #include <random>
 #include <sstream>
 #include <iomanip>
+#include <filesystem>
 
 #ifdef __linux__
 #include <sys/mman.h>
@@ -144,7 +145,10 @@ EncryptedFileKeyStore::EncryptedFileKeyStore(const std::string& storage_path)
 
 EncryptedFileKeyStore::EncryptedFileKeyStore(const std::string& storage_path, 
                                            const SecureBuffer& master_key)
-    : storage_path_(storage_path), master_key_(master_key) {
+    : storage_path_(storage_path) {
+    // Use move constructor for master_key
+    SecureBuffer temp_key(master_key.copy()); // Copy the data to a new buffer
+    master_key_ = std::move(temp_key);
 }
 
 EncryptedFileKeyStore::~EncryptedFileKeyStore() {
@@ -438,8 +442,8 @@ Result<bool> EncryptedFileKeyStore::change_master_key(const SecureBuffer& new_ma
     // 2. Securely wipe the old master key
     // For this minimal implementation, we'll just update the key
     
-    SecureBuffer old_master_key = std::move(master_key_);
-    master_key_ = new_master_key;
+    SecureBuffer new_key(new_master_key.copy());
+    master_key_ = std::move(new_key);
     
     return Result<bool>(true);
 }
