@@ -122,19 +122,12 @@ common::Result<bool> SolanaValidator::start() {
   poh_config.batch_size = config_.poh_batch_size;
   poh_config.hashing_threads = config_.poh_hashing_threads;
 
-  if (!consensus::GlobalProofOfHistory::initialize(poh_config)) {
-    return common::Result<bool>("Failed to initialize Proof of History");
-  }
-
-  // Start PoH with a genesis hash
+  // Initialize and start Proof of History with genesis hash
   Hash genesis_hash(32, 0x42); // Simple genesis hash
-  auto &global_poh = consensus::GlobalProofOfHistory::instance();
-  auto poh_start_result = global_poh.start(genesis_hash);
-  if (!poh_start_result.is_ok()) {
-    return common::Result<bool>("Failed to start Proof of History: " +
-                                poh_start_result.error());
+  if (!consensus::GlobalProofOfHistory::initialize(poh_config, genesis_hash)) {
+    return common::Result<bool>("Failed to initialize and start Proof of History");
   }
-  std::cout << "  ✅ Proof of History started successfully" << std::endl;
+  std::cout << "  ✅ Proof of History initialized and started successfully" << std::endl;
 
   // Start core validator
   std::cout << "  🎯 Starting validator core..." << std::endl;

@@ -8,6 +8,9 @@
 #include <boost/lockfree/queue.hpp>
 #else
 // Simple lock-free queue fallback using traditional containers
+// WARNING: This fallback uses blocking mutex-based queue operations.
+// Performance will be significantly reduced compared to true lock-free boost::lockfree.
+// Consider installing boost::lockfree for production use.
 namespace boost {
 namespace lockfree {
 template <typename T> class queue {
@@ -132,12 +135,24 @@ ProofOfHistory::ProofOfHistory(const PohConfig &config) : config_(config) {
   stats_.lock_contention_ratio = 0.0;
 }
 
-ProofOfHistory::~ProofOfHistory() { stop(); }
+ProofOfHistory::~ProofOfHistory() { 
+  stop(); 
+  
+  // Clean up any remaining pointers in lock-free queue
+#if HAS_LOCKFREE_QUEUE
+  if (lock_free_mix_queue_) {
+    Hash *data_ptr;
+    while (lock_free_mix_queue_->pop(data_ptr)) {
+      delete data_ptr;
+    }
+  }
+#endif
+}
 
 Result<bool> ProofOfHistory::start(const Hash &initial_hash) {
   std::lock_guard<std::mutex> lock(state_mutex_);
 
-  if (running_.load()) {
+  if (running_.load(std::memory_order_acquire)) {
     return Result<bool>("PoH generator is already running");
   }
 
@@ -147,8 +162,8 @@ Result<bool> ProofOfHistory::start(const Hash &initial_hash) {
   current_entry_.timestamp = std::chrono::system_clock::now();
   current_entry_.mixed_data.clear();
 
-  current_sequence_.store(0);
-  current_slot_.store(0);
+  current_sequence_.store(0, std::memory_order_release);
+  current_slot_.store(0, std::memory_order_release);
 
   // Clear history
   {
@@ -161,8 +176,8 @@ Result<bool> ProofOfHistory::start(const Hash &initial_hash) {
   start_time_ = std::chrono::system_clock::now();
   last_tick_time_ = start_time_;
 
-  running_.store(true);
-  stopping_.store(false);
+  running_.store(true, std::memory_order_release);
+  stopping_.store(false, std::memory_order_release);
 
   // Start threads
   tick_thread_ = std::thread(&ProofOfHistory::tick_thread_func, this);
@@ -178,7 +193,7 @@ Result<bool> ProofOfHistory::start(const Hash &initial_hash) {
 }
 
 void ProofOfHistory::stop() {
-  stopping_.store(true);
+  stopping_.store(true, std::memory_order_release);
 
   // Wait for threads to finish
   if (tick_thread_.joinable()) {
@@ -192,10 +207,10 @@ void ProofOfHistory::stop() {
   }
 
   hashing_threads_.clear();
-  running_.store(false);
+  running_.store(false, std::memory_order_release);
 }
 
-bool ProofOfHistory::is_running() const { return running_.load(); }
+bool ProofOfHistory::is_running() const { return running_.load(std::memory_order_acquire); }
 
 PohEntry ProofOfHistory::get_current_entry() const {
   std::lock_guard<std::mutex> lock(state_mutex_);
@@ -203,30 +218,45 @@ PohEntry ProofOfHistory::get_current_entry() const {
 }
 
 uint64_t ProofOfHistory::get_current_sequence() const {
-  return current_sequence_.load();
+  return current_sequence_.load(std::memory_order_acquire);
 }
 
-Slot ProofOfHistory::get_current_slot() const { return current_slot_.load(); }
+Slot ProofOfHistory::get_current_slot() const { return current_slot_.load(std::memory_order_acquire); }
 
 uint64_t ProofOfHistory::mix_data(const Hash &data) {
-  lock_attempts_.fetch_add(1);
+  if (config_.enable_lock_contention_tracking) {
+    lock_attempts_.fetch_add(1, std::memory_order_relaxed);
+  }
 
 #if HAS_LOCKFREE_QUEUE
   if (config_.enable_lock_free_structures && lock_free_mix_queue_) {
     // Use lock-free queue for better performance
     Hash *data_ptr = new Hash(data);
     if (lock_free_mix_queue_->push(data_ptr)) {
-      return current_sequence_.load() + 1;
+      return current_sequence_.load(std::memory_order_acquire) + 1;
     } else {
       delete data_ptr;
-      lock_contention_count_.fetch_add(1);
+      if (config_.enable_lock_contention_tracking) {
+        lock_contention_count_.fetch_add(1, std::memory_order_relaxed);
+      }
       // Fallback to traditional queue
     }
   }
 #endif
 
   // Traditional mutex-based approach (fallback or when lock-free disabled)
+  // Apply backpressure to prevent OOM under flood conditions
   std::lock_guard<std::mutex> lock(mix_queue_mutex_);
+  
+  // Check if queue is approaching capacity limit to prevent memory explosion
+  if (pending_mix_data_.size() >= config_.max_entries_buffer) {
+    // Drop oldest entries when at capacity (FIFO dropping policy)
+    pending_mix_data_.pop_front();
+    if (config_.enable_lock_contention_tracking) {
+      lock_contention_count_.fetch_add(1, std::memory_order_relaxed); // Track dropped entries
+    }
+  }
+  
   pending_mix_data_.push_back(data);
 
   {
@@ -234,7 +264,7 @@ uint64_t ProofOfHistory::mix_data(const Hash &data) {
     stats_.pending_data_mixes = pending_mix_data_.size();
   }
 
-  return current_sequence_.load() + pending_mix_data_.size();
+  return current_sequence_.load(std::memory_order_acquire) + pending_mix_data_.size();
 }
 
 std::vector<PohEntry> ProofOfHistory::get_slot_entries(Slot slot) const {
@@ -266,7 +296,7 @@ ProofOfHistory::PohStats ProofOfHistory::get_stats() const {
 }
 
 void ProofOfHistory::hashing_thread_func() {
-  while (running_.load() && !stopping_.load()) {
+  while (running_.load(std::memory_order_acquire) && !stopping_.load(std::memory_order_acquire)) {
     if (config_.enable_batch_processing) {
       // Process batches of hashes for better performance
       process_tick_batch();
@@ -280,7 +310,7 @@ void ProofOfHistory::hashing_thread_func() {
 void ProofOfHistory::tick_thread_func() {
   auto next_tick_time = std::chrono::system_clock::now();
 
-  while (running_.load() && !stopping_.load()) {
+  while (running_.load(std::memory_order_acquire) && !stopping_.load(std::memory_order_acquire)) {
     if (config_.enable_batch_processing) {
       process_tick_batch();
     } else {
@@ -400,7 +430,7 @@ void ProofOfHistory::process_tick_batch() {
     }
 
     // Add to current slot
-    Slot current_slot = current_slot_.load();
+    Slot current_slot = current_slot_.load(std::memory_order_acquire);
     slot_entries_[current_slot].emplace_back(new_entry);
   }
 
@@ -451,11 +481,15 @@ void ProofOfHistory::process_tick_batch() {
                                 (stats_.batches_processed * config_.batch_size);
     }
 
-    // Calculate lock contention ratio
-    uint64_t attempts = lock_attempts_.load();
-    uint64_t contentions = lock_contention_count_.load();
-    if (attempts > 0) {
-      stats_.lock_contention_ratio = (double)contentions / attempts;
+    // Calculate lock contention ratio only if tracking is enabled
+    if (config_.enable_lock_contention_tracking) {
+      uint64_t attempts = lock_attempts_.load(std::memory_order_relaxed);
+      uint64_t contentions = lock_contention_count_.load(std::memory_order_relaxed);
+      if (attempts > 0) {
+        stats_.lock_contention_ratio = (double)contentions / attempts;
+      }
+    } else {
+      stats_.lock_contention_ratio = 0.0; // Not tracked
     }
 
     stats_.pending_data_mixes = mixed_data_batch.size();
@@ -487,11 +521,11 @@ void ProofOfHistory::process_tick() {
     new_entry.mixed_data = std::move(mixed_data);
 
     current_entry_ = new_entry;
-    current_sequence_.store(new_entry.sequence_number);
+    current_sequence_.store(new_entry.sequence_number, std::memory_order_release);
   }
 
   // Add to history
-  Slot current_slot = current_slot_.load();
+  Slot current_slot = current_slot_.load(std::memory_order_acquire);
   {
     std::lock_guard<std::mutex> lock(history_mutex_);
     entry_history_.push_back(new_entry);
@@ -560,14 +594,14 @@ void ProofOfHistory::process_tick() {
 }
 
 void ProofOfHistory::check_slot_completion() {
-  uint64_t sequence = current_sequence_.load();
+  uint64_t sequence = current_sequence_.load(std::memory_order_acquire);
   uint64_t ticks_in_current_slot = sequence % config_.ticks_per_slot;
 
   if (ticks_in_current_slot == 0 && sequence > 0) {
     // Slot completed
-    Slot completed_slot = current_slot_.load();
+    Slot completed_slot = current_slot_.load(std::memory_order_acquire);
     Slot new_slot = completed_slot + 1;
-    current_slot_.store(new_slot);
+    current_slot_.store(new_slot, std::memory_order_release);
 
     // Enhanced slot progression logging
     std::cout << "🎯 Slot " << completed_slot << " completed with "
@@ -659,13 +693,22 @@ ProofOfHistory &GlobalProofOfHistory::instance() {
   return *instance_;
 }
 
-bool GlobalProofOfHistory::initialize(const PohConfig &config) {
+bool GlobalProofOfHistory::initialize(const PohConfig &config, const Hash &initial_hash) {
   std::lock_guard<std::mutex> lock(instance_mutex_);
   if (instance_) {
     return false; // Already initialized
   }
 
   instance_ = std::make_unique<ProofOfHistory>(config);
+  
+  // Start the PoH instance immediately with the provided initial hash
+  auto start_result = instance_->start(initial_hash);
+  if (!start_result.is_ok()) {
+    // If start fails, clean up and return failure
+    instance_.reset();
+    return false;
+  }
+  
   return true;
 }
 
@@ -683,14 +726,16 @@ bool GlobalProofOfHistory::is_initialized() {
 }
 
 uint64_t GlobalProofOfHistory::mix_transaction(const Hash &tx_hash) {
-  if (!is_initialized()) {
+  std::lock_guard<std::mutex> lock(instance_mutex_);
+  if (!instance_) {
     return 0; // Return default value when uninitialized
   }
-  return instance().mix_data(tx_hash);
+  return instance_->mix_data(tx_hash);
 }
 
 PohEntry GlobalProofOfHistory::get_current_entry() {
-  if (!is_initialized()) {
+  std::lock_guard<std::mutex> lock(instance_mutex_);
+  if (!instance_) {
     // Return default entry when uninitialized
     PohEntry default_entry;
     default_entry.hash = Hash(32, 0); // Empty hash
@@ -698,14 +743,33 @@ PohEntry GlobalProofOfHistory::get_current_entry() {
     default_entry.timestamp = std::chrono::system_clock::now();
     return default_entry;
   }
-  return instance().get_current_entry();
+  return instance_->get_current_entry();
 }
 
 Slot GlobalProofOfHistory::get_current_slot() {
-  if (!is_initialized()) {
+  std::lock_guard<std::mutex> lock(instance_mutex_);
+  if (!instance_) {
     return 0; // Return slot 0 when uninitialized
   }
-  return instance().get_current_slot();
+  return instance_->get_current_slot();
+}
+
+bool GlobalProofOfHistory::set_tick_callback(ProofOfHistory::TickCallback callback) {
+  std::lock_guard<std::mutex> lock(instance_mutex_);
+  if (!instance_) {
+    return false; // Cannot set callback when uninitialized
+  }
+  instance_->set_tick_callback(std::move(callback));
+  return true;
+}
+
+bool GlobalProofOfHistory::set_slot_callback(ProofOfHistory::SlotCallback callback) {
+  std::lock_guard<std::mutex> lock(instance_mutex_);
+  if (!instance_) {
+    return false; // Cannot set callback when uninitialized
+  }
+  instance_->set_slot_callback(std::move(callback));
+  return true;
 }
 
 } // namespace consensus

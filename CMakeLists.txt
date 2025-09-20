@@ -15,6 +15,8 @@ option(ENABLE_E2E_TESTING "Enable end-to-end testing features" OFF)
 option(ENABLE_PERFORMANCE_MONITORING "Enable performance monitoring features" OFF)
 option(ENABLE_COMPREHENSIVE_TESTING "Enable comprehensive testing features" OFF)
 option(ENABLE_CHAOS_TESTING "Enable chaos testing features" OFF)
+option(ENABLE_TSAN "Enable ThreadSanitizer for race detection" OFF)
+option(ENABLE_ASAN "Enable AddressSanitizer for memory error detection" OFF)
 
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)
@@ -46,6 +48,18 @@ file(GLOB_RECURSE CORE_SOURCES
 add_library(slonana_core STATIC ${CORE_SOURCES})
 target_include_directories(slonana_core PUBLIC ${INCLUDE_DIR})
 
+# Sanitizer configuration
+if(ENABLE_TSAN)
+    target_compile_options(slonana_core PUBLIC -fsanitize=thread -fno-omit-frame-pointer -g)
+    target_link_options(slonana_core PUBLIC -fsanitize=thread)
+    message(STATUS "ThreadSanitizer enabled for slonana_core")
+endif()
+
+if(ENABLE_ASAN)
+    target_compile_options(slonana_core PUBLIC -fsanitize=address -fno-omit-frame-pointer -g)
+    target_link_options(slonana_core PUBLIC -fsanitize=address)
+    message(STATUS "AddressSanitizer enabled for slonana_core")
+endif()
 # Apply configuration-based compile definitions
 if(ENABLE_E2E_TESTING)
     target_compile_definitions(slonana_core PUBLIC ENABLE_E2E_TESTING)
@@ -156,6 +170,12 @@ add_executable(slonana_proof_of_history_tests
 )
 target_link_libraries(slonana_proof_of_history_tests slonana_core)
 target_include_directories(slonana_proof_of_history_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+
+# Concurrency stress test
+add_executable(slonana_concurrency_stress_test 
+    "${CMAKE_SOURCE_DIR}/tests/concurrency_stress_test.cpp"
+)
+target_link_libraries(slonana_concurrency_stress_test slonana_core)
 
 # Find OpenSSL for PoH cryptographic operations
 find_package(OpenSSL REQUIRED)

@@ -519,24 +519,26 @@ common::Result<bool> ValidatorCore::start() {
     return common::Result<bool>("Failed to initialize QUIC client");
   }
 
-  // Access the already initialized Proof of History instance
-  auto &poh = consensus::GlobalProofOfHistory::instance();
+  // Set up PoH callbacks for metrics using thread-safe methods
+  bool tick_callback_set = consensus::GlobalProofOfHistory::set_tick_callback(
+      [](const consensus::PohEntry &entry) {
+        monitoring::GlobalConsensusMetrics::instance()
+            .increment_poh_ticks_generated();
+        monitoring::GlobalConsensusMetrics::instance().set_poh_sequence_number(
+            static_cast<int64_t>(entry.sequence_number));
+      });
 
-  // Set up PoH callbacks for metrics
-  poh.set_tick_callback([this](const consensus::PohEntry &entry) {
-    monitoring::GlobalConsensusMetrics::instance()
-        .increment_poh_ticks_generated();
-    monitoring::GlobalConsensusMetrics::instance().set_poh_sequence_number(
-        static_cast<int64_t>(entry.sequence_number));
-  });
-
-  poh.set_slot_callback(
-      [this](Slot slot, const std::vector<consensus::PohEntry> &entries) {
+  bool slot_callback_set = consensus::GlobalProofOfHistory::set_slot_callback(
+      [](Slot slot, const std::vector<consensus::PohEntry> &entries) {
         monitoring::GlobalConsensusMetrics::instance().set_poh_current_slot(
             static_cast<int64_t>(slot));
         std::cout << "PoH completed slot " << slot << " with " << entries.size()
                   << " entries" << std::endl;
       });
+      
+  if (!tick_callback_set || !slot_callback_set) {
+    return common::Result<bool>("Failed to set up PoH callbacks - PoH may not be properly initialized");
+  }
 
   impl_->running_ = true;
   return common::Result<bool>(true);
@@ -572,11 +574,9 @@ void ValidatorCore::process_block(const ledger::Block &block) {
 
   auto validation_result = block_validator_->validate_block(block);
   if (validation_result.is_ok()) {
-    // Mix block hash into PoH for timestamping only if PoH is available
-    uint64_t poh_sequence = 0;
-    if (consensus::GlobalProofOfHistory::is_initialized()) {
-      auto &poh = consensus::GlobalProofOfHistory::instance();
-      poh_sequence = poh.mix_data(block.block_hash);
+    // Mix block hash into PoH for timestamping using thread-safe method
+    uint64_t poh_sequence = consensus::GlobalProofOfHistory::mix_transaction(block.block_hash);
+    if (poh_sequence > 0) {
       std::cout << "Mixed block hash into PoH at sequence " << poh_sequence
                 << std::endl;
     } else {
