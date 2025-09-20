@@ -502,9 +502,10 @@ void ProofOfHistory::process_tick_batch() {
     }
 
     stats_.pending_data_mixes = mixed_data_batch.size();
+    
+    // Update last tick time under mutex protection to prevent race conditions
+    last_tick_time_ = tick_end;
   }
-
-  last_tick_time_ = tick_end;
 }
 
 void ProofOfHistory::process_tick() {
@@ -598,9 +599,10 @@ void ProofOfHistory::process_tick() {
     }
 
     stats_.pending_data_mixes = 0; // Reset since we processed pending data
+    
+    // Update last tick time under mutex protection to prevent race conditions
+    last_tick_time_ = tick_end;
   }
-
-  last_tick_time_ = tick_end;
 }
 
 void ProofOfHistory::check_slot_completion() {
