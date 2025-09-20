@@ -49,15 +49,15 @@ target_include_directories(slonana_core PUBLIC ${INCLUDE_DIR})
 
 # Sanitizer configuration
 if(ENABLE_TSAN)
-    add_compile_options(-fsanitize=thread -fno-omit-frame-pointer -g)
-    add_link_options(-fsanitize=thread)
-    message(STATUS "ThreadSanitizer enabled")
+    target_compile_options(slonana_core PUBLIC -fsanitize=thread -fno-omit-frame-pointer -g)
+    target_link_options(slonana_core PUBLIC -fsanitize=thread)
+    message(STATUS "ThreadSanitizer enabled for slonana_core")
 endif()
 
 if(ENABLE_ASAN)
-    add_compile_options(-fsanitize=address -fno-omit-frame-pointer -g)
-    add_link_options(-fsanitize=address)
-    message(STATUS "AddressSanitizer enabled")
+    target_compile_options(slonana_core PUBLIC -fsanitize=address -fno-omit-frame-pointer -g)
+    target_link_options(slonana_core PUBLIC -fsanitize=address)
+    message(STATUS "AddressSanitizer enabled for slonana_core")
 endif()
 # Apply configuration-based compile definitions
 if(ENABLE_E2E_TESTING)

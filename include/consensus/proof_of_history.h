@@ -117,6 +117,9 @@ public:
    *         This is an immediate estimate and may not reflect the actual
    *         committed sequence if the data is still pending processing.
    *         Returns 0 if the PoH generator is not running.
+   *         
+   *         WARNING: This is a best-effort guess, not a committed sequence ID.
+   *         The actual sequence may differ due to concurrent processing.
    */
   uint64_t mix_data(const Hash &data);
 

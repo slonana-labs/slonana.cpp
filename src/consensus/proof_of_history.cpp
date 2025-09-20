@@ -8,6 +8,9 @@
 #include <boost/lockfree/queue.hpp>
 #else
 // Simple lock-free queue fallback using traditional containers
+// WARNING: This fallback uses blocking mutex-based queue operations.
+// Performance will be significantly reduced compared to true lock-free boost::lockfree.
+// Consider installing boost::lockfree for production use.
 namespace boost {
 namespace lockfree {
 template <typename T> class queue {
@@ -242,7 +245,18 @@ uint64_t ProofOfHistory::mix_data(const Hash &data) {
 #endif
 
   // Traditional mutex-based approach (fallback or when lock-free disabled)
+  // Apply backpressure to prevent OOM under flood conditions
   std::lock_guard<std::mutex> lock(mix_queue_mutex_);
+  
+  // Check if queue is approaching capacity limit to prevent memory explosion
+  if (pending_mix_data_.size() >= config_.max_entries_buffer) {
+    // Drop oldest entries when at capacity (FIFO dropping policy)
+    pending_mix_data_.pop_front();
+    if (config_.enable_lock_contention_tracking) {
+      lock_contention_count_.fetch_add(1, std::memory_order_relaxed); // Track dropped entries
+    }
+  }
+  
   pending_mix_data_.push_back(data);
 
   {

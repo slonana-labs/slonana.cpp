@@ -15,7 +15,6 @@ using std::random_device;
 using std::thread;
 using std::uniform_int_distribution;
 using std::vector;
-using namespace slonana::consensus;
 
 class ConcurrencyStressTest {
 public:
@@ -28,12 +27,12 @@ public:
         atomic<int> failed_operations{0};
         
         // Initialize GlobalProofOfHistory with default genesis hash
-        PohConfig config;
+        slonana::consensus::PohConfig config;
         config.ticks_per_slot = 8;
         config.enable_lock_free_structures = true;
-        Hash genesis_hash(32, 0x42); // Genesis hash for testing
+        slonana::consensus::Hash genesis_hash(32, 0x42); // Genesis hash for testing
         
-        if (!GlobalProofOfHistory::initialize(config, genesis_hash)) {
+        if (!slonana::consensus::GlobalProofOfHistory::initialize(config, genesis_hash)) {
             std::cout << "❌ Failed to initialize GlobalProofOfHistory\n";
             return;
         }
@@ -42,14 +41,15 @@ public:
         
         // Thread function that performs concurrent operations
         auto worker = [&](int thread_id) {
-            random_device rd;
-            mt19937 gen(rd());
-            uniform_int_distribution<> dis(0, 255);
+            // Use thread_local RNG for better performance and cleaner per-thread randomness
+            thread_local random_device rd;
+            thread_local mt19937 gen(rd());
+            thread_local uniform_int_distribution<> dis(0, 255);
             
             for (int i = 0; i < operations_per_thread; ++i) {
                 try {
                     // Generate random hash
-                    Hash tx_hash(32);
+                    slonana::consensus::Hash tx_hash(32);
                     for (auto& byte : tx_hash) {
                         byte = static_cast<uint8_t>(dis(gen));
                     }
@@ -58,25 +58,25 @@ public:
                     switch (i % 4) {
                         case 0: {
                             // Test mix_transaction
-                            uint64_t seq = GlobalProofOfHistory::mix_transaction(tx_hash);
+                            uint64_t seq = slonana::consensus::GlobalProofOfHistory::mix_transaction(tx_hash);
                             if (seq > 0) successful_operations.fetch_add(1, std::memory_order_relaxed);
                             break;
                         }
                         case 1: {
                             // Test get_current_entry
-                            (void)GlobalProofOfHistory::get_current_entry();
+                            (void)slonana::consensus::GlobalProofOfHistory::get_current_entry();
                             successful_operations.fetch_add(1, std::memory_order_relaxed);
                             break;
                         }
                         case 2: {
                             // Test get_current_slot
-                            (void)GlobalProofOfHistory::get_current_slot();
+                            (void)slonana::consensus::GlobalProofOfHistory::get_current_slot();
                             successful_operations.fetch_add(1, std::memory_order_relaxed);
                             break;
                         }
                         case 3: {
                             // Test is_initialized (should always be true during test)
-                            if (GlobalProofOfHistory::is_initialized()) {
+                            if (slonana::consensus::GlobalProofOfHistory::is_initialized()) {
                                 successful_operations.fetch_add(1, std::memory_order_relaxed);
                             }
                             break;
@@ -90,7 +90,9 @@ public:
                     
                 } catch (const std::exception& e) {
                     failed_operations.fetch_add(1, std::memory_order_relaxed);
-                    std::cout << "⚠️  Thread " << thread_id << " error: " << e.what() << "\n";
+                    std::cout << "❌ CRITICAL: Thread " << thread_id << " error: " << e.what() << "\n";
+                    // Exit early on critical exceptions to prevent masking serious bugs
+                    break;
                 }
             }
         };
@@ -111,7 +113,7 @@ public:
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
         
         // Cleanup
-        GlobalProofOfHistory::shutdown();
+        slonana::consensus::GlobalProofOfHistory::shutdown();
         
         // Report results
         int total_ops = num_threads * operations_per_thread;
@@ -200,23 +202,23 @@ public:
         int successful_shutdowns = 0;
         
         for (int i = 0; i < num_iterations; ++i) {
-            PohConfig config;
+            slonana::consensus::PohConfig config;
             config.ticks_per_slot = 4;
-            Hash test_genesis_hash(32, static_cast<uint8_t>(i % 256));
+            slonana::consensus::Hash test_genesis_hash(32, static_cast<uint8_t>(i % 256));
             
             // Initialize with test genesis hash
-            if (!GlobalProofOfHistory::initialize(config, test_genesis_hash)) {
+            if (!slonana::consensus::GlobalProofOfHistory::initialize(config, test_genesis_hash)) {
                 continue;
             }
             
             // Start a thread that performs operations
             std::atomic<bool> stop_worker{false};
             std::thread worker([&]() {
-                Hash tx_hash(32, static_cast<uint8_t>(i % 256));
+                slonana::consensus::Hash tx_hash(32, static_cast<uint8_t>(i % 256));
                 while (!stop_worker.load(std::memory_order_acquire)) {
                     try {
-                        GlobalProofOfHistory::mix_transaction(tx_hash);
-                        GlobalProofOfHistory::get_current_entry();
+                        slonana::consensus::GlobalProofOfHistory::mix_transaction(tx_hash);
+                        slonana::consensus::GlobalProofOfHistory::get_current_entry();
                         std::this_thread::sleep_for(std::chrono::microseconds(10));
                     } catch (...) {
                         // Expected during shutdown
@@ -231,7 +233,7 @@ public:
             
             // Shutdown should be safe
             try {
-                GlobalProofOfHistory::shutdown();
+                slonana::consensus::GlobalProofOfHistory::shutdown();
                 successful_shutdowns++;
             } catch (const std::exception& e) {
                 std::cout << "⚠️  Shutdown failed on iteration " << i << ": " << e.what() << "\n";
