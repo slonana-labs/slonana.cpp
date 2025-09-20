@@ -38,6 +38,12 @@ Slonana.cpp leverages advanced lock-free algorithms and zero-copy designs to max
 - **Impact**: Eliminates data races detected by ThreadSanitizer
 - **Performance**: Minimal overhead (< 1% in benchmarks)
 
+### Lock Contention Instrumentation (New)
+- **Feature**: Added instrumented lock guards for `stats_mutex_` monitoring
+- **Usage**: Enabled via `enable_lock_contention_tracking` config option
+- **Metrics**: Tracks lock attempts and contention ratio for performance tuning
+- **Implementation**: `InstrumentedLockGuard` class provides transparent monitoring
+
 ## Thread Safety Guarantees
 
 ### Memory Ordering Semantics
@@ -132,8 +138,16 @@ make
 
 Run comprehensive stress tests:
 ```bash
-./slonana_concurrency_stress_test
+# Basic race condition tests
 ./slonana_timing_race_test  # Validates specific race condition fixes
+./slonana_shutdown_race_test  # Tests shutdown safety under contention
+
+# Quiet mode for CI (reduces log verbosity)
+SLONANA_TEST_QUIET=1 ./slonana_timing_race_test
+SLONANA_TEST_QUIET=1 ./slonana_shutdown_race_test
+
+# Full concurrency stress test suite
+./slonana_concurrency_stress_test
 ```
 
 The stress tests validate:
@@ -142,6 +156,7 @@ The stress tests validate:
 - Shutdown race conditions
 - Memory ordering semantics
 - Timing-related race conditions
+- Lock contention metrics and monitoring
 
 ### Static Analysis
 

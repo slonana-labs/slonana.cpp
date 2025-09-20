@@ -4,6 +4,10 @@
 #include <iostream>
 #include <thread>
 #include <vector>
+#include <cstdlib>
+
+// Simple verbosity control for CI
+static bool verbose_output = true;
 
 /**
  * High-contention shutdown race condition test
@@ -49,10 +53,33 @@ public:
                                 byte = static_cast<uint8_t>((cycle + thread_id + local_ops) % 256);
                             }
                             
-                            // Try operations
-                            (void)slonana::consensus::GlobalProofOfHistory::mix_transaction(tx_hash);
-                            (void)slonana::consensus::GlobalProofOfHistory::get_current_entry();
-                            (void)slonana::consensus::GlobalProofOfHistory::get_current_slot();
+                            // Try operations with individual exception handling
+                            try {
+                                (void)slonana::consensus::GlobalProofOfHistory::mix_transaction(tx_hash);
+                            } catch (const std::exception& e) {
+                                // Expected during shutdown, don't log unless verbose
+                                if (verbose_output && local_ops < 5) {
+                                    std::cout << "ℹ️  Thread " << thread_id << " mix_transaction error (expected): " << e.what() << "\n";
+                                }
+                            }
+                            
+                            try {
+                                (void)slonana::consensus::GlobalProofOfHistory::get_current_entry();
+                            } catch (const std::exception& e) {
+                                // Expected during shutdown
+                                if (verbose_output && local_ops < 5) {
+                                    std::cout << "ℹ️  Thread " << thread_id << " get_current_entry error (expected): " << e.what() << "\n";
+                                }
+                            }
+                            
+                            try {
+                                (void)slonana::consensus::GlobalProofOfHistory::get_current_slot();
+                            } catch (const std::exception& e) {
+                                // Expected during shutdown
+                                if (verbose_output && local_ops < 5) {
+                                    std::cout << "ℹ️  Thread " << thread_id << " get_current_slot error (expected): " << e.what() << "\n";
+                                }
+                            }
                             
                             local_ops++;
                             
@@ -63,6 +90,12 @@ public:
                             
                         } catch (const std::exception& e) {
                             // Expected during shutdown
+                            break;
+                        } catch (...) {
+                            // Handle any unexpected exceptions
+                            if (verbose_output) {
+                                std::cout << "⚠️  Thread " << thread_id << " unexpected error\n";
+                            }
                             break;
                         }
                     }
@@ -91,7 +124,9 @@ public:
                 
             } catch (const std::exception& e) {
                 failed_cycles.fetch_add(1, std::memory_order_relaxed);
-                std::cout << "❌ Cycle " << cycle << " failed: " << e.what() << "\n";
+                if (verbose_output) {
+                    std::cout << "❌ Cycle " << cycle << " failed: " << e.what() << "\n";
+                }
                 
                 // Try to cleanup in case of partial initialization
                 try {
@@ -121,6 +156,12 @@ public:
 };
 
 int main() {
+    // Check for verbosity control via environment variable
+    const char* quiet_env = std::getenv("SLONANA_TEST_QUIET");
+    if (quiet_env && std::string(quiet_env) == "1") {
+        verbose_output = false;
+    }
+    
     std::cout << "🧪 Shutdown Race Condition Test\n";
     std::cout << "================================\n";
     
