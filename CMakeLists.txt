@@ -177,6 +177,12 @@ add_executable(slonana_concurrency_stress_test
 )
 target_link_libraries(slonana_concurrency_stress_test slonana_core)
 
+# Timing race condition fix validation test
+add_executable(slonana_timing_race_test 
+    "${CMAKE_SOURCE_DIR}/tests/test_timing_race_fix.cpp"
+)
+target_link_libraries(slonana_timing_race_test slonana_core)
+
 # Find OpenSSL for PoH cryptographic operations
 find_package(OpenSSL REQUIRED)
 target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto)
