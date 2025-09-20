@@ -230,6 +230,21 @@ private:
   std::chrono::system_clock::time_point start_time_;
   std::atomic<uint64_t> lock_contention_count_{0};
   std::atomic<uint64_t> lock_attempts_{0};
+  
+  // Helper class for lock contention tracking
+  class InstrumentedLockGuard {
+  private:
+    std::lock_guard<std::mutex> guard_;
+    
+  public:
+    InstrumentedLockGuard(std::mutex& mutex, std::atomic<uint64_t>& attempts, 
+                         std::atomic<uint64_t>& contentions) : guard_(mutex) {
+      attempts.fetch_add(1, std::memory_order_relaxed);
+      // Note: Real contention detection would require try_lock timing, 
+      // but for now we assume any lock attempt could encounter contention
+      // This is a simplified implementation for basic monitoring
+    }
+  };
 };
 
 /**

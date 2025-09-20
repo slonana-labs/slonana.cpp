@@ -459,52 +459,88 @@ void ProofOfHistory::process_tick_batch() {
       tick_end - tick_start);
 
   {
-    std::lock_guard<std::mutex> lock(stats_mutex_);
-    stats_.total_ticks++;
-    stats_.total_hashes++;
-    stats_.batches_processed++;
-    stats_.last_tick_duration = tick_duration;
-
-    // Update min/max durations
-    if (tick_duration < stats_.min_tick_duration) {
-      stats_.min_tick_duration = tick_duration;
-    }
-    if (tick_duration > stats_.max_tick_duration) {
-      stats_.max_tick_duration = tick_duration;
-    }
-
-    // Calculate performance metrics
-    auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(
-        tick_end - start_time_);
-    if (stats_.total_ticks > 0) {
-      stats_.avg_tick_duration = total_duration / stats_.total_ticks;
-      stats_.ticks_per_second =
-          (double)stats_.total_ticks / (total_duration.count() / 1000000.0);
-      stats_.effective_tps = stats_.ticks_per_second * config_.batch_size;
-    }
-
-    // Calculate batch efficiency
-    if (stats_.batches_processed > 0) {
-      stats_.batch_efficiency = (double)stats_.total_hashes /
-                                (stats_.batches_processed * config_.batch_size);
-    }
-
-    // Calculate lock contention ratio only if tracking is enabled
+    // Use instrumented lock guard for stats_mutex_ to track contention
     if (config_.enable_lock_contention_tracking) {
+      InstrumentedLockGuard lock(stats_mutex_, lock_attempts_, lock_contention_count_);
+      stats_.total_ticks++;
+      stats_.total_hashes++;
+      stats_.batches_processed++;
+      stats_.last_tick_duration = tick_duration;
+
+      // Update min/max durations
+      if (tick_duration < stats_.min_tick_duration) {
+        stats_.min_tick_duration = tick_duration;
+      }
+      if (tick_duration > stats_.max_tick_duration) {
+        stats_.max_tick_duration = tick_duration;
+      }
+
+      // Calculate performance metrics
+      auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(
+          tick_end - start_time_);
+      if (stats_.total_ticks > 0) {
+        stats_.avg_tick_duration = total_duration / stats_.total_ticks;
+        stats_.ticks_per_second =
+            (double)stats_.total_ticks / (total_duration.count() / 1000000.0);
+        stats_.effective_tps = stats_.ticks_per_second * config_.batch_size;
+      }
+
+      // Calculate batch efficiency
+      if (stats_.batches_processed > 0) {
+        stats_.batch_efficiency = (double)stats_.total_hashes /
+                                  (stats_.batches_processed * config_.batch_size);
+      }
+
+      // Calculate lock contention ratio only if tracking is enabled
       uint64_t attempts = lock_attempts_.load(std::memory_order_relaxed);
       uint64_t contentions =
           lock_contention_count_.load(std::memory_order_relaxed);
       if (attempts > 0) {
         stats_.lock_contention_ratio = (double)contentions / attempts;
       }
-    } else {
-      stats_.lock_contention_ratio = 0.0; // Not tracked
-    }
 
-    stats_.pending_data_mixes = mixed_data_batch.size();
-    
-    // Update last tick time under mutex protection to prevent race conditions
-    last_tick_time_ = tick_end;
+      stats_.pending_data_mixes = mixed_data_batch.size();
+      
+      // Update last tick time under mutex protection to prevent race conditions
+      last_tick_time_ = tick_end;
+    } else {
+      std::lock_guard<std::mutex> lock(stats_mutex_);
+      stats_.total_ticks++;
+      stats_.total_hashes++;
+      stats_.batches_processed++;
+      stats_.last_tick_duration = tick_duration;
+
+      // Update min/max durations
+      if (tick_duration < stats_.min_tick_duration) {
+        stats_.min_tick_duration = tick_duration;
+      }
+      if (tick_duration > stats_.max_tick_duration) {
+        stats_.max_tick_duration = tick_duration;
+      }
+
+      // Calculate performance metrics
+      auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(
+          tick_end - start_time_);
+      if (stats_.total_ticks > 0) {
+        stats_.avg_tick_duration = total_duration / stats_.total_ticks;
+        stats_.ticks_per_second =
+            (double)stats_.total_ticks / (total_duration.count() / 1000000.0);
+        stats_.effective_tps = stats_.ticks_per_second * config_.batch_size;
+      }
+
+      // Calculate batch efficiency
+      if (stats_.batches_processed > 0) {
+        stats_.batch_efficiency = (double)stats_.total_hashes /
+                                  (stats_.batches_processed * config_.batch_size);
+      }
+
+      stats_.lock_contention_ratio = 0.0; // Not tracked
+
+      stats_.pending_data_mixes = mixed_data_batch.size();
+      
+      // Update last tick time under mutex protection to prevent race conditions
+      last_tick_time_ = tick_end;
+    }
   }
 }
 
@@ -575,33 +611,64 @@ void ProofOfHistory::process_tick() {
       tick_end - tick_start);
 
   {
-    std::lock_guard<std::mutex> lock(stats_mutex_);
-    stats_.total_ticks++;
-    stats_.total_hashes++;
-    stats_.last_tick_duration = tick_duration;
+    // Use instrumented lock guard for stats_mutex_ to track contention
+    if (config_.enable_lock_contention_tracking) {
+      InstrumentedLockGuard lock(stats_mutex_, lock_attempts_, lock_contention_count_);
+      stats_.total_ticks++;
+      stats_.total_hashes++;
+      stats_.last_tick_duration = tick_duration;
 
-    // Update min/max durations for legacy process_tick
-    if (tick_duration < stats_.min_tick_duration) {
-      stats_.min_tick_duration = tick_duration;
-    }
-    if (tick_duration > stats_.max_tick_duration) {
-      stats_.max_tick_duration = tick_duration;
-    }
+      // Update min/max durations for legacy process_tick
+      if (tick_duration < stats_.min_tick_duration) {
+        stats_.min_tick_duration = tick_duration;
+      }
+      if (tick_duration > stats_.max_tick_duration) {
+        stats_.max_tick_duration = tick_duration;
+      }
 
-    // Calculate average tick duration
-    auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(
-        tick_end - start_time_);
-    if (stats_.total_ticks > 0) {
-      stats_.avg_tick_duration = total_duration / stats_.total_ticks;
-      stats_.ticks_per_second =
-          (double)stats_.total_ticks / (total_duration.count() / 1000000.0);
-      stats_.effective_tps = stats_.ticks_per_second; // Single tick processing
-    }
+      // Calculate average tick duration
+      auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(
+          tick_end - start_time_);
+      if (stats_.total_ticks > 0) {
+        stats_.avg_tick_duration = total_duration / stats_.total_ticks;
+        stats_.ticks_per_second =
+            (double)stats_.total_ticks / (total_duration.count() / 1000000.0);
+        stats_.effective_tps = stats_.ticks_per_second; // Single tick processing
+      }
 
-    stats_.pending_data_mixes = 0; // Reset since we processed pending data
-    
-    // Update last tick time under mutex protection to prevent race conditions
-    last_tick_time_ = tick_end;
+      stats_.pending_data_mixes = 0; // Reset since we processed pending data
+      
+      // Update last tick time under mutex protection to prevent race conditions
+      last_tick_time_ = tick_end;
+    } else {
+      std::lock_guard<std::mutex> lock(stats_mutex_);
+      stats_.total_ticks++;
+      stats_.total_hashes++;
+      stats_.last_tick_duration = tick_duration;
+
+      // Update min/max durations for legacy process_tick
+      if (tick_duration < stats_.min_tick_duration) {
+        stats_.min_tick_duration = tick_duration;
+      }
+      if (tick_duration > stats_.max_tick_duration) {
+        stats_.max_tick_duration = tick_duration;
+      }
+
+      // Calculate average tick duration
+      auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(
+          tick_end - start_time_);
+      if (stats_.total_ticks > 0) {
+        stats_.avg_tick_duration = total_duration / stats_.total_ticks;
+        stats_.ticks_per_second =
+            (double)stats_.total_ticks / (total_duration.count() / 1000000.0);
+        stats_.effective_tps = stats_.ticks_per_second; // Single tick processing
+      }
+
+      stats_.pending_data_mixes = 0; // Reset since we processed pending data
+      
+      // Update last tick time under mutex protection to prevent race conditions
+      last_tick_time_ = tick_end;
+    }
   }
 }
 
