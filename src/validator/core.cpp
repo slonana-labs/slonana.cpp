@@ -25,7 +25,7 @@ std::vector<uint8_t> Vote::serialize() const {
   return result;
 }
 
-bool Vote::verify() const {
+bool Vote::verify() const noexcept {
   return slot > 0 && !block_hash.empty() && !validator_identity.empty();
 }
 
@@ -111,7 +111,7 @@ void ForkChoice::add_vote(const Vote &vote) {
 
 Hash ForkChoice::get_head() const { return impl_->head_hash_; }
 
-common::Slot ForkChoice::get_head_slot() const { return impl_->head_slot_; }
+Slot ForkChoice::get_head_slot() const noexcept { return impl_->head_slot_; }
 
 std::vector<Hash> ForkChoice::get_forks() const {
   std::vector<Hash> forks;
@@ -206,7 +206,7 @@ BlockValidator::BlockValidator(std::shared_ptr<ledger::LedgerManager> ledger)
 BlockValidator::~BlockValidator() = default;
 
 bool BlockValidator::validate_block_structure(
-    const ledger::Block &block) const {
+    const ledger::Block &block) const noexcept {
   return block.verify();
 }
 
@@ -545,7 +545,7 @@ common::Result<bool> ValidatorCore::start() {
   return common::Result<bool>(true);
 }
 
-void ValidatorCore::stop() {
+void ValidatorCore::stop() noexcept {
   if (impl_->running_) {
     std::cout << "Stopping validator core" << std::endl;
 
@@ -661,16 +661,16 @@ void ValidatorCore::set_block_callback(BlockCallback callback) {
   impl_->block_callback_ = std::move(callback);
 }
 
-bool ValidatorCore::is_running() const { return impl_->running_; }
+bool ValidatorCore::is_running() const noexcept { return impl_->running_; }
 
-common::Slot ValidatorCore::get_current_slot() const {
+Slot ValidatorCore::get_current_slot() const noexcept {
   // Return the PoH-driven current slot for RPC queries with safe checking
   // This represents the current time-based slot progression, not the blockchain
   // state
   return consensus::GlobalProofOfHistory::get_current_slot();
 }
 
-common::Slot ValidatorCore::get_blockchain_head_slot() const {
+Slot ValidatorCore::get_blockchain_head_slot() const noexcept {
   // Return the highest processed block slot (blockchain state)
   return fork_choice_->get_head_slot();
 }
@@ -792,7 +792,7 @@ bool ValidatorCore::enable_quic_networking(uint16_t port) {
   return true;
 }
 
-bool ValidatorCore::disable_quic_networking() {
+bool ValidatorCore::disable_quic_networking() noexcept {
   if (!quic_enabled_) {
     return true;
   }
@@ -885,7 +885,7 @@ Hash ForkChoice::select_best_fork_head() const {
 }
 
 bool ForkChoice::is_ancestor(const Hash &potential_ancestor,
-                             const Hash &descendant) const {
+                             const Hash &descendant) const noexcept {
   // Check if potential_ancestor is an ancestor of descendant by traversing the
   // chain
   for (const auto &block : impl_->blocks_) {
