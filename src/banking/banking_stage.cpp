@@ -1,5 +1,6 @@
 #include "banking/banking_stage.h"
 #include <algorithm>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <random>
@@ -382,7 +383,13 @@ BankingStage::BankingStage()
       priority_processing_enabled_(false), ledger_manager_(nullptr),
       should_stop_(false), total_transactions_processed_(0),
       total_batches_processed_(0), failed_transactions_(0),
-      total_processing_time_ms_(0) {}
+      total_processing_time_ms_(0),
+      transaction_processor_breaker_(common::CircuitBreakerConfig{10, std::chrono::milliseconds(5000), 3}),
+      transaction_retry_policy_(common::FaultTolerance::create_rpc_retry_policy()),
+      state_checkpoint_(std::make_shared<common::FileCheckpoint>("/tmp/banking_checkpoints")) {
+  
+  std::cout << "Banking Stage initialized with fault tolerance mechanisms" << std::endl;
+}
 
 BankingStage::~BankingStage() { shutdown(); }
 
@@ -1363,6 +1370,130 @@ BankingStage::encode_base58_safe(const std::vector<uint8_t> &data) const {
   } catch (...) {
     std::cerr << "ERROR: Unknown error in safe base58 encoding" << std::endl;
     return "error_unknown_base58_error";
+  }
+}
+
+// Fault tolerance implementations
+common::Result<bool> BankingStage::process_transaction_with_fault_tolerance(TransactionPtr transaction) {
+  if (!transaction) {
+    return common::Result<bool>("Invalid transaction pointer");
+  }
+  
+  // Check if operation is allowed in current degradation mode
+  if (!degradation_manager_.is_operation_allowed("banking", "process_transaction")) {
+    return common::Result<bool>("Transaction processing temporarily disabled due to degraded mode");
+  }
+  
+  // Define the transaction processing operation
+  auto process_operation = [this, transaction]() -> common::Result<bool> {
+    try {
+      // Simulate transaction processing logic here
+      // In real implementation, this would call actual transaction processing
+      std::cout << "Processing transaction with fault tolerance..." << std::endl;
+      
+      // Mock processing - in real implementation this would be actual transaction logic
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      
+      return common::Result<bool>(true);
+    } catch (const std::exception& e) {
+      return common::Result<bool>("Transaction processing failed: " + std::string(e.what()));
+    }
+  };
+  
+  // Execute with circuit breaker and retry logic
+  return transaction_processor_breaker_.execute([&]() {
+    return common::FaultTolerance::retry_with_backoff(process_operation, transaction_retry_policy_);
+  });
+}
+
+common::Result<bool> BankingStage::save_banking_state() {
+  if (!state_checkpoint_) {
+    return common::Result<bool>("State checkpoint not initialized");
+  }
+  
+  try {
+    // Create checkpoint data including current batch state and statistics
+    std::vector<uint8_t> state_data;
+    
+    // Serialize current banking state (simplified)
+    auto timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+      std::chrono::system_clock::now().time_since_epoch()
+    ).count();
+    
+    state_data.resize(32);
+    auto transactions_count = total_transactions_processed_.load();
+    auto batches_count = total_batches_processed_.load();
+    auto failures_count = failed_transactions_.load();
+    
+    memcpy(state_data.data(), &timestamp, sizeof(timestamp));
+    memcpy(state_data.data() + 8, &transactions_count, sizeof(uint64_t));
+    memcpy(state_data.data() + 16, &batches_count, sizeof(uint64_t));
+    memcpy(state_data.data() + 24, &failures_count, sizeof(uint64_t));
+    
+    auto checkpoint_id = "banking_state_" + std::to_string(timestamp);
+    return state_checkpoint_->save_data(checkpoint_id, state_data);
+  } catch (const std::exception& e) {
+    return common::Result<bool>("Failed to save banking state: " + std::string(e.what()));
+  }
+}
+
+common::Result<bool> BankingStage::restore_banking_state() {
+  if (!state_checkpoint_) {
+    return common::Result<bool>("State checkpoint not initialized");
+  }
+  
+  try {
+    // List available checkpoints and restore from the latest
+    auto checkpoints_result = state_checkpoint_->list_checkpoints();
+    if (checkpoints_result.is_err()) {
+      return common::Result<bool>("Failed to list checkpoints: " + checkpoints_result.error());
+    }
+    
+    auto checkpoints = checkpoints_result.value();
+    if (checkpoints.empty()) {
+      return common::Result<bool>(true); // No checkpoints to restore from
+    }
+    
+    // Find the latest banking state checkpoint
+    std::string latest_checkpoint;
+    for (const auto& checkpoint : checkpoints) {
+      if (checkpoint.find("banking_state_") == 0) {
+        latest_checkpoint = checkpoint;
+        break; // Assuming checkpoints are sorted by timestamp (newest first)
+      }
+    }
+    
+    if (latest_checkpoint.empty()) {
+      return common::Result<bool>(true); // No banking checkpoints found
+    }
+    
+    auto data_result = state_checkpoint_->load_data(latest_checkpoint);
+    if (data_result.is_err()) {
+      return common::Result<bool>("Failed to load checkpoint data: " + data_result.error());
+    }
+    
+    auto state_data = data_result.value();
+    if (state_data.size() < 32) {
+      return common::Result<bool>("Invalid checkpoint data size");
+    }
+    
+    // Restore state (simplified)
+    uint64_t timestamp, transactions, batches, failures;
+    memcpy(&timestamp, state_data.data(), sizeof(timestamp));
+    memcpy(&transactions, state_data.data() + 8, sizeof(uint64_t));
+    memcpy(&batches, state_data.data() + 16, sizeof(uint64_t));
+    memcpy(&failures, state_data.data() + 24, sizeof(uint64_t));
+    
+    total_transactions_processed_.store(transactions);
+    total_batches_processed_.store(batches);
+    failed_transactions_.store(failures);
+    
+    std::cout << "Banking state restored from checkpoint: " << latest_checkpoint 
+              << " (transactions: " << transactions << ", batches: " << batches << ")" << std::endl;
+    
+    return common::Result<bool>(true);
+  } catch (const std::exception& e) {
+    return common::Result<bool>("Failed to restore banking state: " + std::string(e.what()));
   }
 }
 
