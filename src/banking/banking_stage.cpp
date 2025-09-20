@@ -1,8 +1,10 @@
 #include "banking/banking_stage.h"
+#include "common/logging.h"
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <cstring>
+#include <execution>
 #include <fstream>
 #include <iostream>
 #include <random>
@@ -129,10 +131,12 @@ void PipelineStage::worker_loop() {
 
       try {
         std::unique_lock<std::mutex> lock(queue_mutex_);
-        
+
         // **ENHANCED TIMEOUT HANDLING** - Prevent indefinite blocking
         auto timeout = std::chrono::seconds(1); // 1 second timeout
-        if (!queue_cv_.wait_for(lock, timeout, [this] { return !batch_queue_.empty() || should_stop_; })) {
+        if (!queue_cv_.wait_for(lock, timeout, [this] {
+              return !batch_queue_.empty() || should_stop_;
+            })) {
           // Timeout occurred, check if we should continue
           if (should_stop_) {
             break;
@@ -149,56 +153,68 @@ void PipelineStage::worker_loop() {
           batch_queue_.pop();
         }
       } catch (const std::system_error &e) {
-        std::cerr << "ERROR: System error in worker loop queue handling: " << e.what() << std::endl;
+        std::cerr << "ERROR: System error in worker loop queue handling: "
+                  << e.what() << std::endl;
         continue;
       } catch (const std::exception &e) {
-        std::cerr << "ERROR: Exception in worker loop queue handling: " << e.what() << std::endl;
+        std::cerr << "ERROR: Exception in worker loop queue handling: "
+                  << e.what() << std::endl;
         continue;
       } catch (...) {
-        std::cerr << "ERROR: Unknown exception in worker loop queue handling" << std::endl;
+        std::cerr << "ERROR: Unknown exception in worker loop queue handling"
+                  << std::endl;
         continue;
       }
 
       if (batch) {
         try {
-          // **ENHANCED BATCH VALIDATION** - Ensure batch is valid before processing
+          // **ENHANCED BATCH VALIDATION** - Ensure batch is valid before
+          // processing
           if (!batch) {
-            std::cerr << "ERROR: Null batch pointer after dequeue in " << name_ << std::endl;
+            std::cerr << "ERROR: Null batch pointer after dequeue in " << name_
+                      << std::endl;
             continue;
           }
-          
+
           // Validate batch state
           if (batch->empty()) {
-            std::cerr << "WARNING: Empty batch in " << name_ << ", skipping" << std::endl;
+            std::cerr << "WARNING: Empty batch in " << name_ << ", skipping"
+                      << std::endl;
             continue;
           }
-          
-          std::cerr << "DEBUG: Processing batch " << batch->get_batch_id() 
-                    << " with " << batch->size() << " transactions in " << name_ << std::endl;
-          
+
+          std::cerr << "DEBUG: Processing batch " << batch->get_batch_id()
+                    << " with " << batch->size() << " transactions in " << name_
+                    << std::endl;
+
           process_batch(batch);
-          
+
         } catch (const std::bad_alloc &e) {
-          std::cerr << "CRITICAL: Memory allocation error processing batch in " << name_ << ": " << e.what() << std::endl;
+          std::cerr << "CRITICAL: Memory allocation error processing batch in "
+                    << name_ << ": " << e.what() << std::endl;
           // Don't continue - memory issues are serious
           break;
         } catch (const std::runtime_error &e) {
-          std::cerr << "ERROR: Runtime error processing batch in " << name_ << ": " << e.what() << std::endl;
+          std::cerr << "ERROR: Runtime error processing batch in " << name_
+                    << ": " << e.what() << std::endl;
         } catch (const std::exception &e) {
-          std::cerr << "ERROR: Exception processing batch in worker: " << e.what() << std::endl;
+          std::cerr << "ERROR: Exception processing batch in worker: "
+                    << e.what() << std::endl;
         } catch (...) {
-          std::cerr << "ERROR: Unknown exception processing batch in worker" << std::endl;
+          std::cerr << "ERROR: Unknown exception processing batch in worker"
+                    << std::endl;
         }
       }
     }
   } catch (const std::bad_alloc &e) {
-    std::cerr << "CRITICAL: Memory allocation error in worker loop: " << e.what() << std::endl;
+    std::cerr << "CRITICAL: Memory allocation error in worker loop: "
+              << e.what() << std::endl;
   } catch (const std::exception &e) {
     std::cerr << "CRITICAL: Worker loop exception: " << e.what() << std::endl;
   } catch (...) {
     std::cerr << "CRITICAL: Unknown worker loop exception" << std::endl;
   }
-  
+
   std::cerr << "DEBUG: Worker loop for " << name_ << " terminated" << std::endl;
 }
 
@@ -215,35 +231,38 @@ void PipelineStage::process_batch(std::shared_ptr<TransactionBatch> batch) {
   bool success = false;
   try {
     if (!process_fn_) {
-      std::cerr << "ERROR: Null process function in stage " << name_ << std::endl;
+      std::cerr << "ERROR: Null process function in stage " << name_
+                << std::endl;
       success = false;
     } else {
       // **ENHANCED PROCESS FUNCTION PROTECTION** - Additional safety checks
-      std::cerr << "DEBUG: Executing process function for batch " << batch->get_batch_id() 
-                << " in stage " << name_ << std::endl;
-      
+      std::cerr << "DEBUG: Executing process function for batch "
+                << batch->get_batch_id() << " in stage " << name_ << std::endl;
+
       // Validate batch state before processing
       if (batch->get_state() != TransactionBatch::State::PROCESSING) {
-        std::cerr << "WARNING: Batch " << batch->get_batch_id() 
+        std::cerr << "WARNING: Batch " << batch->get_batch_id()
                   << " not in PROCESSING state in " << name_ << std::endl;
       }
-      
+
       success = process_fn_(batch);
-      
-      std::cerr << "DEBUG: Process function completed for batch " << batch->get_batch_id() 
-                << " in stage " << name_ << " with result: " << (success ? "SUCCESS" : "FAILURE") << std::endl;
+
+      std::cerr << "DEBUG: Process function completed for batch "
+                << batch->get_batch_id() << " in stage " << name_
+                << " with result: " << (success ? "SUCCESS" : "FAILURE")
+                << std::endl;
     }
   } catch (const std::bad_alloc &e) {
-    std::cerr << "CRITICAL: Memory allocation error in stage " << name_ << ": " 
+    std::cerr << "CRITICAL: Memory allocation error in stage " << name_ << ": "
               << e.what() << std::endl;
     success = false;
   } catch (const std::runtime_error &e) {
-    std::cerr << "ERROR: Runtime error processing batch in stage " << name_ << ": " 
-              << e.what() << std::endl;
+    std::cerr << "ERROR: Runtime error processing batch in stage " << name_
+              << ": " << e.what() << std::endl;
     success = false;
   } catch (const std::logic_error &e) {
-    std::cerr << "ERROR: Logic error processing batch in stage " << name_ << ": " 
-              << e.what() << std::endl;
+    std::cerr << "ERROR: Logic error processing batch in stage " << name_
+              << ": " << e.what() << std::endl;
     success = false;
   } catch (const std::exception &e) {
     std::cerr << "Error processing batch in stage " << name_ << ": " << e.what()
@@ -267,22 +286,22 @@ void PipelineStage::process_batch(std::shared_ptr<TransactionBatch> batch) {
 
       // Forward to next stage with validation
       if (next_stage_) {
-        std::cerr << "DEBUG: Forwarding batch " << batch->get_batch_id() 
+        std::cerr << "DEBUG: Forwarding batch " << batch->get_batch_id()
                   << " from " << name_ << " to next stage" << std::endl;
         next_stage_->submit_batch(batch);
       } else {
-        std::cerr << "DEBUG: Batch " << batch->get_batch_id() 
+        std::cerr << "DEBUG: Batch " << batch->get_batch_id()
                   << " completed in final stage " << name_ << std::endl;
       }
     } else {
       batch->set_state(TransactionBatch::State::FAILED);
       failed_batches_++;
-      std::cerr << "WARNING: Batch " << batch->get_batch_id() 
+      std::cerr << "WARNING: Batch " << batch->get_batch_id()
                 << " failed in stage " << name_ << std::endl;
     }
   } catch (const std::exception &e) {
-    std::cerr << "ERROR: Exception during batch state transition in " << name_ << ": " 
-              << e.what() << std::endl;
+    std::cerr << "ERROR: Exception during batch state transition in " << name_
+              << ": " << e.what() << std::endl;
     // Ensure we count failed batches even if state setting fails
     if (!success) {
       failed_batches_++;
@@ -427,12 +446,15 @@ bool BankingStage::initialize() {
     // **SAFE PIPELINE INITIALIZATION** - Enhanced error handling
     try {
       initialize_pipeline();
-      std::cout << "Banking stage pipeline initialized successfully" << std::endl;
+      std::cout << "Banking stage pipeline initialized successfully"
+                << std::endl;
     } catch (const std::exception &e) {
-      std::cerr << "ERROR: Failed to initialize banking stage pipeline: " << e.what() << std::endl;
+      std::cerr << "ERROR: Failed to initialize banking stage pipeline: "
+                << e.what() << std::endl;
       return false;
     } catch (...) {
-      std::cerr << "ERROR: Unknown error initializing banking stage pipeline" << std::endl;
+      std::cerr << "ERROR: Unknown error initializing banking stage pipeline"
+                << std::endl;
       return false;
     }
 
@@ -442,23 +464,28 @@ bool BankingStage::initialize() {
         resource_monitor_ = std::make_unique<ResourceMonitor>();
         std::cout << "Banking stage resource monitor initialized" << std::endl;
       } catch (const std::bad_alloc &e) {
-        std::cerr << "ERROR: Memory allocation failed for resource monitor: " << e.what() << std::endl;
+        std::cerr << "ERROR: Memory allocation failed for resource monitor: "
+                  << e.what() << std::endl;
         resource_monitoring_enabled_ = false; // Disable monitoring but continue
       } catch (const std::exception &e) {
-        std::cerr << "ERROR: Failed to initialize resource monitor: " << e.what() << std::endl;
+        std::cerr << "ERROR: Failed to initialize resource monitor: "
+                  << e.what() << std::endl;
         resource_monitoring_enabled_ = false; // Disable monitoring but continue
       }
     }
 
     initialized_ = true;
-    std::cout << "Banking stage initialization completed successfully" << std::endl;
+    std::cout << "Banking stage initialization completed successfully"
+              << std::endl;
     return true;
-    
+
   } catch (const std::exception &e) {
-    std::cerr << "CRITICAL: Banking stage initialization failed: " << e.what() << std::endl;
+    std::cerr << "CRITICAL: Banking stage initialization failed: " << e.what()
+              << std::endl;
     return false;
   } catch (...) {
-    std::cerr << "CRITICAL: Unknown error during banking stage initialization" << std::endl;
+    std::cerr << "CRITICAL: Unknown error during banking stage initialization"
+              << std::endl;
     return false;
   }
 }
@@ -466,10 +493,11 @@ bool BankingStage::initialize() {
 bool BankingStage::start() {
   try {
     if (!initialized_) {
-      std::cerr << "ERROR: Cannot start banking stage - not initialized" << std::endl;
+      std::cerr << "ERROR: Cannot start banking stage - not initialized"
+                << std::endl;
       return false;
     }
-    
+
     if (running_) {
       std::cout << "Banking stage already running" << std::endl;
       return true;
@@ -484,15 +512,18 @@ bool BankingStage::start() {
         std::cerr << "ERROR: Null pipeline stage at index " << i << std::endl;
         return false;
       }
-      
+
       try {
         if (!stage->start()) {
-          std::cerr << "ERROR: Failed to start pipeline stage " << i << std::endl;
+          std::cerr << "ERROR: Failed to start pipeline stage " << i
+                    << std::endl;
           return false;
         }
-        std::cout << "Started pipeline stage " << i << " successfully" << std::endl;
+        std::cout << "Started pipeline stage " << i << " successfully"
+                  << std::endl;
       } catch (const std::exception &e) {
-        std::cerr << "ERROR: Exception starting pipeline stage " << i << ": " << e.what() << std::endl;
+        std::cerr << "ERROR: Exception starting pipeline stage " << i << ": "
+                  << e.what() << std::endl;
         return false;
       }
     }
@@ -501,13 +532,16 @@ bool BankingStage::start() {
     if (resource_monitor_) {
       try {
         if (!resource_monitor_->start()) {
-          std::cerr << "WARNING: Resource monitor failed to start, continuing without monitoring" << std::endl;
+          std::cerr << "WARNING: Resource monitor failed to start, continuing "
+                       "without monitoring"
+                    << std::endl;
           resource_monitor_.reset(); // Disable monitoring but continue
         } else {
           std::cout << "Resource monitor started successfully" << std::endl;
         }
       } catch (const std::exception &e) {
-        std::cerr << "WARNING: Exception starting resource monitor: " << e.what() << std::endl;
+        std::cerr << "WARNING: Exception starting resource monitor: "
+                  << e.what() << std::endl;
         resource_monitor_.reset(); // Disable monitoring but continue
       }
     }
@@ -515,12 +549,14 @@ bool BankingStage::start() {
     running_ = true;
     std::cout << "Banking stage started successfully" << std::endl;
     return true;
-    
+
   } catch (const std::exception &e) {
-    std::cerr << "CRITICAL: Banking stage startup failed: " << e.what() << std::endl;
+    std::cerr << "CRITICAL: Banking stage startup failed: " << e.what()
+              << std::endl;
     return false;
   } catch (...) {
-    std::cerr << "CRITICAL: Unknown error during banking stage startup" << std::endl;
+    std::cerr << "CRITICAL: Unknown error during banking stage startup"
+              << std::endl;
     return false;
   }
 }
@@ -572,29 +608,34 @@ bool BankingStage::shutdown() {
 void BankingStage::submit_transaction(TransactionPtr transaction) {
   // **ENHANCED VALIDATION** - Comprehensive safety checks before processing
   if (!running_) {
-    std::cerr << "WARNING: Banking stage not running, rejecting transaction" << std::endl;
+    std::cerr << "WARNING: Banking stage not running, rejecting transaction"
+              << std::endl;
     return;
   }
-  
+
   if (!transaction) {
-    std::cerr << "ERROR: Null transaction pointer submitted to banking stage" << std::endl;
+    std::cerr << "ERROR: Null transaction pointer submitted to banking stage"
+              << std::endl;
     return;
   }
-  
+
   try {
     // **ADDITIONAL TRANSACTION VALIDATION** - Ensure transaction is well-formed
     if (transaction->signatures.empty()) {
-      std::cerr << "WARNING: Transaction submitted without signatures" << std::endl;
-      // Continue processing - some transactions might be valid without signatures in test mode
+      std::cerr << "WARNING: Transaction submitted without signatures"
+                << std::endl;
+      // Continue processing - some transactions might be valid without
+      // signatures in test mode
     }
-    
+
     if (transaction->message.empty()) {
-      std::cerr << "WARNING: Transaction submitted with empty message" << std::endl;
+      std::cerr << "WARNING: Transaction submitted with empty message"
+                << std::endl;
       // Continue processing - this might be a test transaction
     }
-    
-    std::cerr << "DEBUG: Banking stage accepting transaction with " 
-              << transaction->signatures.size() << " signatures and " 
+
+    std::cerr << "DEBUG: Banking stage accepting transaction with "
+              << transaction->signatures.size() << " signatures and "
               << transaction->message.size() << " byte message" << std::endl;
 
     if (priority_processing_enabled_) {
@@ -606,9 +647,11 @@ void BankingStage::submit_transaction(TransactionPtr transaction) {
           priority = it->second;
         }
         priority_queue_.push({priority, transaction});
-        std::cerr << "DEBUG: Added transaction to priority queue with priority " << priority << std::endl;
+        std::cerr << "DEBUG: Added transaction to priority queue with priority "
+                  << priority << std::endl;
       } catch (const std::exception &e) {
-        std::cerr << "ERROR: Exception adding transaction to priority queue: " << e.what() << std::endl;
+        std::cerr << "ERROR: Exception adding transaction to priority queue: "
+                  << e.what() << std::endl;
         return;
       }
     } else {
@@ -617,7 +660,8 @@ void BankingStage::submit_transaction(TransactionPtr transaction) {
         transaction_queue_.push(transaction);
         std::cerr << "DEBUG: Added transaction to standard queue" << std::endl;
       } catch (const std::exception &e) {
-        std::cerr << "ERROR: Exception adding transaction to standard queue: " << e.what() << std::endl;
+        std::cerr << "ERROR: Exception adding transaction to standard queue: "
+                  << e.what() << std::endl;
         return;
       }
     }
@@ -626,16 +670,20 @@ void BankingStage::submit_transaction(TransactionPtr transaction) {
     try {
       queue_cv_.notify_one();
     } catch (const std::exception &e) {
-      std::cerr << "ERROR: Exception notifying worker threads: " << e.what() << std::endl;
+      std::cerr << "ERROR: Exception notifying worker threads: " << e.what()
+                << std::endl;
       // Continue - transaction is queued even if notification fails
     }
-    
+
   } catch (const std::bad_alloc &e) {
-    std::cerr << "CRITICAL: Memory allocation error in submit_transaction: " << e.what() << std::endl;
+    std::cerr << "CRITICAL: Memory allocation error in submit_transaction: "
+              << e.what() << std::endl;
   } catch (const std::exception &e) {
-    std::cerr << "ERROR: Exception in submit_transaction: " << e.what() << std::endl;
+    std::cerr << "ERROR: Exception in submit_transaction: " << e.what()
+              << std::endl;
   } catch (...) {
-    std::cerr << "CRITICAL: Unknown exception in submit_transaction" << std::endl;
+    std::cerr << "CRITICAL: Unknown exception in submit_transaction"
+              << std::endl;
   }
 }
 
@@ -872,44 +920,61 @@ void BankingStage::process_transaction_queue() {
 bool BankingStage::validate_batch(std::shared_ptr<TransactionBatch> batch) {
   // Validate all transactions in the batch with enhanced safety checks
   if (!batch) {
-    std::cerr << "ERROR: Null batch in validate_batch" << std::endl;
+    LOG_ERROR("Null batch in validate_batch");
     return false;
   }
-  
-  auto &transactions = batch->get_transactions();
-  std::vector<bool> results;
-  results.reserve(transactions.size());
 
-  size_t local_failed_count = 0;
-  
-  for (const auto &transaction : transactions) {
-    bool valid = false;
-    
-    try {
-      // **ENHANCED TRANSACTION VALIDATION WITH SAFETY CHECKS**
-      if (transaction) {
-        // Verify transaction pointer is still valid before calling verify()
-        valid = transaction->verify();
+  auto &transactions = batch->get_transactions();
+  std::vector<bool> results(transactions.size());
+
+  // Use parallel algorithms for performance-critical transaction validation
+  // as recommended in CODE_STYLE.md
+  try {
+    std::transform(
+        std::execution::par_unseq, transactions.begin(), transactions.end(),
+        results.begin(), [](const TransactionPtr &transaction) -> bool {
+          try {
+            // Enhanced transaction validation with safety checks
+            if (transaction) {
+              // Verify transaction pointer is still valid before calling
+              // verify()
+              return transaction->verify();
+            }
+            return false;
+          } catch (const std::exception &e) {
+            LOG_ERROR("Exception during transaction validation: ", e.what());
+            return false;
+          } catch (...) {
+            LOG_ERROR("Unknown exception during transaction validation");
+            return false;
+          }
+        });
+  } catch (const std::exception &e) {
+    // Fallback to sequential processing if parallel execution fails
+    LOG_WARN("Parallel validation failed, falling back to sequential: ",
+             e.what());
+
+    for (size_t i = 0; i < transactions.size(); ++i) {
+      try {
+        if (transactions[i]) {
+          results[i] = transactions[i]->verify();
+        } else {
+          results[i] = false;
+        }
+      } catch (const std::exception &ex) {
+        LOG_ERROR("Transaction validation error: ", ex.what());
+        results[i] = false;
+      } catch (...) {
+        LOG_ERROR("Unknown transaction validation error");
+        results[i] = false;
       }
-      
-      results.push_back(valid);
-      
-      if (!valid) {
-        local_failed_count++;
-      }
-      
-    } catch (const std::exception &e) {
-      std::cerr << "ERROR: Exception during transaction validation: " << e.what() << std::endl;
-      results.push_back(false);
-      local_failed_count++;
-    } catch (...) {
-      std::cerr << "ERROR: Unknown exception during transaction validation" << std::endl;
-      results.push_back(false);
-      local_failed_count++;
     }
   }
 
-  // **THREAD-SAFE COUNTER UPDATE** - Update failed transactions atomically
+  // Count failed transactions
+  size_t local_failed_count = std::count(results.begin(), results.end(), false);
+
+  // Thread-safe counter update - Update failed transactions atomically
   failed_transactions_.fetch_add(local_failed_count, std::memory_order_relaxed);
 
   batch->set_results(results);
@@ -920,48 +985,66 @@ bool BankingStage::validate_batch(std::shared_ptr<TransactionBatch> batch) {
 bool BankingStage::execute_batch(std::shared_ptr<TransactionBatch> batch) {
   // Execute all transactions in the batch with enhanced safety
   if (!batch) {
-    std::cerr << "ERROR: Null batch in execute_batch" << std::endl;
+    LOG_ERROR("Null batch in execute_batch");
     return false;
   }
-  
-  auto &transactions = batch->get_transactions();
-  std::vector<bool> results;
-  results.reserve(transactions.size());
 
-  size_t local_processed_count = 0;
-  size_t local_failed_count = 0;
-  
-  for (const auto &transaction : transactions) {
-    bool executed = false;
-    
-    try {
-      // **ENHANCED TRANSACTION EXECUTION WITH SAFETY CHECKS**
-      if (transaction) {
-        // More robust execution check - verify transaction is well-formed
-        executed = !transaction->signatures.empty() && !transaction->message.empty();
+  auto &transactions = batch->get_transactions();
+  std::vector<bool> results(transactions.size());
+
+  // Use parallel algorithms for performance-critical transaction execution
+  // as recommended in CODE_STYLE.md for transaction processing
+  try {
+    std::transform(
+        std::execution::par_unseq, transactions.begin(), transactions.end(),
+        results.begin(), [](const TransactionPtr &transaction) -> bool {
+          try {
+            // Enhanced transaction execution with safety checks
+            if (transaction) {
+              // More robust execution check - verify transaction is well-formed
+              return !transaction->signatures.empty() &&
+                     !transaction->message.empty();
+            }
+            return false;
+          } catch (const std::exception &e) {
+            LOG_ERROR("Exception during transaction execution: ", e.what());
+            return false;
+          } catch (...) {
+            LOG_ERROR("Unknown exception during transaction execution");
+            return false;
+          }
+        });
+  } catch (const std::exception &e) {
+    // Fallback to sequential processing if parallel execution fails
+    LOG_WARN("Parallel execution failed, falling back to sequential: ",
+             e.what());
+
+    for (size_t i = 0; i < transactions.size(); ++i) {
+      try {
+        if (transactions[i]) {
+          results[i] = !transactions[i]->signatures.empty() &&
+                       !transactions[i]->message.empty();
+        } else {
+          results[i] = false;
+        }
+      } catch (const std::exception &ex) {
+        LOG_ERROR("Transaction execution error: ", ex.what());
+        results[i] = false;
+      } catch (...) {
+        LOG_ERROR("Unknown transaction execution error");
+        results[i] = false;
       }
-      
-      results.push_back(executed);
-      
-      if (executed) {
-        local_processed_count++;
-      } else {
-        local_failed_count++;
-      }
-      
-    } catch (const std::exception &e) {
-      std::cerr << "ERROR: Exception during transaction execution: " << e.what() << std::endl;
-      results.push_back(false);
-      local_failed_count++;
-    } catch (...) {
-      std::cerr << "ERROR: Unknown exception during transaction execution" << std::endl;
-      results.push_back(false);
-      local_failed_count++;
     }
   }
 
-  // **THREAD-SAFE COUNTER UPDATES** - Update counters atomically
-  total_transactions_processed_.fetch_add(local_processed_count, std::memory_order_relaxed);
+  // Count processed and failed transactions
+  size_t local_processed_count =
+      std::count(results.begin(), results.end(), true);
+  size_t local_failed_count = results.size() - local_processed_count;
+
+  // Thread-safe counter updates - Update counters atomically
+  total_transactions_processed_.fetch_add(local_processed_count,
+                                          std::memory_order_relaxed);
   failed_transactions_.fetch_add(local_failed_count, std::memory_order_relaxed);
 
   batch->set_results(results);
@@ -972,21 +1055,21 @@ bool BankingStage::execute_batch(std::shared_ptr<TransactionBatch> batch) {
 bool BankingStage::commit_batch(std::shared_ptr<TransactionBatch> batch) {
   // Production-ready commitment process that records transactions in the ledger
   if (!batch) {
-    std::cerr << "ERROR: Null batch in commit_batch" << std::endl;
+    LOG_ERROR("Null batch in commit_batch");
     return false;
   }
-  
+
   auto &transactions = batch->get_transactions();
   bool all_committed = true;
 
   // **THREAD-SAFE LEDGER ACCESS** - Use mutex to protect ledger operations
   std::unique_lock<std::mutex> ledger_lock(ledger_mutex_, std::defer_lock);
-  
+
   if (ledger_manager_) {
     try {
       // Acquire lock for ledger operations to prevent race conditions
       ledger_lock.lock();
-      
+
       // Create a new block to contain these transactions
       ledger::Block new_block;
       new_block.slot = ledger_manager_->get_latest_slot() + 1;
@@ -1008,24 +1091,31 @@ bool BankingStage::commit_batch(std::shared_ptr<TransactionBatch> batch) {
 
             // **SAFE BASE58 ENCODING** - Protect against encoding crashes
             try {
-              if (!ledger_tx.signatures.empty() && !ledger_tx.signatures[0].empty()) {
+              if (!ledger_tx.signatures.empty() &&
+                  !ledger_tx.signatures[0].empty()) {
                 // Transaction ID should be the base58-encoded first signature
-                // This ensures mixed-case format consistent with Solana conventions
-                std::string transaction_id = encode_base58_safe(ledger_tx.signatures[0]);
+                // This ensures mixed-case format consistent with Solana
+                // conventions
+                std::string transaction_id =
+                    encode_base58_safe(ledger_tx.signatures[0]);
                 std::cout << "Banking: Transaction committed with ID: "
-                          << transaction_id << " (base58-encoded, mixed-case format)"
+                          << transaction_id
+                          << " (base58-encoded, mixed-case format)"
                           << std::endl;
               }
             } catch (const std::exception &encode_error) {
-              std::cerr << "ERROR: Base58 encoding failed: " << encode_error.what() << std::endl;
-              // Continue processing - encoding failure shouldn't stop commitment
+              std::cerr << "ERROR: Base58 encoding failed: "
+                        << encode_error.what() << std::endl;
+              // Continue processing - encoding failure shouldn't stop
+              // commitment
             }
 
             new_block.transactions.push_back(ledger_tx);
             processed_transactions++;
           }
         } catch (const std::exception &tx_error) {
-          std::cerr << "ERROR: Transaction processing failed: " << tx_error.what() << std::endl;
+          std::cerr << "ERROR: Transaction processing failed: "
+                    << tx_error.what() << std::endl;
           all_committed = false;
         }
       }
@@ -1039,40 +1129,47 @@ bool BankingStage::commit_batch(std::shared_ptr<TransactionBatch> batch) {
           // Store the block in the ledger with balance state tracking
           auto store_result = ledger_manager_->store_block(new_block);
           if (!store_result.is_ok()) {
-            std::cerr << "Banking: Failed to store transaction block in ledger: "
-                      << store_result.error() << std::endl;
+            std::cerr
+                << "Banking: Failed to store transaction block in ledger: "
+                << store_result.error() << std::endl;
             all_committed = false;
           } else {
             try {
               std::cout << "Banking: Successfully committed "
                         << processed_transactions
                         << " transactions to ledger at slot " << new_block.slot
-                        << " with block hash: " << encode_base58_safe(new_block.block_hash)
+                        << " with block hash: "
+                        << encode_base58_safe(new_block.block_hash)
                         << std::endl;
             } catch (const std::exception &log_error) {
-              std::cerr << "ERROR: Logging failed: " << log_error.what() << std::endl;
+              std::cerr << "ERROR: Logging failed: " << log_error.what()
+                        << std::endl;
             }
 
-            // **THREAD-SAFE COUNTER UPDATES** - Update counters atomically after successful commit
-            total_transactions_processed_.fetch_add(processed_transactions, std::memory_order_relaxed);
+            // **THREAD-SAFE COUNTER UPDATES** - Update counters atomically
+            // after successful commit
+            total_transactions_processed_.fetch_add(processed_transactions,
+                                                    std::memory_order_relaxed);
             total_batches_processed_.fetch_add(1, std::memory_order_relaxed);
           }
         } catch (const std::exception &block_error) {
-          std::cerr << "ERROR: Block processing failed: " << block_error.what() << std::endl;
+          std::cerr << "ERROR: Block processing failed: " << block_error.what()
+                    << std::endl;
           all_committed = false;
         }
       } else {
         std::cout << "Banking: No valid transactions to commit in batch"
                   << std::endl;
       }
-      
+
       // Release the lock before callback
       ledger_lock.unlock();
-      
+
     } catch (const std::exception &ledger_error) {
-      std::cerr << "ERROR: Ledger operation failed: " << ledger_error.what() << std::endl;
+      std::cerr << "ERROR: Ledger operation failed: " << ledger_error.what()
+                << std::endl;
       all_committed = false;
-      
+
       // Ensure lock is released on error
       if (ledger_lock.owns_lock()) {
         ledger_lock.unlock();
@@ -1080,7 +1177,7 @@ bool BankingStage::commit_batch(std::shared_ptr<TransactionBatch> batch) {
     } catch (...) {
       std::cerr << "ERROR: Unknown error in ledger operations" << std::endl;
       all_committed = false;
-      
+
       // Ensure lock is released on error
       if (ledger_lock.owns_lock()) {
         ledger_lock.unlock();
@@ -1101,7 +1198,8 @@ bool BankingStage::commit_batch(std::shared_ptr<TransactionBatch> batch) {
       completion_callback_(batch);
     }
   } catch (const std::exception &callback_error) {
-    std::cerr << "ERROR: Completion callback failed: " << callback_error.what() << std::endl;
+    std::cerr << "ERROR: Completion callback failed: " << callback_error.what()
+              << std::endl;
   } catch (...) {
     std::cerr << "ERROR: Unknown error in completion callback" << std::endl;
   }
@@ -1251,10 +1349,11 @@ BankingStage::encode_base58_safe(const std::vector<uint8_t> &data) const {
     if (data.empty()) {
       return "";
     }
-    
+
     // Limit input size to prevent memory issues
     if (data.size() > 1024) {
-      std::cerr << "ERROR: Base58 input too large: " << data.size() << " bytes" << std::endl;
+      std::cerr << "ERROR: Base58 input too large: " << data.size() << " bytes"
+                << std::endl;
       return "error_input_too_large";
     }
 
@@ -1280,10 +1379,11 @@ BankingStage::encode_base58_safe(const std::vector<uint8_t> &data) const {
           while (carry > 0) {
             digits.push_back(carry % 58);
             carry /= 58;
-            
+
             // Safety check to prevent infinite loops
             if (digits.size() > 200) {
-              std::cerr << "ERROR: Base58 encoding exceeded safety limit" << std::endl;
+              std::cerr << "ERROR: Base58 encoding exceeded safety limit"
+                        << std::endl;
               return "error_encoding_overflow";
             }
           }
@@ -1313,7 +1413,8 @@ BankingStage::encode_base58_safe(const std::vector<uint8_t> &data) const {
           if (*it < 58) { // Bounds check
             result += base58_alphabet[*it];
           } else {
-            std::cerr << "ERROR: Invalid base58 digit: " << static_cast<int>(*it) << std::endl;
+            std::cerr << "ERROR: Invalid base58 digit: "
+                      << static_cast<int>(*it) << std::endl;
             return "error_invalid_digit";
           }
         }
@@ -1324,12 +1425,14 @@ BankingStage::encode_base58_safe(const std::vector<uint8_t> &data) const {
         }
 
         return result;
-        
+
       } catch (const std::bad_alloc &e) {
-        std::cerr << "ERROR: Memory allocation failed in base58 encoding: " << e.what() << std::endl;
+        std::cerr << "ERROR: Memory allocation failed in base58 encoding: "
+                  << e.what() << std::endl;
         return "error_memory_allocation";
       } catch (const std::exception &e) {
-        std::cerr << "ERROR: Exception in 64-byte base58 encoding: " << e.what() << std::endl;
+        std::cerr << "ERROR: Exception in 64-byte base58 encoding: " << e.what()
+                  << std::endl;
         return "error_encoding_exception";
       }
     }
@@ -1350,10 +1453,11 @@ BankingStage::encode_base58_safe(const std::vector<uint8_t> &data) const {
         while (carry > 0) {
           digits.push_back(carry % 58);
           carry /= 58;
-          
+
           // Safety check to prevent infinite loops
           if (digits.size() > data.size() * 4) {
-            std::cerr << "ERROR: Base58 encoding safety limit exceeded" << std::endl;
+            std::cerr << "ERROR: Base58 encoding safety limit exceeded"
+                      << std::endl;
             return "error_encoding_limit_exceeded";
           }
         }
@@ -1362,7 +1466,7 @@ BankingStage::encode_base58_safe(const std::vector<uint8_t> &data) const {
       // Convert leading zeros safely
       std::string result;
       result.reserve(digits.size() + 10); // Pre-allocate space
-      
+
       for (uint8_t byte : data) {
         if (byte != 0)
           break;
@@ -1374,21 +1478,25 @@ BankingStage::encode_base58_safe(const std::vector<uint8_t> &data) const {
         if (*it < 58) { // Bounds check
           result += base58_alphabet[*it];
         } else {
-          std::cerr << "ERROR: Invalid base58 digit in general encoding: " << static_cast<int>(*it) << std::endl;
+          std::cerr << "ERROR: Invalid base58 digit in general encoding: "
+                    << static_cast<int>(*it) << std::endl;
           return "error_invalid_general_digit";
         }
       }
 
       return result;
-      
+
     } catch (const std::bad_alloc &e) {
-      std::cerr << "ERROR: Memory allocation failed in general base58 encoding: " << e.what() << std::endl;
+      std::cerr
+          << "ERROR: Memory allocation failed in general base58 encoding: "
+          << e.what() << std::endl;
       return "error_general_memory_allocation";
     } catch (const std::exception &e) {
-      std::cerr << "ERROR: Exception in general base58 encoding: " << e.what() << std::endl;
+      std::cerr << "ERROR: Exception in general base58 encoding: " << e.what()
+                << std::endl;
       return "error_general_encoding_exception";
     }
-    
+
   } catch (...) {
     std::cerr << "ERROR: Unknown error in safe base58 encoding" << std::endl;
     return "error_unknown_base58_error";

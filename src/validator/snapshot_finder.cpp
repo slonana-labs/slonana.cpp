@@ -154,16 +154,18 @@ common::Result<std::vector<RpcNodeInfo>> SnapshotFinder::discover_rpc_nodes() {
   try {
     for (size_t i = 0; i < actual_threads; ++i) {
       size_t start_idx = i * endpoints_per_thread;
-      size_t end_idx = (i == actual_threads - 1) ? rpc_endpoints.size()
-                                                 : (i + 1) * endpoints_per_thread;
+      size_t end_idx = (i == actual_threads - 1)
+                           ? rpc_endpoints.size()
+                           : (i + 1) * endpoints_per_thread;
 
       // **BOUNDS VALIDATION**: Ensure thread indices are valid
       if (start_idx >= rpc_endpoints.size()) {
         break;
       }
 
-      worker_threads_.emplace_back(&SnapshotFinder::worker_thread_function, this,
-                                   std::cref(rpc_endpoints), start_idx, end_idx);
+      worker_threads_.emplace_back(&SnapshotFinder::worker_thread_function,
+                                   this, std::cref(rpc_endpoints), start_idx,
+                                   end_idx);
     }
 
     // **SAFE WAITING**: Wait for completion with timeout protection
@@ -173,11 +175,12 @@ common::Result<std::vector<RpcNodeInfo>> SnapshotFinder::discover_rpc_nodes() {
     while (completed_tests_.load() < total_tests_.load()) {
       auto elapsed = std::chrono::steady_clock::now() - start_wait;
       if (elapsed > max_wait_time) {
-        std::cout << "   ⚠️  Discovery timeout reached, shutting down workers..." << std::endl;
+        std::cout << "   ⚠️  Discovery timeout reached, shutting down workers..."
+                  << std::endl;
         shutdown_requested_.store(true);
         break;
       }
-      
+
       std::this_thread::sleep_for(std::chrono::milliseconds(500));
       report_discovery_progress();
     }
@@ -187,16 +190,16 @@ common::Result<std::vector<RpcNodeInfo>> SnapshotFinder::discover_rpc_nodes() {
       if (thread.joinable()) {
         try {
           thread.join();
-        } catch (const std::exception& e) {
+        } catch (const std::exception &e) {
           std::cout << "   ⚠️  Thread join error: " << e.what() << std::endl;
         }
       }
     }
 
-  } catch (const std::exception& e) {
+  } catch (const std::exception &e) {
     std::cout << "   ❌ Thread management error: " << e.what() << std::endl;
     shutdown_requested_.store(true);
-    
+
     // Emergency cleanup
     for (auto &thread : worker_threads_) {
       if (thread.joinable()) {
@@ -204,8 +207,9 @@ common::Result<std::vector<RpcNodeInfo>> SnapshotFinder::discover_rpc_nodes() {
       }
     }
     worker_threads_.clear();
-    
-    return common::Result<std::vector<RpcNodeInfo>>("Thread management error during discovery");
+
+    return common::Result<std::vector<RpcNodeInfo>>(
+        "Thread management error during discovery");
   }
 
   std::cout << std::endl;
@@ -245,22 +249,25 @@ void SnapshotFinder::worker_thread_function(
           if (node.healthy) {
             // **THREAD-SAFE INSERTION**: Protect shared data structure
             std::lock_guard<std::mutex> lock(results_mutex_);
-            if (discovered_nodes_.size() < 1000) { // Prevent excessive memory usage
+            if (discovered_nodes_.size() <
+                1000) { // Prevent excessive memory usage
               discovered_nodes_.push_back(std::move(node));
             }
           }
         }
-      } catch (const std::exception& e) {
+      } catch (const std::exception &e) {
         // **ERROR HANDLING**: Log but don't crash on individual RPC failures
-        std::cout << "   ⚠️  RPC test failed for " << rpc_urls[i] << ": " << e.what() << std::endl;
+        std::cout << "   ⚠️  RPC test failed for " << rpc_urls[i] << ": "
+                  << e.what() << std::endl;
       } catch (...) {
         // **CATCH-ALL**: Prevent unknown exceptions from crashing
-        std::cout << "   ⚠️  Unknown error testing RPC " << rpc_urls[i] << std::endl;
+        std::cout << "   ⚠️  Unknown error testing RPC " << rpc_urls[i]
+                  << std::endl;
       }
 
       completed_tests_.fetch_add(1);
     }
-  } catch (const std::exception& e) {
+  } catch (const std::exception &e) {
     std::cout << "   ❌ Worker thread error: " << e.what() << std::endl;
   } catch (...) {
     std::cout << "   ❌ Unknown worker thread error" << std::endl;

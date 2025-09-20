@@ -125,9 +125,11 @@ common::Result<bool> SolanaValidator::start() {
   // Initialize and start Proof of History with genesis hash
   Hash genesis_hash(32, 0x42); // Simple genesis hash
   if (!consensus::GlobalProofOfHistory::initialize(poh_config, genesis_hash)) {
-    return common::Result<bool>("Failed to initialize and start Proof of History");
+    return common::Result<bool>(
+        "Failed to initialize and start Proof of History");
   }
-  std::cout << "  ✅ Proof of History initialized and started successfully" << std::endl;
+  std::cout << "  ✅ Proof of History initialized and started successfully"
+            << std::endl;
 
   // Start core validator
   std::cout << "  🎯 Starting validator core..." << std::endl;

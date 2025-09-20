@@ -353,7 +353,7 @@ std::vector<uint8_t> QuicConnection::create_initial_packet() {
   std::random_device rd;
   std::mt19937 gen(rd());
   std::uniform_int_distribution<uint8_t> dis(0, 255);
-  
+
   for (int i = 0; i < 8; i++) {
     initial_packet.push_back(dis(gen));
   }
@@ -388,14 +388,15 @@ bool QuicConnection::perform_quic_handshake() {
 
     // Set timeout for handshake (shorter for retry logic)
     struct timeval timeout;
-    timeout.tv_sec = 0;  
+    timeout.tv_sec = 0;
     timeout.tv_usec = 200000; // 200ms timeout per attempt
     setsockopt(socket_fd_, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
     // Retry handshake multiple times
     for (int attempt = 0; attempt < 5; attempt++) {
-      std::cout << "📤 Handshake attempt " << (attempt + 1) << "/5" << std::endl;
-      
+      std::cout << "📤 Handshake attempt " << (attempt + 1) << "/5"
+                << std::endl;
+
       // Send initial packet (refactored - no duplicate sending code)
       if (!send_initial_packet(initial_packet)) {
         continue; // Try again
@@ -403,12 +404,14 @@ bool QuicConnection::perform_quic_handshake() {
 
       // Wait for response and validate
       if (wait_for_handshake_response()) {
-        std::cout << "✅ Handshake response validated - connection established!" << std::endl;
+        std::cout << "✅ Handshake response validated - connection established!"
+                  << std::endl;
         return true;
       }
-      
-      std::cout << "⏰ Attempt " << (attempt + 1) << " timed out, retrying..." << std::endl;
-      
+
+      std::cout << "⏰ Attempt " << (attempt + 1) << " timed out, retrying..."
+                << std::endl;
+
       // Small delay before retry
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
@@ -422,23 +425,28 @@ bool QuicConnection::perform_quic_handshake() {
 }
 
 // Helper method for sending initial packet - eliminates duplicate code
-bool QuicConnection::send_initial_packet(const std::vector<uint8_t>& initial_packet) {
-  std::cout << "📤 Sending QUIC Initial packet to " 
-            << inet_ntoa(server_addr_.sin_addr) << ":" << ntohs(server_addr_.sin_port) << std::endl;
-  
-  ssize_t sent = sendto(socket_fd_, initial_packet.data(), initial_packet.size(), 0,
-                       (struct sockaddr *)&server_addr_, sizeof(server_addr_));
+bool QuicConnection::send_initial_packet(
+    const std::vector<uint8_t> &initial_packet) {
+  std::cout << "📤 Sending QUIC Initial packet to "
+            << inet_ntoa(server_addr_.sin_addr) << ":"
+            << ntohs(server_addr_.sin_port) << std::endl;
+
+  ssize_t sent =
+      sendto(socket_fd_, initial_packet.data(), initial_packet.size(), 0,
+             (struct sockaddr *)&server_addr_, sizeof(server_addr_));
 
   if (sent < 0) {
-    std::cerr << "Failed to send QUIC initial packet: " << strerror(errno) << std::endl;
+    std::cerr << "Failed to send QUIC initial packet: " << strerror(errno)
+              << std::endl;
     return false;
   }
-  
+
   std::cout << "✅ Sent " << sent << " bytes" << std::endl;
   return true;
 }
 
-// Helper method for waiting and validating handshake response - eliminates duplicate code  
+// Helper method for waiting and validating handshake response - eliminates
+// duplicate code
 bool QuicConnection::wait_for_handshake_response() {
   uint8_t response[2048];
   struct sockaddr_in from_addr;
@@ -451,8 +459,9 @@ bool QuicConnection::wait_for_handshake_response() {
 
   if (received > 0) {
     // Process handshake response
-    std::cout << "✅ QUIC client received handshake response (" << received << " bytes)" << std::endl;
-    
+    std::cout << "✅ QUIC client received handshake response (" << received
+              << " bytes)" << std::endl;
+
     // Validate the response is from the correct server
     if (from_addr.sin_addr.s_addr == server_addr_.sin_addr.s_addr &&
         from_addr.sin_port == server_addr_.sin_port) {
@@ -461,7 +470,7 @@ bool QuicConnection::wait_for_handshake_response() {
       std::cerr << "❌ Handshake response from incorrect address" << std::endl;
     }
   }
-  
+
   return false;
 }
 

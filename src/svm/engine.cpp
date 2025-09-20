@@ -452,14 +452,16 @@ ExecutionOutcome ExecutionEngine::execute_transaction(
   try {
     // Enhanced safety checks to prevent crashes
     if (instructions.empty()) {
-      std::cerr << "ERROR: Empty instructions in execute_transaction" << std::endl;
+      std::cerr << "ERROR: Empty instructions in execute_transaction"
+                << std::endl;
       final_outcome.result = ExecutionResult::PROGRAM_ERROR;
       final_outcome.error_details = "No instructions provided";
       return final_outcome;
     }
 
     if (!impl_) {
-      std::cerr << "ERROR: Null implementation in execute_transaction" << std::endl;
+      std::cerr << "ERROR: Null implementation in execute_transaction"
+                << std::endl;
       final_outcome.result = ExecutionResult::PROGRAM_ERROR;
       final_outcome.error_details = "Engine not properly initialized";
       return final_outcome;
@@ -498,7 +500,8 @@ ExecutionOutcome ExecutionEngine::execute_transaction(
         // Execute the instruction with enhanced error handling
         try {
           auto outcome = program_to_execute->execute(instruction, context);
-          final_outcome.compute_units_consumed += outcome.compute_units_consumed;
+          final_outcome.compute_units_consumed +=
+              outcome.compute_units_consumed;
 
           if (outcome.result != ExecutionResult::SUCCESS) {
             final_outcome.result = outcome.result;
@@ -509,36 +512,44 @@ ExecutionOutcome ExecutionEngine::execute_transaction(
           // Merge modified accounts
           final_outcome.modified_accounts.insert(
               final_outcome.modified_accounts.end(),
-              outcome.modified_accounts.begin(), outcome.modified_accounts.end());
+              outcome.modified_accounts.begin(),
+              outcome.modified_accounts.end());
 
           impl_->total_instructions_executed_++;
-          
+
         } catch (const std::exception &e) {
-          std::cerr << "ERROR: Exception during instruction execution: " << e.what() << std::endl;
+          std::cerr << "ERROR: Exception during instruction execution: "
+                    << e.what() << std::endl;
           final_outcome.result = ExecutionResult::PROGRAM_ERROR;
-          final_outcome.error_details = "Instruction execution exception: " + std::string(e.what());
+          final_outcome.error_details =
+              "Instruction execution exception: " + std::string(e.what());
           break;
         } catch (...) {
-          std::cerr << "ERROR: Unknown exception during instruction execution" << std::endl;
+          std::cerr << "ERROR: Unknown exception during instruction execution"
+                    << std::endl;
           final_outcome.result = ExecutionResult::PROGRAM_ERROR;
           final_outcome.error_details = "Unknown instruction execution error";
           break;
         }
-        
+
       } catch (const std::exception &e) {
-        std::cerr << "ERROR: Exception during instruction processing: " << e.what() << std::endl;
+        std::cerr << "ERROR: Exception during instruction processing: "
+                  << e.what() << std::endl;
         final_outcome.result = ExecutionResult::PROGRAM_ERROR;
-        final_outcome.error_details = "Instruction processing exception: " + std::string(e.what());
+        final_outcome.error_details =
+            "Instruction processing exception: " + std::string(e.what());
         break;
       } catch (...) {
-        std::cerr << "ERROR: Unknown exception during instruction processing" << std::endl;
+        std::cerr << "ERROR: Unknown exception during instruction processing"
+                  << std::endl;
         final_outcome.result = ExecutionResult::PROGRAM_ERROR;
         final_outcome.error_details = "Unknown instruction processing error";
         break;
       }
     }
 
-    impl_->total_compute_units_consumed_ += final_outcome.compute_units_consumed;
+    impl_->total_compute_units_consumed_ +=
+        final_outcome.compute_units_consumed;
 
     // Update the provided accounts with modifications - with crash protection
     try {
@@ -546,20 +557,25 @@ ExecutionOutcome ExecutionEngine::execute_transaction(
         accounts[modified_account.program_id] = modified_account;
       }
     } catch (const std::exception &e) {
-      std::cerr << "ERROR: Exception during account updates: " << e.what() << std::endl;
+      std::cerr << "ERROR: Exception during account updates: " << e.what()
+                << std::endl;
       // Don't fail the transaction for account update errors - continue
     }
 
   } catch (const std::bad_alloc &e) {
-    std::cerr << "CRITICAL: Memory allocation error in execute_transaction: " << e.what() << std::endl;
+    std::cerr << "CRITICAL: Memory allocation error in execute_transaction: "
+              << e.what() << std::endl;
     final_outcome.result = ExecutionResult::PROGRAM_ERROR;
     final_outcome.error_details = "Memory allocation failed";
   } catch (const std::exception &e) {
-    std::cerr << "CRITICAL: Exception in execute_transaction: " << e.what() << std::endl;
+    std::cerr << "CRITICAL: Exception in execute_transaction: " << e.what()
+              << std::endl;
     final_outcome.result = ExecutionResult::PROGRAM_ERROR;
-    final_outcome.error_details = "Transaction execution exception: " + std::string(e.what());
+    final_outcome.error_details =
+        "Transaction execution exception: " + std::string(e.what());
   } catch (...) {
-    std::cerr << "CRITICAL: Unknown exception in execute_transaction" << std::endl;
+    std::cerr << "CRITICAL: Unknown exception in execute_transaction"
+              << std::endl;
     final_outcome.result = ExecutionResult::PROGRAM_ERROR;
     final_outcome.error_details = "Unknown transaction execution error";
   }

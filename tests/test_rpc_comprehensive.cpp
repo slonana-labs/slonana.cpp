@@ -477,13 +477,12 @@ void test_rpc_data_consistency() {
 
   // Test data consistency across multiple calls
   std::vector<std::string> consistency_tests = {
-    R"({"jsonrpc":"2.0","method":"getSlot","params":[],"id":"1"})",
-    R"({"jsonrpc":"2.0","method":"getBlockHeight","params":[],"id":"2"})",
-    R"({"jsonrpc":"2.0","method":"getEpochInfo","params":[],"id":"3"})"
-  };
+      R"({"jsonrpc":"2.0","method":"getSlot","params":[],"id":"1"})",
+      R"({"jsonrpc":"2.0","method":"getBlockHeight","params":[],"id":"2"})",
+      R"({"jsonrpc":"2.0","method":"getEpochInfo","params":[],"id":"3"})"};
 
   std::vector<std::string> responses;
-  for (const auto& test : consistency_tests) {
+  for (const auto &test : consistency_tests) {
     std::string response = rpc_server.handle_request(test);
     responses.push_back(response);
     ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
@@ -536,9 +535,11 @@ void test_rpc_rate_limiting_advanced() {
   // Send 200 rapid requests to test rate limiting
   int successful_requests = 0;
   for (int i = 0; i < 200; ++i) {
-    std::string request = R"({"jsonrpc":"2.0","method":"getHealth","params":[],"id":")" + std::to_string(i) + R"("})";
+    std::string request =
+        R"({"jsonrpc":"2.0","method":"getHealth","params":[],"id":")" +
+        std::to_string(i) + R"("})";
     std::string response = rpc_server.handle_request(request);
-    
+
     if (response.find("\"jsonrpc\":\"2.0\"") != std::string::npos) {
       successful_requests++;
     }
@@ -548,8 +549,8 @@ void test_rpc_rate_limiting_advanced() {
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
       end_time - start_time);
 
-  std::cout << "Rate limiting test: " << successful_requests << "/200 requests in " 
-            << duration.count() << "ms" << std::endl;
+  std::cout << "Rate limiting test: " << successful_requests
+            << "/200 requests in " << duration.count() << "ms" << std::endl;
 
   // Should handle most requests successfully
   ASSERT_GT(successful_requests, 150);
@@ -565,18 +566,16 @@ void test_rpc_authentication_advanced() {
   rpc_server.start();
 
   // Test various authentication scenarios
-  std::vector<std::string> auth_methods = {
-    "sendTransaction",
-    "requestAirdrop",
-    "simulateTransaction"
-  };
+  std::vector<std::string> auth_methods = {"sendTransaction", "requestAirdrop",
+                                           "simulateTransaction"};
 
-  for (const auto& method : auth_methods) {
+  for (const auto &method : auth_methods) {
     // Test without authentication
-    std::string request = R"({"jsonrpc":"2.0","method":")" + method + R"(","params":[],"id":"1"})";
+    std::string request = R"({"jsonrpc":"2.0","method":")" + method +
+                          R"(","params":[],"id":"1"})";
     std::string response = rpc_server.handle_request(request);
     ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
-    
+
     // Should handle authentication requirements gracefully
     ASSERT_TRUE(response.find("\"result\":") != std::string::npos ||
                 response.find("\"error\":") != std::string::npos);
@@ -594,19 +593,22 @@ void test_rpc_protocol_edge_cases() {
 
   // Test protocol edge cases
   std::vector<std::string> edge_cases = {
-    R"({"jsonrpc":"2.0","method":"getHealth","params":[],"id":null})", // null id
-    R"({"jsonrpc":"2.0","method":"getHealth","params":[],"id":123})", // numeric id
-    R"({"jsonrpc":"2.0","method":"getHealth","params":null,"id":"1"})", // null params
-    R"({"jsonrpc":"2.0","method":"getHealth","id":"1"})", // missing params
-    R"({"method":"getHealth","params":[],"id":"1"})" // missing jsonrpc
+      R"({"jsonrpc":"2.0","method":"getHealth","params":[],"id":null})", // null
+                                                                         // id
+      R"({"jsonrpc":"2.0","method":"getHealth","params":[],"id":123})", // numeric
+                                                                        // id
+      R"({"jsonrpc":"2.0","method":"getHealth","params":null,"id":"1"})", // null
+                                                                          // params
+      R"({"jsonrpc":"2.0","method":"getHealth","id":"1"})", // missing params
+      R"({"method":"getHealth","params":[],"id":"1"})"      // missing jsonrpc
   };
 
   for (size_t i = 0; i < edge_cases.size(); ++i) {
     std::string response = rpc_server.handle_request(edge_cases[i]);
-    
+
     // Should handle edge cases gracefully
     ASSERT_TRUE(response.length() > 0);
-    
+
     // For valid JSON-RPC, should include jsonrpc field
     if (edge_cases[i].find("\"jsonrpc\"") != std::string::npos) {
       ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
@@ -626,14 +628,15 @@ void test_rpc_performance_optimization() {
   auto start_time = std::chrono::high_resolution_clock::now();
 
   // Test performance with various method types
-  std::vector<std::string> perf_methods = {
-    "getHealth", "getVersion", "getSlot", "getBlockHeight", "getEpochInfo"
-  };
+  std::vector<std::string> perf_methods = {"getHealth", "getVersion", "getSlot",
+                                           "getBlockHeight", "getEpochInfo"};
 
   int total_requests = 0;
   for (int round = 0; round < 20; ++round) {
-    for (const auto& method : perf_methods) {
-      std::string request = R"({"jsonrpc":"2.0","method":")" + method + R"(","params":[],"id":")" + std::to_string(total_requests) + R"("})";
+    for (const auto &method : perf_methods) {
+      std::string request = R"({"jsonrpc":"2.0","method":")" + method +
+                            R"(","params":[],"id":")" +
+                            std::to_string(total_requests) + R"("})";
       std::string response = rpc_server.handle_request(request);
       ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
       total_requests++;
@@ -644,8 +647,10 @@ void test_rpc_performance_optimization() {
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
       end_time - start_time);
 
-  std::cout << "Performance test: " << total_requests << " requests in " 
-            << duration.count() << "ms (" << (total_requests * 1000.0 / duration.count()) << " req/s)" << std::endl;
+  std::cout << "Performance test: " << total_requests << " requests in "
+            << duration.count() << "ms ("
+            << (total_requests * 1000.0 / duration.count()) << " req/s)"
+            << std::endl;
 
   ASSERT_EQ(100, total_requests); // 20 rounds * 5 methods
 
@@ -675,7 +680,7 @@ void test_rpc_error_condition_handling() {
     std::string response = rpc_server.handle_request(test.second);
     ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
     ASSERT_CONTAINS(response, "\"id\":\"" + std::to_string(i + 1) + "\"");
-    
+
     // Should return proper error response
     ASSERT_TRUE(response.find("\"error\":") != std::string::npos ||
                 response.find("\"result\":") != std::string::npos);
@@ -705,19 +710,26 @@ void run_rpc_comprehensive_tests(TestRunner &runner) {
   runner.run_test("RPC Performance Batch", test_rpc_performance_batch);
   runner.run_test("RPC Concurrent Requests", test_rpc_concurrent_requests);
   runner.run_test("RPC Method Coverage", test_rpc_method_coverage);
-  
+
   // Additional 11 tests for comprehensive coverage
-  runner.run_test("RPC Advanced Block Methods", test_rpc_advanced_block_methods);
+  runner.run_test("RPC Advanced Block Methods",
+                  test_rpc_advanced_block_methods);
   runner.run_test("RPC Subscription Methods", test_rpc_subscription_methods);
   runner.run_test("RPC Token Methods", test_rpc_token_methods);
-  runner.run_test("RPC Advanced Transaction Methods", test_rpc_advanced_transaction_methods);
+  runner.run_test("RPC Advanced Transaction Methods",
+                  test_rpc_advanced_transaction_methods);
   runner.run_test("RPC Data Consistency", test_rpc_data_consistency);
-  runner.run_test("RPC Historical Data Queries", test_rpc_historical_data_queries);
-  runner.run_test("RPC Rate Limiting Advanced", test_rpc_rate_limiting_advanced);
-  runner.run_test("RPC Authentication Advanced", test_rpc_authentication_advanced);
+  runner.run_test("RPC Historical Data Queries",
+                  test_rpc_historical_data_queries);
+  runner.run_test("RPC Rate Limiting Advanced",
+                  test_rpc_rate_limiting_advanced);
+  runner.run_test("RPC Authentication Advanced",
+                  test_rpc_authentication_advanced);
   runner.run_test("RPC Protocol Edge Cases", test_rpc_protocol_edge_cases);
-  runner.run_test("RPC Performance Optimization", test_rpc_performance_optimization);
-  runner.run_test("RPC Error Condition Handling", test_rpc_error_condition_handling);
+  runner.run_test("RPC Performance Optimization",
+                  test_rpc_performance_optimization);
+  runner.run_test("RPC Error Condition Handling",
+                  test_rpc_error_condition_handling);
 }
 
 // Standalone test main for RPC comprehensive tests
