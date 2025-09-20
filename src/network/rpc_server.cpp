@@ -179,13 +179,14 @@ public:
     struct sockaddr_in address;
     address.sin_family = AF_INET;
 
-    // Parse IP address and port from rpc_bind_address (format: "127.0.0.1:8899")
+    // Parse IP address and port from rpc_bind_address (format:
+    // "127.0.0.1:8899")
     std::string bind_addr = config_.rpc_bind_address;
     size_t colon_pos = bind_addr.find(':');
-    
+
     std::string ip_address = "127.0.0.1"; // default to localhost
-    int port = 8899; // default port
-    
+    int port = 8899;                      // default port
+
     if (colon_pos != std::string::npos) {
       ip_address = bind_addr.substr(0, colon_pos);
       try {
@@ -194,13 +195,14 @@ public:
         port = 8899;
       }
     }
-    
+
     // Convert IP address string to binary format
     if (inet_pton(AF_INET, ip_address.c_str(), &address.sin_addr) <= 0) {
-      std::cerr << "Invalid IP address: " << ip_address << ", falling back to 127.0.0.1" << std::endl;
+      std::cerr << "Invalid IP address: " << ip_address
+                << ", falling back to 127.0.0.1" << std::endl;
       inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
     }
-    
+
     address.sin_port = htons(port);
 
     if (bind(server_socket_, (struct sockaddr *)&address, sizeof(address)) <
@@ -544,11 +546,11 @@ std::string SolanaRpcServer::handle_request(const std::string &request_json) {
   // Try to extract ID early for error responses, even from malformed JSON
   std::string extracted_id = "";
   bool id_is_number = false;
-  
+
   try {
     // Try to extract ID even from potentially malformed JSON
     extracted_id = extract_json_value(request_json, "id");
-    
+
     // Check if ID is a number by looking at the original JSON
     std::regex id_pattern("\"id\"\\s*:\\s*([^,}]+)");
     std::smatch id_match;
@@ -573,7 +575,9 @@ std::string SolanaRpcServer::handle_request(const std::string &request_json) {
         (request_json.find('{') == std::string::npos &&
          request_json.find('}') == std::string::npos) ||
         request_json.find("invalid") != std::string::npos) {
-      return create_error_response(extracted_id, -32700, "Parse error", id_is_number).to_json();
+      return create_error_response(extracted_id, -32700, "Parse error",
+                                   id_is_number)
+          .to_json();
     }
 
     RpcRequest request;
@@ -609,7 +613,9 @@ std::string SolanaRpcServer::handle_request(const std::string &request_json) {
     return response.to_json();
 
   } catch (const std::exception &e) {
-    return create_error_response(extracted_id, -32700, "Parse error", id_is_number).to_json();
+    return create_error_response(extracted_id, -32700, "Parse error",
+                                 id_is_number)
+        .to_json();
   }
 }
 
@@ -709,9 +715,8 @@ void SolanaRpcServer::register_transaction_methods() {
   register_method("sendTransaction", [this](const RpcRequest &req) {
     return send_transaction(req);
   });
-  register_method("sendBundle", [this](const RpcRequest &req) {
-    return send_bundle(req);
-  });
+  register_method("sendBundle",
+                  [this](const RpcRequest &req) { return send_bundle(req); });
   register_method("simulateTransaction", [this](const RpcRequest &req) {
     return simulate_transaction(req);
   });
@@ -1723,8 +1728,7 @@ RpcResponse SolanaRpcServer::get_version(const RpcRequest &request) {
   response.id = request.id;
   response.id_is_number = request.id_is_number;
 
-  response.result =
-      "{\"solana-core\":\"1.17.0\",\"feature-set\":3746818610}";
+  response.result = "{\"solana-core\":\"1.17.0\",\"feature-set\":3746818610}";
   return response;
 }
 
@@ -2119,34 +2123,39 @@ RpcResponse SolanaRpcServer::get_signature_statuses(const RpcRequest &request) {
   try {
     // Extract signature array from params
     std::vector<std::string> signatures;
-    
+
     // Parse the signature array from request params
     if (!request.params.empty()) {
       // Params should be an array of signature strings
       // Format: ["signature1", "signature2", ...]
       std::string params_str = request.params;
-      
+
       // Simple parsing for signature array
       size_t start = params_str.find('[');
       size_t end = params_str.find(']');
-      
-      if (start != std::string::npos && end != std::string::npos && end > start) {
-        std::string array_content = params_str.substr(start + 1, end - start - 1);
-        
+
+      if (start != std::string::npos && end != std::string::npos &&
+          end > start) {
+        std::string array_content =
+            params_str.substr(start + 1, end - start - 1);
+
         // Extract quoted signature strings
         size_t pos = 0;
         while (pos < array_content.length()) {
           size_t quote_start = array_content.find('"', pos);
-          if (quote_start == std::string::npos) break;
-          
+          if (quote_start == std::string::npos)
+            break;
+
           size_t quote_end = array_content.find('"', quote_start + 1);
-          if (quote_end == std::string::npos) break;
-          
-          std::string signature = array_content.substr(quote_start + 1, quote_end - quote_start - 1);
+          if (quote_end == std::string::npos)
+            break;
+
+          std::string signature = array_content.substr(
+              quote_start + 1, quote_end - quote_start - 1);
           if (!signature.empty()) {
             signatures.push_back(signature);
           }
-          
+
           pos = quote_end + 1;
         }
       }
@@ -2157,26 +2166,29 @@ RpcResponse SolanaRpcServer::get_signature_statuses(const RpcRequest &request) {
 
     // For each requested signature, return its status
     for (size_t i = 0; i < signatures.size(); ++i) {
-      if (i > 0) result << ",";
-      
-      const std::string& signature = signatures[i];
-      
+      if (i > 0)
+        result << ",";
+
+      const std::string &signature = signatures[i];
+
       // Check if this signature exists in our transaction store
       bool transaction_found = false;
-      
+
       // Try to find the transaction in ledger
       if (ledger_manager_) {
         // For simplicity, assume all submitted transactions are confirmed
         // In a real implementation, you'd check transaction status from ledger
         transaction_found = true;
       }
-      
+
       if (transaction_found) {
         // Return confirmed status for found transactions
-        result << "{\"slot\":" << (ledger_manager_ ? ledger_manager_->get_latest_slot() : 1);
-        result << ",\"confirmations\":10";  // Assume 10 confirmations for confirmed txs
+        result << "{\"slot\":"
+               << (ledger_manager_ ? ledger_manager_->get_latest_slot() : 1);
+        result << ",\"confirmations\":10"; // Assume 10 confirmations for
+                                           // confirmed txs
         result << ",\"err\":null";
-        result << ",\"status\":{\"Ok\":null}";  // Add explicit status field
+        result << ",\"status\":{\"Ok\":null}"; // Add explicit status field
         result << ",\"confirmationStatus\":\"confirmed\"";
         result << "}";
       } else {
@@ -2189,14 +2201,15 @@ RpcResponse SolanaRpcServer::get_signature_statuses(const RpcRequest &request) {
     response.result = result.str();
 
   } catch (const std::exception &e) {
-    // On error, return empty array (but not completely empty to avoid index errors)
+    // On error, return empty array (but not completely empty to avoid index
+    // errors)
     std::ostringstream fallback;
     fallback << "{\"context\":" << get_current_context() << ",\"value\":[";
-    
-    // For CLI compatibility, if we got a request but failed to parse, 
+
+    // For CLI compatibility, if we got a request but failed to parse,
     // return at least one null status to prevent index out of bounds
     fallback << "null";
-    
+
     fallback << "]}";
     response.result = fallback.str();
   }
@@ -2663,7 +2676,8 @@ std::string SolanaRpcServer::process_transaction_submission(
   // Process actual transaction submission with robust error handling to prevent
   // crashes
   try {
-    std::cout << "RPC: [DEBUG] Processing transaction submission..." << std::endl;
+    std::cout << "RPC: [DEBUG] Processing transaction submission..."
+              << std::endl;
 
     // Validate request parameters
     if (request.params.empty()) {
@@ -2682,8 +2696,8 @@ std::string SolanaRpcServer::process_transaction_submission(
     }
 
     // Log transaction details for debugging
-    std::cout << "RPC: [DEBUG] Transaction data length: " << transaction_data.length()
-              << " characters" << std::endl;
+    std::cout << "RPC: [DEBUG] Transaction data length: "
+              << transaction_data.length() << " characters" << std::endl;
     std::cout << "RPC: [DEBUG] Transaction data preview: "
               << transaction_data.substr(
                      0, std::min(64UL, transaction_data.length()))
@@ -2691,117 +2705,146 @@ std::string SolanaRpcServer::process_transaction_submission(
 
     // **ENHANCED BANKING STAGE INTEGRATION WITH CRASH PROTECTION**
     if (banking_stage_) {
-      std::cout << "RPC: [DEBUG] Submitting transaction to banking stage..." << std::endl;
-      
+      std::cout << "RPC: [DEBUG] Submitting transaction to banking stage..."
+                << std::endl;
+
       try {
         // **ENHANCED TRANSACTION OBJECT CREATION WITH SAFETY CHECKS**
         auto transaction = std::make_shared<ledger::Transaction>();
-        
+
         // Validate transaction pointer was created successfully
         if (!transaction) {
-          std::cout << "RPC: [ERROR] Failed to create transaction object" << std::endl;
+          std::cout << "RPC: [ERROR] Failed to create transaction object"
+                    << std::endl;
           return "error_transaction_creation_failed";
         }
-        
+
         // **SAFE SIGNATURE CREATION** - Prevent potential memory issues
         std::vector<uint8_t> dummy_signature;
         try {
-          dummy_signature.reserve(64);  // Pre-allocate to prevent reallocation
+          dummy_signature.reserve(64); // Pre-allocate to prevent reallocation
           dummy_signature.resize(64);
-          
+
           std::hash<std::string> hasher;
           size_t hash_value = hasher(transaction_data);
-          
+
           // Use safer signature generation with bounds checking
           for (size_t i = 0; i < 64; ++i) {
             dummy_signature[i] = static_cast<uint8_t>((hash_value + i) % 256);
           }
-          
+
           transaction->signatures.push_back(std::move(dummy_signature));
-          std::cout << "RPC: [DEBUG] Created 64-byte transaction signature" << std::endl;
-          
+          std::cout << "RPC: [DEBUG] Created 64-byte transaction signature"
+                    << std::endl;
+
         } catch (const std::bad_alloc &e) {
-          std::cout << "RPC: [ERROR] Memory allocation failed for signature: " << e.what() << std::endl;
+          std::cout << "RPC: [ERROR] Memory allocation failed for signature: "
+                    << e.what() << std::endl;
           return "error_signature_allocation_failed";
         } catch (const std::exception &e) {
-          std::cout << "RPC: [ERROR] Exception creating signature: " << e.what() << std::endl;
+          std::cout << "RPC: [ERROR] Exception creating signature: " << e.what()
+                    << std::endl;
           return "error_signature_creation_failed";
         }
-        
+
         // **SAFE MESSAGE DATA ASSIGNMENT** - Prevent buffer overruns
         try {
           // Limit transaction data size to prevent memory issues
           size_t max_message_size = 1232; // Solana maximum transaction size
-          size_t data_size = std::min(transaction_data.length(), max_message_size);
-          
+          size_t data_size =
+              std::min(transaction_data.length(), max_message_size);
+
           transaction->message.clear();
           transaction->message.reserve(data_size);
-          transaction->message.assign(transaction_data.begin(), 
+          transaction->message.assign(transaction_data.begin(),
                                       transaction_data.begin() + data_size);
-          
-          std::cout << "RPC: [DEBUG] Set transaction message data (" << data_size << " bytes)" << std::endl;
-          
+
+          std::cout << "RPC: [DEBUG] Set transaction message data ("
+                    << data_size << " bytes)" << std::endl;
+
         } catch (const std::bad_alloc &e) {
-          std::cout << "RPC: [ERROR] Memory allocation failed for message: " << e.what() << std::endl;
+          std::cout << "RPC: [ERROR] Memory allocation failed for message: "
+                    << e.what() << std::endl;
           return "error_message_allocation_failed";
         } catch (const std::exception &e) {
-          std::cout << "RPC: [ERROR] Exception setting message data: " << e.what() << std::endl;
+          std::cout << "RPC: [ERROR] Exception setting message data: "
+                    << e.what() << std::endl;
           return "error_message_assignment_failed";
         }
-          
-        // **PROTECTED BANKING STAGE SUBMISSION** - Prevent crashes during submission
-        std::cout << "RPC: [DEBUG] Adding transaction to banking stage queue..." << std::endl;
+
+        // **PROTECTED BANKING STAGE SUBMISSION** - Prevent crashes during
+        // submission
+        std::cout << "RPC: [DEBUG] Adding transaction to banking stage queue..."
+                  << std::endl;
         try {
           // Validate banking stage is still available and running
           if (!banking_stage_) {
-            std::cout << "RPC: [ERROR] Banking stage became null during processing" << std::endl;
+            std::cout
+                << "RPC: [ERROR] Banking stage became null during processing"
+                << std::endl;
             return "error_banking_stage_unavailable";
           }
-          
+
           // Submit transaction with additional safety checks
           banking_stage_->submit_transaction(transaction);
-          std::cout << "RPC: [SUCCESS] Transaction submitted to banking stage successfully" << std::endl;
-          
+          std::cout << "RPC: [SUCCESS] Transaction submitted to banking stage "
+                       "successfully"
+                    << std::endl;
+
         } catch (const std::runtime_error &e) {
-          std::cout << "RPC: [ERROR] Banking stage runtime error: " << e.what() << std::endl;
+          std::cout << "RPC: [ERROR] Banking stage runtime error: " << e.what()
+                    << std::endl;
           return "error_banking_stage_runtime_error";
         } catch (const std::bad_alloc &e) {
-          std::cout << "RPC: [ERROR] Banking stage memory allocation error: " << e.what() << std::endl;
+          std::cout << "RPC: [ERROR] Banking stage memory allocation error: "
+                    << e.what() << std::endl;
           return "error_banking_stage_memory_error";
         } catch (const std::exception &e) {
-          std::cout << "RPC: [ERROR] Banking stage submission exception: " << e.what() << std::endl;
+          std::cout << "RPC: [ERROR] Banking stage submission exception: "
+                    << e.what() << std::endl;
           return "error_banking_stage_submission_failed";
         } catch (...) {
-          std::cout << "RPC: [ERROR] Unknown banking stage submission error" << std::endl;
+          std::cout << "RPC: [ERROR] Unknown banking stage submission error"
+                    << std::endl;
           return "error_banking_stage_unknown_error";
         }
-        
+
         // **SAFE TRANSACTION SIGNATURE GENERATION**
         std::string transaction_signature;
         try {
-          transaction_signature = generate_transaction_signature(transaction_data);
-          std::cout << "RPC: [DEBUG] Generated transaction signature: " << transaction_signature << std::endl;
-          
+          transaction_signature =
+              generate_transaction_signature(transaction_data);
+          std::cout << "RPC: [DEBUG] Generated transaction signature: "
+                    << transaction_signature << std::endl;
+
           // Validate signature was generated successfully
-          if (transaction_signature.empty() || transaction_signature.find("error") == 0) {
-            std::cout << "RPC: [WARNING] Invalid signature generated, using fallback" << std::endl;
+          if (transaction_signature.empty() ||
+              transaction_signature.find("error") == 0) {
+            std::cout
+                << "RPC: [WARNING] Invalid signature generated, using fallback"
+                << std::endl;
             // Generate a safe fallback signature
-            transaction_signature = "5" + encode_base58_signature(dummy_signature).substr(1);
+            transaction_signature =
+                "5" + encode_base58_signature(dummy_signature).substr(1);
           }
-          
+
         } catch (const std::exception &e) {
-          std::cout << "RPC: [ERROR] Signature generation exception: " << e.what() << std::endl;
+          std::cout << "RPC: [ERROR] Signature generation exception: "
+                    << e.what() << std::endl;
           return "error_signature_generation_failed";
         }
-        
+
         return transaction_signature;
-        
+
       } catch (const std::exception &banking_error) {
-        std::cout << "RPC: [ERROR] Banking stage submission failed: " << banking_error.what() << std::endl;
+        std::cout << "RPC: [ERROR] Banking stage submission failed: "
+                  << banking_error.what() << std::endl;
         return "error_banking_submission_failed";
       }
     } else {
-      std::cout << "RPC: [WARNING] Banking stage not available - falling back to SVM-only processing" << std::endl;
+      std::cout << "RPC: [WARNING] Banking stage not available - falling back "
+                   "to SVM-only processing"
+                << std::endl;
     }
 
     // Robust transaction processing with detailed error handling
@@ -3792,11 +3835,16 @@ RpcResponse SolanaRpcServer::request_airdrop(const RpcRequest &request) {
   try {
     // Check if faucet functionality is enabled
     if (!config_.enable_faucet) {
-      std::cout << "RPC: Airdrop request denied - faucet functionality not enabled" << std::endl;
-      std::cout << "RPC: Use --faucet-port or --rpc-faucet-address to enable airdrop support" << std::endl;
-      return create_error_response(request.id, -32601, 
-                                   "Faucet not enabled. Use --faucet-port to enable airdrop support",
-                                   request.id_is_number);
+      std::cout
+          << "RPC: Airdrop request denied - faucet functionality not enabled"
+          << std::endl;
+      std::cout << "RPC: Use --faucet-port or --rpc-faucet-address to enable "
+                   "airdrop support"
+                << std::endl;
+      return create_error_response(
+          request.id, -32601,
+          "Faucet not enabled. Use --faucet-port to enable airdrop support",
+          request.id_is_number);
     }
 
     std::string address = extract_param_by_index(request.params, 0);
@@ -4565,69 +4613,78 @@ uint64_t SolanaRpcServer::get_current_timestamp_ms() const {
 }
 
 // Transaction signature generation utility
-std::string SolanaRpcServer::generate_transaction_signature(const std::string &transaction_data) const {
+std::string SolanaRpcServer::generate_transaction_signature(
+    const std::string &transaction_data) const {
   try {
-    // For debugging purposes, create a deterministic signature based on transaction data
-    // In a real implementation, this would be the actual Ed25519 signature from the transaction
-    
+    // For debugging purposes, create a deterministic signature based on
+    // transaction data In a real implementation, this would be the actual
+    // Ed25519 signature from the transaction
+
     // Create a hash of the transaction data
     std::hash<std::string> hasher;
     size_t hash_value = hasher(transaction_data);
-    
+
     // Convert to a 64-byte signature-like format
     std::vector<uint8_t> signature_bytes(64);
     for (size_t i = 0; i < 64; ++i) {
       signature_bytes[i] = static_cast<uint8_t>((hash_value + i) % 256);
     }
-    
+
     // Use banking stage's base58 encoding if available
     if (banking_stage_) {
       // Access banking stage's encode_base58 method
-      // Note: This is a simplified approach - in production, the signature would come from transaction parsing
+      // Note: This is a simplified approach - in production, the signature
+      // would come from transaction parsing
       return encode_base58_signature(signature_bytes);
     }
-    
+
     // Fallback: create a simple signature format
     std::ostringstream signature_stream;
     signature_stream << std::hex;
     for (size_t i = 0; i < std::min(signature_bytes.size(), size_t(32)); ++i) {
-      signature_stream << std::setfill('0') << std::setw(2) << static_cast<int>(signature_bytes[i]);
+      signature_stream << std::setfill('0') << std::setw(2)
+                       << static_cast<int>(signature_bytes[i]);
     }
-    
+
     return signature_stream.str();
-    
+
   } catch (const std::exception &e) {
-    std::cout << "RPC: [ERROR] Failed to generate transaction signature: " << e.what() << std::endl;
+    std::cout << "RPC: [ERROR] Failed to generate transaction signature: "
+              << e.what() << std::endl;
     return "error_signature_generation_failed";
   }
 }
 
 // Base58 encoding utility for transaction signatures
-std::string SolanaRpcServer::encode_base58_signature(const std::vector<uint8_t> &signature_bytes) const {
+std::string SolanaRpcServer::encode_base58_signature(
+    const std::vector<uint8_t> &signature_bytes) const {
   // Proper base58 encoding implementation for Solana compatibility
   if (signature_bytes.empty()) {
     return "";
   }
 
   // Base58 alphabet used by Bitcoin and Solana
-  static const char base58_alphabet[] = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  static const char base58_alphabet[] =
+      "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
   // For 64-byte Ed25519 signatures, ensure exactly 88 characters
   if (signature_bytes.size() == 64) {
     // Convert to base58 with proper padding for exactly 88 chars
     std::vector<uint8_t> padded_data = signature_bytes;
-    
+
     // Simple base58 encoding (simplified for debugging)
     std::string result;
     std::vector<unsigned char> temp(padded_data.begin(), padded_data.end());
-    
+
     // Count leading zeros
     int leading_zeros = 0;
     for (auto byte : temp) {
-      if (byte == 0) leading_zeros++;
-      else break;
+      if (byte == 0)
+        leading_zeros++;
+      else
+        break;
     }
-    
+
     // Convert to base58
     std::vector<int> digits;
     for (auto byte : temp) {
@@ -4642,25 +4699,25 @@ std::string SolanaRpcServer::encode_base58_signature(const std::vector<uint8_t> 
         carry /= 58;
       }
     }
-    
+
     // Add leading '1's for leading zeros
     result.append(leading_zeros, base58_alphabet[0]);
-    
+
     // Add the base58 encoded digits
     for (auto it = digits.rbegin(); it != digits.rend(); ++it) {
       result += base58_alphabet[*it];
     }
-    
+
     // Ensure exactly 88 characters for Ed25519 signatures
     if (result.length() < 88) {
       result = std::string(88 - result.length(), base58_alphabet[0]) + result;
     } else if (result.length() > 88) {
       result = result.substr(0, 88);
     }
-    
+
     return result;
   }
-  
+
   return "";
 }
 
@@ -4680,16 +4737,16 @@ RpcResponse SolanaRpcServer::get_validator_info(const RpcRequest &request) {
   try {
     std::stringstream result;
     result << "{";
-    
+
     // Get validator identity
     auto validator_identity = get_validator_identity();
     result << "\"identity\":\"" << validator_identity << "\",";
-    
+
     // Get validator info from validator core if available
     if (validator_core_) {
       // PLACEHOLDER: Should read from config instead of hardcoded addresses
       result << "\"gossip\":\"" << config_.gossip_bind_address << "\",";
-      result << "\"tpu\":\"127.0.0.1:8003\",";  // TPU not in config yet
+      result << "\"tpu\":\"127.0.0.1:8003\","; // TPU not in config yet
       result << "\"rpc\":\"" << config_.rpc_bind_address << "\",";
       result << "\"pubsub\":\"127.0.0.1:8900\",";
       result << "\"version\":\"slonana-1.0.0\",";
@@ -4705,12 +4762,12 @@ RpcResponse SolanaRpcServer::get_validator_info(const RpcRequest &request) {
       result << "\"featureSet\":null,";
       result << "\"shredVersion\":null";
     }
-    
+
     result << "}";
     response.result = result.str();
 
   } catch (const std::exception &e) {
-    return create_error_response(request.id, -32603, 
+    return create_error_response(request.id, -32603,
                                  "Internal error: " + std::string(e.what()),
                                  request.id_is_number);
   }
@@ -4722,7 +4779,7 @@ RpcResponse SolanaRpcServer::get_validator_info(const RpcRequest &request) {
 // TODO: This is a simplified implementation for Phase 2 compatibility
 // Production version should:
 // 1. Parse JSON array of base64-encoded transactions
-// 2. Validate each transaction individually  
+// 2. Validate each transaction individually
 // 3. Check bundle consistency and ordering
 // 4. Process transactions atomically or reject entire bundle
 // 5. Implement proper fee calculation and limits
@@ -4735,19 +4792,19 @@ RpcResponse SolanaRpcServer::send_bundle(const RpcRequest &request) {
     // Extract transaction bundle from params - improved parsing
     std::string bundle_data = extract_first_param(request.params);
     if (bundle_data.empty()) {
-      return create_error_response(request.id, -32602,
-                                   "Invalid params: transaction bundle required",
-                                   request.id_is_number);
+      return create_error_response(
+          request.id, -32602, "Invalid params: transaction bundle required",
+          request.id_is_number);
     }
 
     // Parse bundle as JSON array of transactions (IMPROVED IMPLEMENTATION)
     std::vector<std::string> transaction_signatures;
     std::vector<std::string> transactions;
-    
+
     // Simple JSON array parsing - in production use robust JSON library
     if (bundle_data.front() == '[' && bundle_data.back() == ']') {
       std::string inner = bundle_data.substr(1, bundle_data.length() - 2);
-      
+
       // Split by commas (simplified - doesn't handle nested quotes properly)
       std::stringstream ss(inner);
       std::string transaction;
@@ -4763,46 +4820,55 @@ RpcResponse SolanaRpcServer::send_bundle(const RpcRequest &request) {
       // Single transaction case
       transactions.push_back(bundle_data);
     }
-    
-    std::cout << "RPC: sendBundle processing " << transactions.size() 
+
+    std::cout << "RPC: sendBundle processing " << transactions.size()
               << " transactions in bundle" << std::endl;
-    
+
     // Process each transaction in the bundle (ENHANCED IMPLEMENTATION)
     if (banking_stage_) {
       try {
         for (size_t i = 0; i < transactions.size(); i++) {
           // Create transaction from bundle data (simplified parsing)
           auto transaction = std::make_shared<ledger::Transaction>();
-          
-          // In production: decode base64, parse wire format, validate signatures
-          // For now: create dummy transaction with unique data per bundle item
-          transaction->signatures = {{static_cast<uint8_t>(i), 0x02, 0x03, 0x04}};
-          transaction->message = {static_cast<uint8_t>(0xAA + i), 0xBB, 0xCC, 0xDD};
-          
+
+          // In production: decode base64, parse wire format, validate
+          // signatures For now: create dummy transaction with unique data per
+          // bundle item
+          transaction->signatures = {
+              {static_cast<uint8_t>(i), 0x02, 0x03, 0x04}};
+          transaction->message = {static_cast<uint8_t>(0xAA + i), 0xBB, 0xCC,
+                                  0xDD};
+
           // Submit to banking stage for processing
           banking_stage_->submit_transaction(transaction);
-          
+
           // Generate transaction signature for response
           auto serialized_tx = transaction->serialize();
           std::string tx_data(serialized_tx.begin(), serialized_tx.end());
-          std::string signature = generate_transaction_signature(tx_data + std::to_string(i));
+          std::string signature =
+              generate_transaction_signature(tx_data + std::to_string(i));
           transaction_signatures.push_back(signature);
         }
-        
-        std::cout << "RPC: sendBundle successfully processed " 
-                  << transaction_signatures.size() << " transactions" << std::endl;
+
+        std::cout << "RPC: sendBundle successfully processed "
+                  << transaction_signatures.size() << " transactions"
+                  << std::endl;
 
       } catch (const std::exception &e) {
         std::cout << "RPC: Bundle processing error: " << e.what() << std::endl;
         return create_error_response(request.id, -32603,
-                                     "Bundle processing failed: " + std::string(e.what()),
+                                     "Bundle processing failed: " +
+                                         std::string(e.what()),
                                      request.id_is_number);
       }
     } else {
-      std::cout << "RPC: Warning - banking stage not available, using mock processing" << std::endl;
+      std::cout
+          << "RPC: Warning - banking stage not available, using mock processing"
+          << std::endl;
       // Generate mock signatures for testing when banking stage unavailable
       for (size_t i = 0; i < transactions.size(); i++) {
-        transaction_signatures.push_back("MockBundleSignature" + std::to_string(i));
+        transaction_signatures.push_back("MockBundleSignature" +
+                                         std::to_string(i));
       }
     }
 
@@ -4810,24 +4876,24 @@ RpcResponse SolanaRpcServer::send_bundle(const RpcRequest &request) {
     std::stringstream result;
     result << "[";
     for (size_t i = 0; i < transaction_signatures.size(); i++) {
-      if (i > 0) result << ",";
+      if (i > 0)
+        result << ",";
       result << "\"" << transaction_signatures[i] << "\"";
     }
     result << "]";
-    
+
     response.result = result.str();
-    std::cout << "RPC: sendBundle completed successfully with " 
+    std::cout << "RPC: sendBundle completed successfully with "
               << transaction_signatures.size() << " signatures" << std::endl;
 
   } catch (const std::exception &e) {
     std::cout << "RPC: Critical error in sendBundle: " << e.what() << std::endl;
-    return create_error_response(request.id, -32603, 
-                                 "Internal error: " + std::string(e.what()), 
+    return create_error_response(request.id, -32603,
+                                 "Internal error: " + std::string(e.what()),
                                  request.id_is_number);
   } catch (...) {
     std::cout << "RPC: Unknown critical error in sendBundle" << std::endl;
-    return create_error_response(request.id, -32603, 
-                                 "Unknown internal error", 
+    return create_error_response(request.id, -32603, "Unknown internal error",
                                  request.id_is_number);
   }
 

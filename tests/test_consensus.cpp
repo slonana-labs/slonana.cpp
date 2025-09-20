@@ -288,25 +288,31 @@ void test_advanced_staking_scenarios() {
 
   // Test multiple validators with different stake amounts
   for (int i = 0; i < 10; ++i) {
-    slonana::common::PublicKey validator_key(std::vector<uint8_t>(32, static_cast<uint8_t>(i)));
+    slonana::common::PublicKey validator_key(
+        std::vector<uint8_t>(32, static_cast<uint8_t>(i)));
     uint32_t commission_rate = 500 + (i * 100); // 5% to 14% commission rates
-    auto result = staking_manager->register_validator(validator_key, commission_rate);
+    auto result =
+        staking_manager->register_validator(validator_key, commission_rate);
     ASSERT_TRUE(result.is_ok());
   }
 
   // Test complex delegation patterns
   for (int i = 0; i < 5; ++i) {
-    slonana::common::PublicKey staker_key(std::vector<uint8_t>(32, static_cast<uint8_t>(i + 10)));
-    slonana::common::PublicKey validator_key(std::vector<uint8_t>(32, static_cast<uint8_t>(i % 3)));
-    
+    slonana::common::PublicKey staker_key(
+        std::vector<uint8_t>(32, static_cast<uint8_t>(i + 10)));
+    slonana::common::PublicKey validator_key(
+        std::vector<uint8_t>(32, static_cast<uint8_t>(i % 3)));
+
     slonana::staking::StakeAccount stake_account;
-    stake_account.stake_pubkey = slonana::common::PublicKey(std::vector<uint8_t>(32, static_cast<uint8_t>(i + 20))); // Unique stake pubkey
+    stake_account.stake_pubkey =
+        slonana::common::PublicKey(std::vector<uint8_t>(
+            32, static_cast<uint8_t>(i + 20))); // Unique stake pubkey
     stake_account.delegator_pubkey = staker_key;
     stake_account.validator_pubkey = validator_key;
     stake_account.stake_amount = 1000000 * (i + 1); // Different amounts
     stake_account.activation_epoch = 0;
     stake_account.is_active = true;
-    
+
     auto result = staking_manager->create_stake_account(stake_account);
     ASSERT_TRUE(result.is_ok());
   }
@@ -314,17 +320,17 @@ void test_advanced_staking_scenarios() {
 
 void test_svm_edge_cases() {
   auto svm = std::make_unique<slonana::svm::ExecutionEngine>();
-  
+
   // Test edge cases with simple execution
   ASSERT_TRUE(svm != nullptr);
-  
+
   // Validate SVM initialization
   ASSERT_TRUE(true); // Basic test placeholder
 }
 
 void test_account_state_management() {
   // Test basic account operations
-  
+
   // Create test account
   slonana::svm::ProgramAccount account;
   account.pubkey = slonana::common::PublicKey(std::vector<uint8_t>(32, 0xBB));
@@ -333,21 +339,21 @@ void test_account_state_management() {
   account.owner = slonana::common::PublicKey(std::vector<uint8_t>(32, 0xCC));
   account.executable = false;
   account.rent_epoch = 0;
-  
+
   // Validate account structure
   ASSERT_TRUE(account.data.size() == 3);
 }
 
 void test_program_execution_limits() {
   auto svm = std::make_unique<slonana::svm::ExecutionEngine>();
-  
+
   // Test basic program execution concepts
   ASSERT_TRUE(svm != nullptr);
 }
 
 void test_cross_program_invocation() {
   auto svm = std::make_unique<slonana::svm::ExecutionEngine>();
-  
+
   // Test cross-program invocation concepts
   ASSERT_TRUE(svm != nullptr);
 }
@@ -356,13 +362,14 @@ void test_rent_collection_scenarios() {
   // Test rent collection scenarios
   for (int i = 0; i < 5; ++i) {
     slonana::svm::ProgramAccount account;
-    account.pubkey = slonana::common::PublicKey(std::vector<uint8_t>(32, static_cast<uint8_t>(i + 0x20)));
-    account.lamports = i * 100000; // Different balances
+    account.pubkey = slonana::common::PublicKey(
+        std::vector<uint8_t>(32, static_cast<uint8_t>(i + 0x20)));
+    account.lamports = i * 100000;                        // Different balances
     account.data.resize(i * 10, static_cast<uint8_t>(i)); // Different sizes
     account.owner = slonana::common::PublicKey(std::vector<uint8_t>(32, 0xFF));
     account.executable = false;
     account.rent_epoch = 0;
-    
+
     // Validate account structure
     ASSERT_TRUE(account.data.size() == i * 10);
   }
@@ -373,8 +380,10 @@ void test_validator_slashing_conditions() {
 
   // Register validators
   for (int i = 0; i < 5; ++i) {
-    slonana::common::PublicKey validator_key(std::vector<uint8_t>(32, static_cast<uint8_t>(i + 0x30)));
-    auto result = staking_manager->register_validator(validator_key, 500); // 5% commission
+    slonana::common::PublicKey validator_key(
+        std::vector<uint8_t>(32, static_cast<uint8_t>(i + 0x30)));
+    auto result = staking_manager->register_validator(validator_key,
+                                                      500); // 5% commission
     ASSERT_TRUE(result.is_ok());
   }
 }
@@ -384,18 +393,23 @@ void test_epoch_boundary_handling() {
 
   // Test epoch transitions
   for (uint64_t epoch = 0; epoch < 5; ++epoch) {
-    slonana::common::PublicKey validator_key(std::vector<uint8_t>(32, static_cast<uint8_t>(epoch + 0x50)));
-    auto result = staking_manager->register_validator(validator_key, 750); // 7.5% commission
+    slonana::common::PublicKey validator_key(
+        std::vector<uint8_t>(32, static_cast<uint8_t>(epoch + 0x50)));
+    auto result = staking_manager->register_validator(validator_key,
+                                                      750); // 7.5% commission
     ASSERT_TRUE(result.is_ok());
 
     slonana::staking::StakeAccount stake_account;
-    stake_account.stake_pubkey = slonana::common::PublicKey(std::vector<uint8_t>(32, static_cast<uint8_t>(epoch + 0x40))); // Unique stake pubkey
-    stake_account.delegator_pubkey = slonana::common::PublicKey(std::vector<uint8_t>(32, static_cast<uint8_t>(epoch + 0x60)));
+    stake_account.stake_pubkey =
+        slonana::common::PublicKey(std::vector<uint8_t>(
+            32, static_cast<uint8_t>(epoch + 0x40))); // Unique stake pubkey
+    stake_account.delegator_pubkey = slonana::common::PublicKey(
+        std::vector<uint8_t>(32, static_cast<uint8_t>(epoch + 0x60)));
     stake_account.validator_pubkey = validator_key;
     stake_account.stake_amount = 5000000;
     stake_account.activation_epoch = epoch;
     stake_account.is_active = true;
-    
+
     auto stake_result = staking_manager->create_stake_account(stake_account);
     ASSERT_TRUE(stake_result.is_ok());
   }
@@ -404,13 +418,15 @@ void test_epoch_boundary_handling() {
 void test_fork_resolution() {
   // Simulate fork scenarios
   slonana::svm::ProgramAccount base_account;
-  base_account.pubkey = slonana::common::PublicKey(std::vector<uint8_t>(32, 0x70));
+  base_account.pubkey =
+      slonana::common::PublicKey(std::vector<uint8_t>(32, 0x70));
   base_account.lamports = 1000000;
   base_account.data = {0x01, 0x02, 0x03};
-  base_account.owner = slonana::common::PublicKey(std::vector<uint8_t>(32, 0xFF));
+  base_account.owner =
+      slonana::common::PublicKey(std::vector<uint8_t>(32, 0xFF));
   base_account.executable = false;
   base_account.rent_epoch = 0;
-  
+
   // Validate account structure
   ASSERT_TRUE(base_account.data.size() == 3);
 }
@@ -420,8 +436,10 @@ void test_byzantine_fault_scenarios() {
 
   // Register honest and Byzantine validators
   for (int i = 0; i < 6; ++i) {
-    slonana::common::PublicKey validator_key(std::vector<uint8_t>(32, static_cast<uint8_t>(i + 0x80)));
-    auto result = staking_manager->register_validator(validator_key, 600); // 6% commission
+    slonana::common::PublicKey validator_key(
+        std::vector<uint8_t>(32, static_cast<uint8_t>(i + 0x80)));
+    auto result = staking_manager->register_validator(validator_key,
+                                                      600); // 6% commission
     ASSERT_TRUE(result.is_ok());
   }
 }
@@ -430,21 +448,25 @@ void test_economic_incentive_mechanisms() {
   auto staking_manager = std::make_unique<slonana::staking::StakingManager>();
 
   slonana::common::PublicKey validator_key(std::vector<uint8_t>(32, 0x90));
-  auto reg_result = staking_manager->register_validator(validator_key, 800); // 8% commission
+  auto reg_result =
+      staking_manager->register_validator(validator_key, 800); // 8% commission
   ASSERT_TRUE(reg_result.is_ok());
 
   // Create stake accounts with different amounts
   std::vector<uint64_t> stake_amounts = {1000000, 5000000, 10000000, 50000000};
-  
+
   for (size_t i = 0; i < stake_amounts.size(); ++i) {
     slonana::staking::StakeAccount stake_account;
-    stake_account.stake_pubkey = slonana::common::PublicKey(std::vector<uint8_t>(32, static_cast<uint8_t>(i + 0x80))); // Unique stake pubkey
-    stake_account.delegator_pubkey = slonana::common::PublicKey(std::vector<uint8_t>(32, static_cast<uint8_t>(i + 0xA0)));
+    stake_account.stake_pubkey =
+        slonana::common::PublicKey(std::vector<uint8_t>(
+            32, static_cast<uint8_t>(i + 0x80))); // Unique stake pubkey
+    stake_account.delegator_pubkey = slonana::common::PublicKey(
+        std::vector<uint8_t>(32, static_cast<uint8_t>(i + 0xA0)));
     stake_account.validator_pubkey = validator_key;
     stake_account.stake_amount = stake_amounts[i];
     stake_account.activation_epoch = 0;
     stake_account.is_active = true;
-    
+
     auto result = staking_manager->create_stake_account(stake_account);
     ASSERT_TRUE(result.is_ok());
   }
@@ -454,17 +476,19 @@ void test_delegation_edge_cases() {
   auto staking_manager = std::make_unique<slonana::staking::StakingManager>();
 
   slonana::common::PublicKey validator_key(std::vector<uint8_t>(32, 0xB0));
-  auto reg_result = staking_manager->register_validator(validator_key, 400); // 4% commission
+  auto reg_result =
+      staking_manager->register_validator(validator_key, 400); // 4% commission
   ASSERT_TRUE(reg_result.is_ok());
 
   // Test edge cases in delegation
   slonana::staking::StakeAccount edge_case_account;
-  edge_case_account.delegator_pubkey = slonana::common::PublicKey(std::vector<uint8_t>(32, 0xB1));
+  edge_case_account.delegator_pubkey =
+      slonana::common::PublicKey(std::vector<uint8_t>(32, 0xB1));
   edge_case_account.validator_pubkey = validator_key;
   edge_case_account.stake_amount = 1; // Minimum stake
   edge_case_account.activation_epoch = 0;
   edge_case_account.is_active = true;
-  
+
   auto result = staking_manager->create_stake_account(edge_case_account);
   ASSERT_TRUE(result.is_ok());
 }
@@ -474,8 +498,10 @@ void test_reward_distribution_mechanisms() {
 
   // Set up validators with different stake distributions
   for (int i = 0; i < 3; ++i) {
-    slonana::common::PublicKey validator_key(std::vector<uint8_t>(32, static_cast<uint8_t>(i + 0xC0)));
-    auto result = staking_manager->register_validator(validator_key, 300 + i * 100); // 3%, 4%, 5% commission
+    slonana::common::PublicKey validator_key(
+        std::vector<uint8_t>(32, static_cast<uint8_t>(i + 0xC0)));
+    auto result = staking_manager->register_validator(
+        validator_key, 300 + i * 100); // 3%, 4%, 5% commission
     ASSERT_TRUE(result.is_ok());
   }
 }
@@ -484,7 +510,8 @@ void test_vote_account_management() {
   auto staking_manager = std::make_unique<slonana::staking::StakingManager>();
 
   slonana::common::PublicKey validator_key(std::vector<uint8_t>(32, 0xE0));
-  auto reg_result = staking_manager->register_validator(validator_key, 650); // 6.5% commission
+  auto reg_result = staking_manager->register_validator(validator_key,
+                                                        650); // 6.5% commission
   ASSERT_TRUE(reg_result.is_ok());
 
   // Vote account creation
@@ -494,7 +521,7 @@ void test_vote_account_management() {
   vote_account.stake_amount = 100000000; // Self-stake
   vote_account.activation_epoch = 0;
   vote_account.is_active = true;
-  
+
   auto result = staking_manager->create_stake_account(vote_account);
   ASSERT_TRUE(result.is_ok());
 }
@@ -525,20 +552,24 @@ void run_consensus_tests(TestRunner &runner) {
   runner.run_test("Account Data Operations", test_account_data_operations);
   runner.run_test("Instruction Execution", test_instruction_execution);
   runner.run_test("Account Changes Commit", test_account_changes_commit);
-  
+
   // Additional 15 tests for comprehensive coverage
-  runner.run_test("Advanced Staking Scenarios", test_advanced_staking_scenarios);
+  runner.run_test("Advanced Staking Scenarios",
+                  test_advanced_staking_scenarios);
   runner.run_test("SVM Edge Cases", test_svm_edge_cases);
   runner.run_test("Account State Management", test_account_state_management);
   runner.run_test("Program Execution Limits", test_program_execution_limits);
   runner.run_test("Cross Program Invocation", test_cross_program_invocation);
   runner.run_test("Rent Collection Scenarios", test_rent_collection_scenarios);
-  runner.run_test("Validator Slashing Conditions", test_validator_slashing_conditions);
+  runner.run_test("Validator Slashing Conditions",
+                  test_validator_slashing_conditions);
   runner.run_test("Epoch Boundary Handling", test_epoch_boundary_handling);
   runner.run_test("Fork Resolution", test_fork_resolution);
   runner.run_test("Byzantine Fault Scenarios", test_byzantine_fault_scenarios);
-  runner.run_test("Economic Incentive Mechanisms", test_economic_incentive_mechanisms);
+  runner.run_test("Economic Incentive Mechanisms",
+                  test_economic_incentive_mechanisms);
   runner.run_test("Delegation Edge Cases", test_delegation_edge_cases);
-  runner.run_test("Reward Distribution Mechanisms", test_reward_distribution_mechanisms);
+  runner.run_test("Reward Distribution Mechanisms",
+                  test_reward_distribution_mechanisms);
   runner.run_test("Vote Account Management", test_vote_account_management);
 }

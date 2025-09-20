@@ -535,9 +535,10 @@ common::Result<bool> ValidatorCore::start() {
         std::cout << "PoH completed slot " << slot << " with " << entries.size()
                   << " entries" << std::endl;
       });
-      
+
   if (!tick_callback_set || !slot_callback_set) {
-    return common::Result<bool>("Failed to set up PoH callbacks - PoH may not be properly initialized");
+    return common::Result<bool>(
+        "Failed to set up PoH callbacks - PoH may not be properly initialized");
   }
 
   impl_->running_ = true;
@@ -575,7 +576,8 @@ void ValidatorCore::process_block(const ledger::Block &block) {
   auto validation_result = block_validator_->validate_block(block);
   if (validation_result.is_ok()) {
     // Mix block hash into PoH for timestamping using thread-safe method
-    uint64_t poh_sequence = consensus::GlobalProofOfHistory::mix_transaction(block.block_hash);
+    uint64_t poh_sequence =
+        consensus::GlobalProofOfHistory::mix_transaction(block.block_hash);
     if (poh_sequence > 0) {
       std::cout << "Mixed block hash into PoH at sequence " << poh_sequence
                 << std::endl;
