@@ -73,6 +73,16 @@ uint32_t CircuitBreaker::get_failure_count() const {
 }
 
 void CircuitBreaker::on_success() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  on_success_unlocked();
+}
+
+void CircuitBreaker::on_failure() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  on_failure_unlocked();
+}
+
+void CircuitBreaker::on_success_unlocked() {
   if (state_ == CircuitState::HALF_OPEN) {
     success_count_++;
     if (success_count_ >= config_.success_threshold) {
@@ -86,7 +96,7 @@ void CircuitBreaker::on_success() {
   }
 }
 
-void CircuitBreaker::on_failure() {
+void CircuitBreaker::on_failure_unlocked() {
   failure_count_++;
   last_failure_time_ = std::chrono::steady_clock::now();
   
@@ -127,16 +137,54 @@ bool DegradationManager::is_operation_allowed(const std::string& component, cons
       return true;
       
     case DegradationMode::READ_ONLY:
-      // Allow read operations, block writes
-      return operation.find("read") != std::string::npos || 
-             operation.find("get") != std::string::npos ||
-             operation.find("query") != std::string::npos;
+      // Use strict matching to prevent false positives
+      // Only allow operations that are explicitly read-only
+      if (operation == "read" || operation == "get" || operation == "query") {
+        return true;
+      }
+      
+      // For compound operations, ensure they don't contain write-like keywords
+      if (operation.find("write") != std::string::npos ||
+          operation.find("update") != std::string::npos ||
+          operation.find("modify") != std::string::npos ||
+          operation.find("create") != std::string::npos ||
+          operation.find("delete") != std::string::npos ||
+          operation.find("insert") != std::string::npos ||
+          operation.find("remove") != std::string::npos) {
+        return false;
+      }
+      
+      // Allow operations that start with read_, get_, query_ (but we already checked for write keywords above)
+      if ((operation.length() >= 5 && operation.substr(0, 5) == "read_") ||
+          (operation.length() >= 4 && operation.substr(0, 4) == "get_") ||
+          (operation.length() >= 6 && operation.substr(0, 6) == "query_")) {
+        return true;
+      }
+      
+      // Allow operations that end with _read, _get
+      if (operation.find("_read") != std::string::npos || operation.find("_get") != std::string::npos) {
+        return true;
+      }
+      
+      return false;
              
     case DegradationMode::ESSENTIAL_ONLY:
-      // Only allow critical operations
-      return operation.find("essential") != std::string::npos ||
-             operation.find("critical") != std::string::npos ||
-             operation.find("health") != std::string::npos;
+      // Only allow explicitly marked essential operations
+      if (operation == "essential" || operation == "critical" || operation == "health") {
+        return true;
+      }
+      if ((operation.length() >= 10 && operation.substr(0, 10) == "essential_") ||
+          (operation.length() >= 9 && operation.substr(0, 9) == "critical_") ||
+          (operation.length() >= 7 && operation.substr(0, 7) == "health_")) {
+        return true;
+      }
+      if ((operation.find("_essential") != std::string::npos ||
+           operation.find("_critical") != std::string::npos ||
+           operation.find("_health") != std::string::npos) &&
+          operation.find("non") == std::string::npos) { // Exclude "non_essential"
+        return true;
+      }
+      return false;
              
     case DegradationMode::OFFLINE:
       return false;

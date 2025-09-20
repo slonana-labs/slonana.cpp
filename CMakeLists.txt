@@ -379,6 +379,15 @@ target_include_directories(slonana_fault_tolerance_integration_tests PRIVATE "${
 target_compile_definitions(slonana_fault_tolerance_integration_tests PRIVATE STANDALONE_FAULT_TOLERANCE_INTEGRATION_TESTS)
 add_test(NAME fault_tolerance_integration_tests COMMAND slonana_fault_tolerance_integration_tests)
 
+# Bug fix validation test suite
+add_executable(slonana_bug_fix_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_bug_fixes.cpp"
+)
+target_link_libraries(slonana_bug_fix_tests slonana_core)
+target_include_directories(slonana_bug_fix_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_bug_fix_tests PRIVATE STANDALONE_BUG_FIX_TESTS)
+add_test(NAME bug_fix_validation_tests COMMAND slonana_bug_fix_tests)
+
 
 
 # Genesis CLI tool

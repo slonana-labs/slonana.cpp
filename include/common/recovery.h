@@ -3,7 +3,7 @@
 #include "common/fault_tolerance.h"
 #include <filesystem>
 #include <fstream>
-#include <openssl/sha.h>
+#include <openssl/evp.h>
 
 namespace slonana {
 namespace common {

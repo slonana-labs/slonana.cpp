@@ -71,9 +71,15 @@ public:
         return result;
       }
       
-      // Calculate jittered delay
-      auto jitter_range = static_cast<long>(delay.count() * policy.jitter_factor);
-      std::uniform_int_distribution<long> jitter_dist(-jitter_range, jitter_range);
+      // Calculate jittered delay with bounds checking
+      auto delay_count = delay.count();
+      auto max_jitter = static_cast<long>(delay_count * policy.jitter_factor);
+      
+      // Prevent overflow and ensure reasonable bounds
+      if (max_jitter > 1000) max_jitter = 1000; // Cap jitter at 1 second
+      if (max_jitter < 1) max_jitter = 1;       // Minimum jitter of 1ms
+      
+      std::uniform_int_distribution<long> jitter_dist(-max_jitter, max_jitter);
       auto jittered_delay = delay + std::chrono::milliseconds(jitter_dist(gen));
       
       std::this_thread::sleep_for(jittered_delay);
@@ -123,23 +129,30 @@ public:
    */
   template<typename F, typename R = std::invoke_result_t<F>>
   R execute(F&& operation) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    
-    if (state_ == CircuitState::OPEN) {
-      auto now = std::chrono::steady_clock::now();
-      if (now - last_failure_time_ < config_.timeout) {
-        return R("Circuit breaker is OPEN");
+    // Check circuit state first
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (state_ == CircuitState::OPEN) {
+        auto now = std::chrono::steady_clock::now();
+        if (now - last_failure_time_ < config_.timeout) {
+          return R("Circuit breaker is OPEN");
+        }
+        state_ = CircuitState::HALF_OPEN;
+        success_count_ = 0;
       }
-      state_ = CircuitState::HALF_OPEN;
-      success_count_ = 0;
     }
     
+    // Execute operation without holding lock to avoid deadlock
     auto result = operation();
     
-    if (result.is_ok()) {
-      on_success();
-    } else {
-      on_failure();
+    // Update state based on result
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (result.is_ok()) {
+        on_success_unlocked();
+      } else {
+        on_failure_unlocked();
+      }
     }
     
     return result;
@@ -151,6 +164,8 @@ public:
 private:
   void on_success();
   void on_failure();
+  void on_success_unlocked(); // Assumes mutex is already held
+  void on_failure_unlocked(); // Assumes mutex is already held
 };
 
 /**
