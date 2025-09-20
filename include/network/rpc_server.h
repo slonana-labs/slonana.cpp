@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/types.h"
+#include "common/fault_tolerance.h"
 #include "network/websocket_server.h"
 #include <functional>
 #include <map>
@@ -486,6 +487,26 @@ private:
   // Transaction utilities
   std::string generate_transaction_signature(const std::string &transaction_data) const;
   std::string encode_base58_signature(const std::vector<uint8_t> &signature_bytes) const;
+  
+  // Fault tolerance mechanisms
+  CircuitBreaker external_service_breaker_;
+  DegradationManager degradation_manager_;
+  RetryPolicy rpc_retry_policy_;
+  
+  // Fault-tolerant operation wrappers
+  template<typename F>
+  auto execute_with_fault_tolerance(F&& operation, const std::string& operation_name) -> decltype(operation()) {
+    // Check if operation is allowed in current degradation mode
+    if (!degradation_manager_.is_operation_allowed("rpc", operation_name)) {
+      using ReturnType = decltype(operation());
+      return ReturnType("Service temporarily unavailable due to degraded mode");
+    }
+    
+    // Execute with circuit breaker protection
+    return external_service_breaker_.execute([&]() {
+      return FaultTolerance::retry_with_backoff(std::forward<F>(operation), rpc_retry_policy_);
+    });
+  }
 };
 
 } // namespace network

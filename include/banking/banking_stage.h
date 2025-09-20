@@ -1,6 +1,8 @@
 #pragma once
 
 #include "common/types.h"
+#include "common/fault_tolerance.h"
+#include "common/recovery.h"
 #include "ledger/manager.h"
 #include <atomic>
 #include <chrono>
@@ -253,6 +255,11 @@ public:
   void set_ledger_manager(std::shared_ptr<ledger::LedgerManager> ledger_manager) {
     ledger_manager_ = ledger_manager;
   }
+  
+  // Fault tolerance public interface
+  common::Result<bool> process_transaction_with_fault_tolerance(TransactionPtr transaction);
+  common::Result<bool> save_banking_state();
+  common::Result<bool> restore_banking_state();
 
 private:
   bool initialized_;
@@ -340,6 +347,12 @@ private:
   // Resource management
   bool should_throttle_processing() const;
   void handle_resource_pressure();
+  
+  // Fault tolerance mechanisms
+  common::CircuitBreaker transaction_processor_breaker_;
+  common::DegradationManager degradation_manager_;
+  common::RetryPolicy transaction_retry_policy_;
+  std::shared_ptr<common::FileCheckpoint> state_checkpoint_;
 };
 
 } // namespace banking
