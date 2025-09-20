@@ -1,4 +1,5 @@
 #include "network/gossip.h"
+#include "security/secure_messaging.h"
 #include <arpa/inet.h>
 #include <chrono>
 #include <cstring>
@@ -18,7 +19,9 @@ namespace network {
 // GossipProtocol implementation
 class GossipProtocol::Impl {
 public:
-  explicit Impl(const common::ValidatorConfig &config) : config_(config) {}
+  explicit Impl(const common::ValidatorConfig &config) : config_(config) {
+    setup_secure_messaging();
+  }
 
   struct ConnectionInfo {
     bool is_connected = false;
@@ -36,6 +39,36 @@ public:
   std::unordered_map<MessageType, MessageHandler> handlers_;
   std::mutex peers_mutex_;
   std::unordered_map<PublicKey, ConnectionInfo> peer_connections_;
+  std::unique_ptr<slonana::security::SecureMessaging> secure_messaging_;
+  
+private:
+  bool setup_secure_messaging() {
+    if (!config_.enable_secure_messaging) {
+      return true;
+    }
+    
+    slonana::security::SecureMessagingConfig sec_config;
+    sec_config.enable_tls = config_.enable_tls;
+    sec_config.require_mutual_auth = config_.require_mutual_tls;
+    sec_config.tls_cert_path = config_.tls_certificate_path;
+    sec_config.tls_key_path = config_.tls_private_key_path;
+    sec_config.ca_cert_path = config_.ca_certificate_path;
+    sec_config.signing_key_path = config_.node_signing_key_path;
+    sec_config.verification_keys_dir = config_.peer_keys_directory;
+    sec_config.enable_message_encryption = config_.enable_message_encryption;
+    sec_config.enable_replay_protection = config_.enable_replay_protection;
+    sec_config.message_ttl_seconds = config_.message_ttl_seconds;
+    
+    secure_messaging_ = std::make_unique<slonana::security::SecureMessaging>(sec_config);
+    
+    auto init_result = secure_messaging_->initialize();
+    if (!init_result.is_ok()) {
+      std::cerr << "Gossip secure messaging initialization failed: " << init_result.error() << std::endl;
+      return false;
+    }
+    
+    return true;
+  }
 };
 
 GossipProtocol::GossipProtocol(const common::ValidatorConfig &config)
