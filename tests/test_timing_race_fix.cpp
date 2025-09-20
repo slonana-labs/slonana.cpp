@@ -29,6 +29,7 @@ public:
         config.enable_lock_free_structures = true;
         config.enable_hashing_threads = true;
         config.hashing_threads = 8; // High thread count to stress test
+        // Note: enable_lock_contention_tracking can be enabled for detailed performance analysis
         
         slonana::consensus::Hash genesis_hash(32, 0x42);
         
