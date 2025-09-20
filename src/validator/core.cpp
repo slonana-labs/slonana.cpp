@@ -1,4 +1,5 @@
 #include "validator/core.h"
+#include "common/logging.h"
 #include "consensus/proof_of_history.h"
 #include "monitoring/consensus_metrics.h"
 #include <algorithm>
@@ -89,9 +90,8 @@ void ForkChoice::add_block(const ledger::Block &block) {
   monitoring::GlobalConsensusMetrics::instance().set_active_forks_count(
       impl_->blocks_.size());
 
-  std::cout << "Added block to fork choice, slot: " << block.slot
-            << " (fork choice time: " << timer.stop() * 1000 << "ms)"
-            << std::endl;
+  LOG_DEBUG("Added block to fork choice, slot: ", block.slot,
+            " (fork choice time: ", timer.stop() * 1000, "ms)");
 }
 
 void ForkChoice::add_vote(const Vote &vote) {
@@ -104,9 +104,8 @@ void ForkChoice::add_vote(const Vote &vote) {
   // Update metrics
   monitoring::GlobalConsensusMetrics::instance().increment_votes_processed();
 
-  std::cout << "Added vote to fork choice, slot: " << vote.slot
-            << " (processing time: " << timer.stop() * 1000 << "ms)"
-            << std::endl;
+  LOG_DEBUG("Added vote to fork choice, slot: ", vote.slot,
+            " (processing time: ", timer.stop() * 1000, "ms)");
 }
 
 Hash ForkChoice::get_head() const { return impl_->head_hash_; }

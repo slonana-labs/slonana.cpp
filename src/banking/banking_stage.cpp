@@ -1,5 +1,7 @@
 #include "banking/banking_stage.h"
+#include "common/logging.h"
 #include <algorithm>
+#include <execution>
 #include <fstream>
 #include <iostream>
 #include <random>
@@ -889,46 +891,61 @@ void BankingStage::process_transaction_queue() {
 bool BankingStage::validate_batch(std::shared_ptr<TransactionBatch> batch) {
   // Validate all transactions in the batch with enhanced safety checks
   if (!batch) {
-    std::cerr << "ERROR: Null batch in validate_batch" << std::endl;
+    LOG_ERROR("Null batch in validate_batch");
     return false;
   }
 
   auto &transactions = batch->get_transactions();
-  std::vector<bool> results;
-  results.reserve(transactions.size());
+  std::vector<bool> results(transactions.size());
 
-  size_t local_failed_count = 0;
+  // Use parallel algorithms for performance-critical transaction validation
+  // as recommended in CODE_STYLE.md
+  try {
+    std::transform(
+        std::execution::par_unseq, transactions.begin(), transactions.end(),
+        results.begin(), [](const TransactionPtr &transaction) -> bool {
+          try {
+            // Enhanced transaction validation with safety checks
+            if (transaction) {
+              // Verify transaction pointer is still valid before calling
+              // verify()
+              return transaction->verify();
+            }
+            return false;
+          } catch (const std::exception &e) {
+            LOG_ERROR("Exception during transaction validation: ", e.what());
+            return false;
+          } catch (...) {
+            LOG_ERROR("Unknown exception during transaction validation");
+            return false;
+          }
+        });
+  } catch (const std::exception &e) {
+    // Fallback to sequential processing if parallel execution fails
+    LOG_WARN("Parallel validation failed, falling back to sequential: ",
+             e.what());
 
-  for (const auto &transaction : transactions) {
-    bool valid = false;
-
-    try {
-      // **ENHANCED TRANSACTION VALIDATION WITH SAFETY CHECKS**
-      if (transaction) {
-        // Verify transaction pointer is still valid before calling verify()
-        valid = transaction->verify();
+    for (size_t i = 0; i < transactions.size(); ++i) {
+      try {
+        if (transactions[i]) {
+          results[i] = transactions[i]->verify();
+        } else {
+          results[i] = false;
+        }
+      } catch (const std::exception &ex) {
+        LOG_ERROR("Transaction validation error: ", ex.what());
+        results[i] = false;
+      } catch (...) {
+        LOG_ERROR("Unknown transaction validation error");
+        results[i] = false;
       }
-
-      results.push_back(valid);
-
-      if (!valid) {
-        local_failed_count++;
-      }
-
-    } catch (const std::exception &e) {
-      std::cerr << "ERROR: Exception during transaction validation: "
-                << e.what() << std::endl;
-      results.push_back(false);
-      local_failed_count++;
-    } catch (...) {
-      std::cerr << "ERROR: Unknown exception during transaction validation"
-                << std::endl;
-      results.push_back(false);
-      local_failed_count++;
     }
   }
 
-  // **THREAD-SAFE COUNTER UPDATE** - Update failed transactions atomically
+  // Count failed transactions
+  size_t local_failed_count = std::count(results.begin(), results.end(), false);
+
+  // Thread-safe counter update - Update failed transactions atomically
   failed_transactions_.fetch_add(local_failed_count, std::memory_order_relaxed);
 
   batch->set_results(results);
@@ -939,50 +956,64 @@ bool BankingStage::validate_batch(std::shared_ptr<TransactionBatch> batch) {
 bool BankingStage::execute_batch(std::shared_ptr<TransactionBatch> batch) {
   // Execute all transactions in the batch with enhanced safety
   if (!batch) {
-    std::cerr << "ERROR: Null batch in execute_batch" << std::endl;
+    LOG_ERROR("Null batch in execute_batch");
     return false;
   }
 
   auto &transactions = batch->get_transactions();
-  std::vector<bool> results;
-  results.reserve(transactions.size());
+  std::vector<bool> results(transactions.size());
 
-  size_t local_processed_count = 0;
-  size_t local_failed_count = 0;
+  // Use parallel algorithms for performance-critical transaction execution
+  // as recommended in CODE_STYLE.md for transaction processing
+  try {
+    std::transform(
+        std::execution::par_unseq, transactions.begin(), transactions.end(),
+        results.begin(), [](const TransactionPtr &transaction) -> bool {
+          try {
+            // Enhanced transaction execution with safety checks
+            if (transaction) {
+              // More robust execution check - verify transaction is well-formed
+              return !transaction->signatures.empty() &&
+                     !transaction->message.empty();
+            }
+            return false;
+          } catch (const std::exception &e) {
+            LOG_ERROR("Exception during transaction execution: ", e.what());
+            return false;
+          } catch (...) {
+            LOG_ERROR("Unknown exception during transaction execution");
+            return false;
+          }
+        });
+  } catch (const std::exception &e) {
+    // Fallback to sequential processing if parallel execution fails
+    LOG_WARN("Parallel execution failed, falling back to sequential: ",
+             e.what());
 
-  for (const auto &transaction : transactions) {
-    bool executed = false;
-
-    try {
-      // **ENHANCED TRANSACTION EXECUTION WITH SAFETY CHECKS**
-      if (transaction) {
-        // More robust execution check - verify transaction is well-formed
-        executed =
-            !transaction->signatures.empty() && !transaction->message.empty();
+    for (size_t i = 0; i < transactions.size(); ++i) {
+      try {
+        if (transactions[i]) {
+          results[i] = !transactions[i]->signatures.empty() &&
+                       !transactions[i]->message.empty();
+        } else {
+          results[i] = false;
+        }
+      } catch (const std::exception &ex) {
+        LOG_ERROR("Transaction execution error: ", ex.what());
+        results[i] = false;
+      } catch (...) {
+        LOG_ERROR("Unknown transaction execution error");
+        results[i] = false;
       }
-
-      results.push_back(executed);
-
-      if (executed) {
-        local_processed_count++;
-      } else {
-        local_failed_count++;
-      }
-
-    } catch (const std::exception &e) {
-      std::cerr << "ERROR: Exception during transaction execution: " << e.what()
-                << std::endl;
-      results.push_back(false);
-      local_failed_count++;
-    } catch (...) {
-      std::cerr << "ERROR: Unknown exception during transaction execution"
-                << std::endl;
-      results.push_back(false);
-      local_failed_count++;
     }
   }
 
-  // **THREAD-SAFE COUNTER UPDATES** - Update counters atomically
+  // Count processed and failed transactions
+  size_t local_processed_count =
+      std::count(results.begin(), results.end(), true);
+  size_t local_failed_count = results.size() - local_processed_count;
+
+  // Thread-safe counter updates - Update counters atomically
   total_transactions_processed_.fetch_add(local_processed_count,
                                           std::memory_order_relaxed);
   failed_transactions_.fetch_add(local_failed_count, std::memory_order_relaxed);
@@ -995,7 +1026,7 @@ bool BankingStage::execute_batch(std::shared_ptr<TransactionBatch> batch) {
 bool BankingStage::commit_batch(std::shared_ptr<TransactionBatch> batch) {
   // Production-ready commitment process that records transactions in the ledger
   if (!batch) {
-    std::cerr << "ERROR: Null batch in commit_batch" << std::endl;
+    LOG_ERROR("Null batch in commit_batch");
     return false;
   }
 

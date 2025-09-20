@@ -60,6 +60,7 @@ struct ValidatorConfig {
   // Runtime configuration
   std::string config_file_path;               ///< Path to additional config file (optional)
   std::string log_level = "info";             ///< Logging level: trace/debug/info/warn/error
+  bool enable_debug_logging = false;          ///< Enable debug logging (performance impact in release)
   std::string metrics_output_path;            ///< File path for metrics export (optional)
 
   // Proof of History and consensus parameters

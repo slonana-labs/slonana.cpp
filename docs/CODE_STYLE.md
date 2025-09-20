@@ -199,10 +199,14 @@ for (size_t i = 0; i < block.transactions.size(); ++i) {
 auto it = std::find_if(validators.begin(), validators.end(),
                       [&](const auto& v) { return v.identity == target_id; });
 
-// Good: Parallel algorithms for performance-critical paths
+// Good: Parallel algorithms for performance-critical paths (implemented in banking stage)
 std::transform(std::execution::par_unseq,
                transactions.begin(), transactions.end(),
-               results.begin(), process_transaction);
+               results.begin(), 
+               [](const auto& tx) { return tx->verify(); });
+
+// Good: Counting with algorithms
+size_t failed_count = std::count(results.begin(), results.end(), false);
 ```
 
 ## Code Organization
@@ -346,6 +350,27 @@ std::unordered_map<Hash, Transaction> tx_cache_;  // O(1) lookup
 std::vector<Transaction> pending_txs_;            // Sequential access
 std::array<uint8_t, 32> hash_buffer_;            // Fixed size, stack allocated
 ```
+
+### Logging Performance
+
+**Use conditional logging to avoid performance impact in release builds:**
+
+```cpp
+#include "common/logging.h"
+
+// Good: Performance-conscious logging that can be disabled
+LOG_DEBUG("Processing transaction batch with ", batch_size, " transactions");
+LOG_INFO("Validator started successfully");
+
+// Avoid: Always-active debug output in performance-critical paths
+std::cout << "Debug info: " << expensive_computation() << std::endl;  // Don't do this
+```
+
+**Logging levels:**
+- `LOG_ERROR()`: Critical errors that require attention
+- `LOG_WARN()`: Warnings that should be investigated
+- `LOG_INFO()`: General information about system state
+- `LOG_DEBUG()`: Detailed debugging information (disabled in release builds)
 
 ### Thread Safety Documentation
 
