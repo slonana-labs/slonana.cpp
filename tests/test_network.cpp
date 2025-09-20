@@ -304,7 +304,8 @@ void test_rpc_advanced_account_methods() {
   rpc_server.start();
 
   // Test getProgramAccounts
-  std::string request = R"({"jsonrpc":"2.0","method":"getProgramAccounts","params":["11111111111111111111111111111112"],"id":"1"})";
+  std::string request =
+      R"({"jsonrpc":"2.0","method":"getProgramAccounts","params":["11111111111111111111111111111112"],"id":"1"})";
   std::string response = rpc_server.handle_request(request);
   ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
   ASSERT_CONTAINS(response, "\"id\":\"1\"");
@@ -320,7 +321,8 @@ void test_rpc_error_responses() {
   rpc_server.start();
 
   // Test with invalid account address
-  std::string request = R"({"jsonrpc":"2.0","method":"getBalance","params":["invalid_address"],"id":"1"})";
+  std::string request =
+      R"({"jsonrpc":"2.0","method":"getBalance","params":["invalid_address"],"id":"1"})";
   std::string response = rpc_server.handle_request(request);
   ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
   ASSERT_CONTAINS(response, "\"id\":\"1\"");
@@ -340,7 +342,9 @@ void test_rpc_rate_limiting() {
 
   // Send multiple rapid requests
   for (int i = 0; i < 100; ++i) {
-    std::string request = R"({"jsonrpc":"2.0","method":"getHealth","params":[],"id":")" + std::to_string(i) + R"("})";
+    std::string request =
+        R"({"jsonrpc":"2.0","method":"getHealth","params":[],"id":")" +
+        std::to_string(i) + R"("})";
     std::string response = rpc_server.handle_request(request);
     ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
   }
@@ -358,12 +362,15 @@ void test_rpc_large_payload_handling() {
   // Create a large request payload
   std::string large_params = "[";
   for (int i = 0; i < 1000; ++i) {
-    if (i > 0) large_params += ",";
+    if (i > 0)
+      large_params += ",";
     large_params += "\"11111111111111111111111111111112\"";
   }
   large_params += "]";
 
-  std::string request = R"({"jsonrpc":"2.0","method":"getMultipleAccounts","params":)" + large_params + R"(,"id":"1"})";
+  std::string request =
+      R"({"jsonrpc":"2.0","method":"getMultipleAccounts","params":)" +
+      large_params + R"(,"id":"1"})";
   std::string response = rpc_server.handle_request(request);
   ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
   ASSERT_CONTAINS(response, "\"id\":\"1\"");
@@ -381,7 +388,9 @@ void test_rpc_concurrent_connections() {
   // Simulate concurrent connections
   std::vector<std::string> responses;
   for (int i = 0; i < 10; ++i) {
-    std::string request = R"({"jsonrpc":"2.0","method":"getSlot","params":[],"id":")" + std::to_string(i) + R"("})";
+    std::string request =
+        R"({"jsonrpc":"2.0","method":"getSlot","params":[],"id":")" +
+        std::to_string(i) + R"("})";
     std::string response = rpc_server.handle_request(request);
     responses.push_back(response);
   }
@@ -404,13 +413,11 @@ void test_rpc_authentication_scenarios() {
 
   // Test methods that might require authentication
   std::vector<std::string> auth_methods = {
-    "sendTransaction",
-    "simulateTransaction",
-    "requestAirdrop"
-  };
+      "sendTransaction", "simulateTransaction", "requestAirdrop"};
 
-  for (const auto& method : auth_methods) {
-    std::string request = R"({"jsonrpc":"2.0","method":")" + method + R"(","params":[],"id":"1"})";
+  for (const auto &method : auth_methods) {
+    std::string request = R"({"jsonrpc":"2.0","method":")" + method +
+                          R"(","params":[],"id":"1"})";
     std::string response = rpc_server.handle_request(request);
     ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
     ASSERT_CONTAINS(response, "\"id\":\"1\"");
@@ -427,15 +434,13 @@ void test_rpc_websocket_functionality() {
   rpc_server.start();
 
   // Test WebSocket-related methods
-  std::vector<std::string> ws_methods = {
-    "accountSubscribe",
-    "logsSubscribe",
-    "signatureSubscribe",
-    "slotSubscribe"
-  };
+  std::vector<std::string> ws_methods = {"accountSubscribe", "logsSubscribe",
+                                         "signatureSubscribe", "slotSubscribe"};
 
-  for (const auto& method : ws_methods) {
-    std::string request = R"({"jsonrpc":"2.0","method":")" + method + R"(","params":["11111111111111111111111111111112"],"id":"1"})";
+  for (const auto &method : ws_methods) {
+    std::string request =
+        R"({"jsonrpc":"2.0","method":")" + method +
+        R"(","params":["11111111111111111111111111111112"],"id":"1"})";
     std::string response = rpc_server.handle_request(request);
     ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
     ASSERT_CONTAINS(response, "\"id\":\"1\"");
@@ -452,9 +457,10 @@ void test_rpc_protocol_compliance() {
   rpc_server.start();
 
   // Test JSON-RPC 2.0 compliance
-  std::string request = R"({"jsonrpc":"2.0","method":"getHealth","params":[],"id":"test"})";
+  std::string request =
+      R"({"jsonrpc":"2.0","method":"getHealth","params":[],"id":"test"})";
   std::string response = rpc_server.handle_request(request);
-  
+
   ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
   ASSERT_CONTAINS(response, "\"id\":\"test\"");
   // Must have either result or error, not both
@@ -475,12 +481,11 @@ void test_rpc_security_validation() {
 
   // Test potential security issues
   std::vector<std::string> security_tests = {
-    R"({"jsonrpc":"2.0","method":"../../../etc/passwd","params":[],"id":"1"})",
-    R"({"jsonrpc":"2.0","method":"getBalance","params":["'; DROP TABLE accounts; --"],"id":"1"})",
-    R"({"jsonrpc":"2.0","method":"getBalance","params":["<script>alert('xss')</script>"],"id":"1"})"
-  };
+      R"({"jsonrpc":"2.0","method":"../../../etc/passwd","params":[],"id":"1"})",
+      R"({"jsonrpc":"2.0","method":"getBalance","params":["'; DROP TABLE accounts; --"],"id":"1"})",
+      R"({"jsonrpc":"2.0","method":"getBalance","params":["<script>alert('xss')</script>"],"id":"1"})"};
 
-  for (const auto& test : security_tests) {
+  for (const auto &test : security_tests) {
     std::string response = rpc_server.handle_request(test);
     ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
     // Should handle malicious input safely
@@ -496,7 +501,7 @@ void test_gossip_protocol_edge_cases() {
   config.gossip_bind_address = TestPortManager::get_next_rpc_address();
 
   auto gossip = std::make_unique<slonana::network::GossipProtocol>(config);
-  
+
   auto start_result = gossip->start();
   ASSERT_TRUE(start_result.is_ok());
 
@@ -507,7 +512,7 @@ void test_gossip_protocol_edge_cases() {
   empty_message.payload.clear(); // Empty payload
   empty_message.timestamp = 0;
   auto result1 = gossip->broadcast_message(empty_message);
-  
+
   slonana::network::NetworkMessage large_message;
   large_message.type = slonana::network::MessageType::GOSSIP_UPDATE;
   large_message.payload.resize(10000, 0xFF); // Large message
@@ -523,7 +528,7 @@ void test_gossip_peer_discovery() {
   config.gossip_bind_address = TestPortManager::get_next_rpc_address();
 
   auto gossip = std::make_unique<slonana::network::GossipProtocol>(config);
-  
+
   auto start_result = gossip->start();
   ASSERT_TRUE(start_result.is_ok());
 
@@ -545,7 +550,7 @@ void test_gossip_message_routing() {
   config.gossip_bind_address = TestPortManager::get_next_rpc_address();
 
   auto gossip = std::make_unique<slonana::network::GossipProtocol>(config);
-  
+
   auto start_result = gossip->start();
   ASSERT_TRUE(start_result.is_ok());
 
@@ -567,13 +572,13 @@ void test_gossip_message_routing() {
 void test_network_partitioning_scenarios() {
   slonana::common::ValidatorConfig config1;
   config1.gossip_bind_address = TestPortManager::get_next_rpc_address();
-  
+
   slonana::common::ValidatorConfig config2;
   config2.gossip_bind_address = TestPortManager::get_next_rpc_address();
 
   auto gossip1 = std::make_unique<slonana::network::GossipProtocol>(config1);
   auto gossip2 = std::make_unique<slonana::network::GossipProtocol>(config2);
-  
+
   auto start1 = gossip1->start();
   auto start2 = gossip2->start();
   ASSERT_TRUE(start1.is_ok());
@@ -598,7 +603,7 @@ void test_network_bandwidth_optimization() {
   config.gossip_bind_address = TestPortManager::get_next_rpc_address();
 
   auto gossip = std::make_unique<slonana::network::GossipProtocol>(config);
-  
+
   auto start_result = gossip->start();
   ASSERT_TRUE(start_result.is_ok());
 
@@ -620,7 +625,8 @@ void test_network_bandwidth_optimization() {
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
       end_time - start_time);
 
-  std::cout << "Bandwidth Test: 100 messages in " << duration.count() << "ms" << std::endl;
+  std::cout << "Bandwidth Test: 100 messages in " << duration.count() << "ms"
+            << std::endl;
 
   gossip->stop();
 }
@@ -628,11 +634,11 @@ void test_network_bandwidth_optimization() {
 void test_network_connection_pooling() {
   // Test connection pooling scenarios
   std::vector<std::unique_ptr<slonana::network::SolanaRpcServer>> servers;
-  
+
   for (int i = 0; i < 5; ++i) {
     slonana::common::ValidatorConfig config;
     config.rpc_bind_address = TestPortManager::get_next_rpc_address();
-    
+
     auto server = std::make_unique<slonana::network::SolanaRpcServer>(config);
     server->start();
     servers.push_back(std::move(server));
@@ -640,14 +646,16 @@ void test_network_connection_pooling() {
 
   // Test all servers
   for (size_t i = 0; i < servers.size(); ++i) {
-    std::string request = R"({"jsonrpc":"2.0","method":"getHealth","params":[],"id":")" + std::to_string(i) + R"("})";
+    std::string request =
+        R"({"jsonrpc":"2.0","method":"getHealth","params":[],"id":")" +
+        std::to_string(i) + R"("})";
     std::string response = servers[i]->handle_request(request);
     ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
     ASSERT_CONTAINS(response, "\"id\":\"" + std::to_string(i) + "\"");
   }
 
   // Clean up
-  for (auto& server : servers) {
+  for (auto &server : servers) {
     server->stop();
   }
 }
@@ -661,12 +669,12 @@ void test_network_protocol_version_negotiation() {
 
   // Test different protocol version scenarios
   std::vector<std::string> version_tests = {
-    R"({"jsonrpc":"1.0","method":"getHealth","params":[],"id":"1"})",
-    R"({"jsonrpc":"2.0","method":"getHealth","params":[],"id":"1"})",
-    R"({"method":"getHealth","params":[],"id":"1"})" // Missing jsonrpc
+      R"({"jsonrpc":"1.0","method":"getHealth","params":[],"id":"1"})",
+      R"({"jsonrpc":"2.0","method":"getHealth","params":[],"id":"1"})",
+      R"({"method":"getHealth","params":[],"id":"1"})" // Missing jsonrpc
   };
 
-  for (const auto& test : version_tests) {
+  for (const auto &test : version_tests) {
     std::string response = rpc_server.handle_request(test);
     // Should handle different versions gracefully
     ASSERT_TRUE(response.length() > 0);
@@ -699,22 +707,32 @@ void run_network_tests(TestRunner &runner) {
                   test_gossip_protocol_start_stop);
   runner.run_test("Gossip Message Broadcasting",
                   test_gossip_message_broadcasting);
-  
+
   // Additional 17 tests for comprehensive coverage
-  runner.run_test("RPC Advanced Account Methods", test_rpc_advanced_account_methods);
+  runner.run_test("RPC Advanced Account Methods",
+                  test_rpc_advanced_account_methods);
   runner.run_test("RPC Error Responses", test_rpc_error_responses);
   runner.run_test("RPC Rate Limiting", test_rpc_rate_limiting);
-  runner.run_test("RPC Large Payload Handling", test_rpc_large_payload_handling);
-  runner.run_test("RPC Concurrent Connections", test_rpc_concurrent_connections);
-  runner.run_test("RPC Authentication Scenarios", test_rpc_authentication_scenarios);
-  runner.run_test("RPC WebSocket Functionality", test_rpc_websocket_functionality);
+  runner.run_test("RPC Large Payload Handling",
+                  test_rpc_large_payload_handling);
+  runner.run_test("RPC Concurrent Connections",
+                  test_rpc_concurrent_connections);
+  runner.run_test("RPC Authentication Scenarios",
+                  test_rpc_authentication_scenarios);
+  runner.run_test("RPC WebSocket Functionality",
+                  test_rpc_websocket_functionality);
   runner.run_test("RPC Protocol Compliance", test_rpc_protocol_compliance);
   runner.run_test("RPC Security Validation", test_rpc_security_validation);
-  runner.run_test("Gossip Protocol Edge Cases", test_gossip_protocol_edge_cases);
+  runner.run_test("Gossip Protocol Edge Cases",
+                  test_gossip_protocol_edge_cases);
   runner.run_test("Gossip Peer Discovery", test_gossip_peer_discovery);
   runner.run_test("Gossip Message Routing", test_gossip_message_routing);
-  runner.run_test("Network Partitioning Scenarios", test_network_partitioning_scenarios);
-  runner.run_test("Network Bandwidth Optimization", test_network_bandwidth_optimization);
-  runner.run_test("Network Connection Pooling", test_network_connection_pooling);
-  runner.run_test("Network Protocol Version Negotiation", test_network_protocol_version_negotiation);
+  runner.run_test("Network Partitioning Scenarios",
+                  test_network_partitioning_scenarios);
+  runner.run_test("Network Bandwidth Optimization",
+                  test_network_bandwidth_optimization);
+  runner.run_test("Network Connection Pooling",
+                  test_network_connection_pooling);
+  runner.run_test("Network Protocol Version Negotiation",
+                  test_network_protocol_version_negotiation);
 }

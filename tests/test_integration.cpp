@@ -9,10 +9,11 @@ namespace fs = std::filesystem;
 
 void test_full_validator_lifecycle() {
   std::string ledger_path = "/tmp/test_integration_validator";
-  
+
   // Initialize test ledger with snapshot/genesis fallback
-  TestLedgerInitializer::initialize_test_ledger("full_validator_lifecycle", ledger_path);
-  
+  TestLedgerInitializer::initialize_test_ledger("full_validator_lifecycle",
+                                                ledger_path);
+
   slonana::common::ValidatorConfig config;
   config.ledger_path = ledger_path;
   config.identity_keypair_path = "/tmp/test_integration_identity.json";
@@ -422,17 +423,20 @@ void test_end_to_end_transaction_processing() {
   auto start_result = validator->start();
   ASSERT_TRUE(start_result.is_ok());
 
-  // Test complete transaction lifecycle: creation → submission → processing → confirmation
+  // Test complete transaction lifecycle: creation → submission → processing →
+  // confirmation
   auto rpc_server = validator->get_rpc_server();
   ASSERT_TRUE(rpc_server != nullptr);
 
   // Simulate transaction submission via RPC
-  std::string tx_request = R"({"jsonrpc":"2.0","method":"sendTransaction","params":["AQABAgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBAQAA"],"id":"1"})";
+  std::string tx_request =
+      R"({"jsonrpc":"2.0","method":"sendTransaction","params":["AQABAgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBAQAA"],"id":"1"})";
   std::string response = rpc_server->handle_request(tx_request);
   ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
 
   // Test transaction confirmation
-  std::string confirm_request = R"({"jsonrpc":"2.0","method":"getSignatureStatuses","params":[["5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"]],"id":"2"})";
+  std::string confirm_request =
+      R"({"jsonrpc":"2.0","method":"getSignatureStatuses","params":[["5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"]],"id":"2"})";
   std::string confirm_response = rpc_server->handle_request(confirm_request);
   ASSERT_CONTAINS(confirm_response, "\"jsonrpc\":\"2.0\"");
 
@@ -463,7 +467,9 @@ void test_multi_component_stress_scenarios() {
     // RPC stress
     auto rpc_server = validator->get_rpc_server();
     if (rpc_server) {
-      std::string request = R"({"jsonrpc":"2.0","method":"getHealth","params":[],"id":")" + std::to_string(i) + R"("})";
+      std::string request =
+          R"({"jsonrpc":"2.0","method":"getHealth","params":[],"id":")" +
+          std::to_string(i) + R"("})";
       std::string response = rpc_server->handle_request(request);
       ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
     }
@@ -477,7 +483,7 @@ void test_multi_component_stress_scenarios() {
       block.parent_hash.resize(32, static_cast<uint8_t>(i - 1));
       block.validator.resize(32, 0xFF);
       block.block_signature.resize(64, 0xAA);
-      
+
       auto store_result = ledger->store_block(block);
       ASSERT_TRUE(store_result.is_ok());
     }
@@ -487,7 +493,7 @@ void test_multi_component_stress_scenarios() {
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
       end_time - start_time);
 
-  std::cout << "Multi-component stress test: 50 operations in " 
+  std::cout << "Multi-component stress test: 50 operations in "
             << duration.count() << "ms" << std::endl;
 
   validator->stop();
@@ -511,7 +517,7 @@ void test_resource_utilization_monitoring() {
 
   // Monitor resource usage during operations
   auto start_time = std::chrono::high_resolution_clock::now();
-  
+
   // Perform resource-intensive operations
   for (int i = 0; i < 100; ++i) {
     auto ledger = validator->get_ledger_manager();
@@ -522,7 +528,7 @@ void test_resource_utilization_monitoring() {
       block.parent_hash.resize(32, static_cast<uint8_t>((i - 1) % 256));
       block.validator.resize(32, 0xBB);
       block.block_signature.resize(64, 0xCC);
-      
+
       // Add transactions to increase resource usage
       for (int j = 0; j < 10; ++j) {
         slonana::ledger::Transaction tx;
@@ -532,7 +538,7 @@ void test_resource_utilization_monitoring() {
         tx.hash.resize(32, static_cast<uint8_t>(j + 2));
         block.transactions.push_back(tx);
       }
-      
+
       auto store_result = ledger->store_block(block);
       ASSERT_TRUE(store_result.is_ok());
     }
@@ -542,8 +548,9 @@ void test_resource_utilization_monitoring() {
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
       end_time - start_time);
 
-  std::cout << "Resource utilization test: 100 blocks with 1000 transactions in " 
-            << duration.count() << "ms" << std::endl;
+  std::cout
+      << "Resource utilization test: 100 blocks with 1000 transactions in "
+      << duration.count() << "ms" << std::endl;
 
   // Verify ledger state after resource-intensive operations
   auto ledger = validator->get_ledger_manager();
@@ -571,26 +578,28 @@ void test_scalability_limits() {
 
   // Test scalability with increasing load
   std::vector<int> load_levels = {10, 50, 100, 200};
-  
+
   for (int load : load_levels) {
     auto start_time = std::chrono::high_resolution_clock::now();
-    
+
     for (int i = 0; i < load; ++i) {
       auto rpc_server = validator->get_rpc_server();
       if (rpc_server) {
-        std::string request = R"({"jsonrpc":"2.0","method":"getSlot","params":[],"id":")" + std::to_string(i) + R"("})";
+        std::string request =
+            R"({"jsonrpc":"2.0","method":"getSlot","params":[],"id":")" +
+            std::to_string(i) + R"("})";
         std::string response = rpc_server->handle_request(request);
         ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
       }
     }
-    
+
     auto end_time = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
         end_time - start_time);
-    
-    std::cout << "Scalability test - Load " << load << ": " 
-              << duration.count() << "ms (" 
-              << (load * 1000.0 / duration.count()) << " req/s)" << std::endl;
+
+    std::cout << "Scalability test - Load " << load << ": " << duration.count()
+              << "ms (" << (load * 1000.0 / duration.count()) << " req/s)"
+              << std::endl;
   }
 
   validator->stop();
@@ -624,7 +633,7 @@ void test_recovery_scenarios_comprehensive() {
       block.parent_hash.resize(32, static_cast<uint8_t>(i - 1));
       block.validator.resize(32, 0xDD);
       block.block_signature.resize(64, 0xEE);
-      
+
       auto store_result = ledger->store_block(block);
       ASSERT_TRUE(store_result.is_ok());
     }
@@ -650,7 +659,7 @@ void test_recovery_scenarios_comprehensive() {
     block.parent_hash.resize(32, 0x0A);
     block.validator.resize(32, 0xDD);
     block.block_signature.resize(64, 0xEE);
-    
+
     auto store_result = ledger->store_block(block);
     ASSERT_TRUE(store_result.is_ok());
     ASSERT_EQ(static_cast<uint64_t>(11), ledger->get_latest_slot());
@@ -677,12 +686,12 @@ void test_upgrade_compatibility() {
 
   // Test compatibility with different data formats
   auto ledger = validator->get_ledger_manager();
-  
+
   // Store blocks with different characteristics to test compatibility
   std::vector<std::vector<uint8_t>> different_formats = {
-    {0x01, 0x02, 0x03}, // Format A
-    {0xFF, 0xFE, 0xFD, 0xFC}, // Format B  
-    {0xAA, 0xBB, 0xCC, 0xDD, 0xEE}, // Format C
+      {0x01, 0x02, 0x03},             // Format A
+      {0xFF, 0xFE, 0xFD, 0xFC},       // Format B
+      {0xAA, 0xBB, 0xCC, 0xDD, 0xEE}, // Format C
   };
 
   for (size_t i = 0; i < different_formats.size(); ++i) {
@@ -693,7 +702,7 @@ void test_upgrade_compatibility() {
     block.parent_hash.resize(32, static_cast<uint8_t>(i - 1));
     block.validator.resize(32, 0xAA);
     block.block_signature.resize(64, 0xBB);
-    
+
     auto store_result = ledger->store_block(block);
     ASSERT_TRUE(store_result.is_ok());
   }
@@ -707,7 +716,7 @@ void test_upgrade_compatibility() {
 void test_configuration_management() {
   // Test various configuration scenarios
   std::vector<slonana::common::ValidatorConfig> test_configs;
-  
+
   // Config 1: Minimal configuration
   slonana::common::ValidatorConfig minimal_config;
   minimal_config.ledger_path = "/tmp/test_config_minimal";
@@ -737,8 +746,8 @@ void test_configuration_management() {
 
   // Test each configuration
   for (size_t i = 0; i < test_configs.size(); ++i) {
-    const auto& config = test_configs[i];
-    
+    const auto &config = test_configs[i];
+
     if (fs::exists(config.ledger_path)) {
       fs::remove_all(config.ledger_path);
     }
@@ -757,7 +766,7 @@ void test_configuration_management() {
     block.parent_hash.resize(32, 0x00);
     block.validator.resize(32, 0xFF);
     block.block_signature.resize(64, 0xAA);
-    
+
     auto store_result = ledger->store_block(block);
     ASSERT_TRUE(store_result.is_ok());
 
@@ -783,13 +792,15 @@ void test_monitoring_metrics_integration() {
 
   // Test metrics collection during operations
   auto start_time = std::chrono::high_resolution_clock::now();
-  
+
   // Perform monitored operations
   for (int i = 0; i < 25; ++i) {
     // RPC operations
     auto rpc_server = validator->get_rpc_server();
     if (rpc_server) {
-      std::string request = R"({"jsonrpc":"2.0","method":"getHealth","params":[],"id":")" + std::to_string(i) + R"("})";
+      std::string request =
+          R"({"jsonrpc":"2.0","method":"getHealth","params":[],"id":")" +
+          std::to_string(i) + R"("})";
       std::string response = rpc_server->handle_request(request);
       ASSERT_CONTAINS(response, "\"jsonrpc\":\"2.0\"");
     }
@@ -803,7 +814,7 @@ void test_monitoring_metrics_integration() {
       block.parent_hash.resize(32, static_cast<uint8_t>((i - 1) % 256));
       block.validator.resize(32, 0x99);
       block.block_signature.resize(64, 0x88);
-      
+
       auto store_result = ledger->store_block(block);
       ASSERT_TRUE(store_result.is_ok());
     }
@@ -813,7 +824,7 @@ void test_monitoring_metrics_integration() {
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
       end_time - start_time);
 
-  std::cout << "Monitoring metrics test: 25 RPC + 25 ledger operations in " 
+  std::cout << "Monitoring metrics test: 25 RPC + 25 ledger operations in "
             << duration.count() << "ms" << std::endl;
 
   // Verify final state
@@ -840,14 +851,19 @@ void run_integration_tests(TestRunner &runner) {
   runner.run_test("Validator Error Recovery", test_validator_error_recovery);
   runner.run_test("Validator Performance Stress",
                   test_validator_performance_stress);
-  
+
   // Additional 8 tests for comprehensive coverage
-  runner.run_test("End-to-End Transaction Processing", test_end_to_end_transaction_processing);
-  runner.run_test("Multi-Component Stress Scenarios", test_multi_component_stress_scenarios);
-  runner.run_test("Resource Utilization Monitoring", test_resource_utilization_monitoring);
+  runner.run_test("End-to-End Transaction Processing",
+                  test_end_to_end_transaction_processing);
+  runner.run_test("Multi-Component Stress Scenarios",
+                  test_multi_component_stress_scenarios);
+  runner.run_test("Resource Utilization Monitoring",
+                  test_resource_utilization_monitoring);
   runner.run_test("Scalability Limits", test_scalability_limits);
-  runner.run_test("Recovery Scenarios Comprehensive", test_recovery_scenarios_comprehensive);
+  runner.run_test("Recovery Scenarios Comprehensive",
+                  test_recovery_scenarios_comprehensive);
   runner.run_test("Upgrade Compatibility", test_upgrade_compatibility);
   runner.run_test("Configuration Management", test_configuration_management);
-  runner.run_test("Monitoring Metrics Integration", test_monitoring_metrics_integration);
+  runner.run_test("Monitoring Metrics Integration",
+                  test_monitoring_metrics_integration);
 }

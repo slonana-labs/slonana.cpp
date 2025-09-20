@@ -246,13 +246,13 @@ void test_ledger_manager_performance() {
 // Additional comprehensive ledger tests (doubling from 9 to 18)
 void test_ledger_concurrent_access() {
   std::string test_path = "/tmp/test_ledger_concurrent";
-  
+
   if (fs::exists(test_path)) {
     fs::remove_all(test_path);
   }
-  
+
   auto ledger = std::make_unique<slonana::ledger::LedgerManager>(test_path);
-  
+
   // Store blocks sequentially to test concurrent-like access patterns
   for (uint64_t i = 1; i <= 10; ++i) {
     slonana::ledger::Block block;
@@ -261,14 +261,14 @@ void test_ledger_concurrent_access() {
     block.parent_hash.resize(32, static_cast<uint8_t>(i - 1));
     block.validator.resize(32, 0xCC);
     block.block_signature.resize(64, 0xDD);
-    
+
     auto result = ledger->store_block(block);
     ASSERT_TRUE(result.is_ok());
   }
-  
+
   ASSERT_EQ(static_cast<uint64_t>(10), ledger->get_latest_slot());
   ASSERT_EQ(static_cast<uint64_t>(10), ledger->get_ledger_size());
-  
+
   if (fs::exists(test_path)) {
     fs::remove_all(test_path);
   }
@@ -276,13 +276,13 @@ void test_ledger_concurrent_access() {
 
 void test_ledger_large_block_handling() {
   std::string test_path = "/tmp/test_ledger_large";
-  
+
   if (fs::exists(test_path)) {
     fs::remove_all(test_path);
   }
-  
+
   auto ledger = std::make_unique<slonana::ledger::LedgerManager>(test_path);
-  
+
   // Create a block with larger data
   slonana::ledger::Block large_block;
   large_block.slot = 1;
@@ -290,15 +290,15 @@ void test_ledger_large_block_handling() {
   large_block.parent_hash.resize(32, 0x00);
   large_block.validator.resize(32, 0xBB);
   large_block.block_signature.resize(64, 0xEE);
-  
+
   auto result = ledger->store_block(large_block);
   ASSERT_TRUE(result.is_ok());
-  
+
   // Verify the large block was stored
   auto retrieved = ledger->get_block_by_slot(1);
   ASSERT_TRUE(retrieved.has_value());
   ASSERT_EQ(static_cast<uint64_t>(1), retrieved.value().slot);
-  
+
   if (fs::exists(test_path)) {
     fs::remove_all(test_path);
   }
@@ -306,24 +306,24 @@ void test_ledger_large_block_handling() {
 
 void test_ledger_block_corruption_scenarios() {
   std::string test_path = "/tmp/test_ledger_corruption";
-  
+
   if (fs::exists(test_path)) {
     fs::remove_all(test_path);
   }
-  
+
   auto ledger = std::make_unique<slonana::ledger::LedgerManager>(test_path);
-  
+
   // Test with edge case block data
   slonana::ledger::Block edge_block;
   edge_block.slot = 1;
-  edge_block.block_hash.resize(32, 0x00); // All zeros hash
+  edge_block.block_hash.resize(32, 0x00);  // All zeros hash
   edge_block.parent_hash.resize(32, 0x00); // All zeros parent
   edge_block.validator.resize(32, 0xFF);
   edge_block.block_signature.resize(64, 0xAA);
-  
+
   auto result = ledger->store_block(edge_block);
   ASSERT_TRUE(result.is_ok());
-  
+
   if (fs::exists(test_path)) {
     fs::remove_all(test_path);
   }
@@ -331,13 +331,13 @@ void test_ledger_block_corruption_scenarios() {
 
 void test_ledger_transaction_batch_processing() {
   std::string test_path = "/tmp/test_ledger_batch";
-  
+
   if (fs::exists(test_path)) {
     fs::remove_all(test_path);
   }
-  
+
   auto ledger = std::make_unique<slonana::ledger::LedgerManager>(test_path);
-  
+
   // Create multiple blocks
   for (uint64_t slot = 1; slot <= 5; ++slot) {
     slonana::ledger::Block block;
@@ -346,13 +346,13 @@ void test_ledger_transaction_batch_processing() {
     block.parent_hash.resize(32, static_cast<uint8_t>(slot - 1));
     block.validator.resize(32, 0xAA);
     block.block_signature.resize(64, 0xBB);
-    
+
     auto result = ledger->store_block(block);
     ASSERT_TRUE(result.is_ok());
   }
-  
+
   ASSERT_EQ(static_cast<uint64_t>(5), ledger->get_latest_slot());
-  
+
   if (fs::exists(test_path)) {
     fs::remove_all(test_path);
   }
@@ -360,36 +360,37 @@ void test_ledger_transaction_batch_processing() {
 
 void test_ledger_recovery_scenarios() {
   std::string test_path = "/tmp/test_ledger_recovery";
-  
+
   if (fs::exists(test_path)) {
     fs::remove_all(test_path);
   }
-  
+
   // Create ledger, store data, destroy, then recreate
   {
     auto ledger = std::make_unique<slonana::ledger::LedgerManager>(test_path);
-    
+
     slonana::ledger::Block block;
     block.slot = 42;
     block.block_hash.resize(32, 0xDE);
     block.parent_hash.resize(32, 0xAD);
     block.validator.resize(32, 0xBE);
     block.block_signature.resize(64, 0xEF);
-    
+
     auto result = ledger->store_block(block);
     ASSERT_TRUE(result.is_ok());
   }
-  
+
   // Create new ledger instance (simulating recovery)
   {
-    auto recovered_ledger = std::make_unique<slonana::ledger::LedgerManager>(test_path);
-    
+    auto recovered_ledger =
+        std::make_unique<slonana::ledger::LedgerManager>(test_path);
+
     // Should be able to access previously stored data
     auto retrieved = recovered_ledger->get_block_by_slot(42);
     ASSERT_TRUE(retrieved.has_value());
     ASSERT_EQ(static_cast<uint64_t>(42), retrieved.value().slot);
   }
-  
+
   if (fs::exists(test_path)) {
     fs::remove_all(test_path);
   }
@@ -397,13 +398,13 @@ void test_ledger_recovery_scenarios() {
 
 void test_ledger_storage_limits() {
   std::string test_path = "/tmp/test_ledger_limits";
-  
+
   if (fs::exists(test_path)) {
     fs::remove_all(test_path);
   }
-  
+
   auto ledger = std::make_unique<slonana::ledger::LedgerManager>(test_path);
-  
+
   // Test with many blocks
   for (uint64_t slot = 1; slot <= 100; ++slot) {
     slonana::ledger::Block block;
@@ -412,14 +413,14 @@ void test_ledger_storage_limits() {
     block.parent_hash.resize(32, static_cast<uint8_t>((slot - 1) % 256));
     block.validator.resize(32, 0x77);
     block.block_signature.resize(64, 0x88);
-    
+
     auto result = ledger->store_block(block);
     ASSERT_TRUE(result.is_ok());
   }
-  
+
   ASSERT_EQ(static_cast<uint64_t>(100), ledger->get_latest_slot());
   ASSERT_EQ(static_cast<uint64_t>(100), ledger->get_ledger_size());
-  
+
   if (fs::exists(test_path)) {
     fs::remove_all(test_path);
   }
@@ -427,16 +428,16 @@ void test_ledger_storage_limits() {
 
 void test_ledger_database_consistency() {
   std::string test_path = "/tmp/test_ledger_consistency";
-  
+
   if (fs::exists(test_path)) {
     fs::remove_all(test_path);
   }
-  
+
   auto ledger = std::make_unique<slonana::ledger::LedgerManager>(test_path);
-  
+
   // Store blocks in non-sequential order
   std::vector<uint64_t> slots = {5, 2, 8, 1, 7, 3, 6, 4};
-  
+
   for (uint64_t slot : slots) {
     slonana::ledger::Block block;
     block.slot = slot;
@@ -444,18 +445,18 @@ void test_ledger_database_consistency() {
     block.parent_hash.resize(32, static_cast<uint8_t>(slot - 1));
     block.validator.resize(32, 0x99);
     block.block_signature.resize(64, 0xAA);
-    
+
     auto result = ledger->store_block(block);
     ASSERT_TRUE(result.is_ok());
   }
-  
+
   // Verify all blocks are accessible
   for (uint64_t slot : slots) {
     auto retrieved = ledger->get_block_by_slot(slot);
     ASSERT_TRUE(retrieved.has_value());
     ASSERT_EQ(slot, retrieved.value().slot);
   }
-  
+
   if (fs::exists(test_path)) {
     fs::remove_all(test_path);
   }
@@ -463,15 +464,15 @@ void test_ledger_database_consistency() {
 
 void test_ledger_performance_under_load() {
   std::string test_path = "/tmp/test_ledger_load";
-  
+
   if (fs::exists(test_path)) {
     fs::remove_all(test_path);
   }
-  
+
   auto ledger = std::make_unique<slonana::ledger::LedgerManager>(test_path);
-  
+
   auto start_time = std::chrono::high_resolution_clock::now();
-  
+
   // Store 200 blocks
   for (uint64_t slot = 1; slot <= 200; ++slot) {
     slonana::ledger::Block block;
@@ -480,20 +481,20 @@ void test_ledger_performance_under_load() {
     block.parent_hash.resize(32, static_cast<uint8_t>((slot - 1) % 256));
     block.validator.resize(32, 0x55);
     block.block_signature.resize(64, 0x66);
-    
+
     auto result = ledger->store_block(block);
     ASSERT_TRUE(result.is_ok());
   }
-  
+
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
       end_time - start_time);
-  
-  std::cout << "Load Test: Stored 200 blocks in " 
-            << duration.count() << "ms" << std::endl;
-  
+
+  std::cout << "Load Test: Stored 200 blocks in " << duration.count() << "ms"
+            << std::endl;
+
   ASSERT_EQ(static_cast<uint64_t>(200), ledger->get_latest_slot());
-  
+
   if (fs::exists(test_path)) {
     fs::remove_all(test_path);
   }
@@ -501,30 +502,31 @@ void test_ledger_performance_under_load() {
 
 void test_ledger_memory_management() {
   std::string test_path = "/tmp/test_ledger_memory";
-  
+
   if (fs::exists(test_path)) {
     fs::remove_all(test_path);
   }
-  
+
   // Test multiple ledger instances
   for (int instance = 0; instance < 5; ++instance) {
     auto ledger = std::make_unique<slonana::ledger::LedgerManager>(test_path);
-    
+
     slonana::ledger::Block block;
     block.slot = instance + 1;
     block.block_hash.resize(32, static_cast<uint8_t>(instance));
     block.parent_hash.resize(32, static_cast<uint8_t>(instance - 1));
     block.validator.resize(32, 0x11);
     block.block_signature.resize(64, 0x22);
-    
+
     auto result = ledger->store_block(block);
     ASSERT_TRUE(result.is_ok());
   }
-  
+
   // Final verification
-  auto final_ledger = std::make_unique<slonana::ledger::LedgerManager>(test_path);
+  auto final_ledger =
+      std::make_unique<slonana::ledger::LedgerManager>(test_path);
   ASSERT_EQ(static_cast<uint64_t>(5), final_ledger->get_latest_slot());
-  
+
   if (fs::exists(test_path)) {
     fs::remove_all(test_path);
   }
@@ -549,15 +551,20 @@ void run_ledger_tests(TestRunner &runner) {
                   test_ledger_manager_invalid_operations);
   runner.run_test("Ledger Manager Performance",
                   test_ledger_manager_performance);
-  
+
   // Additional 9 tests for comprehensive coverage
   runner.run_test("Ledger Concurrent Access", test_ledger_concurrent_access);
-  runner.run_test("Ledger Large Block Handling", test_ledger_large_block_handling);
-  runner.run_test("Ledger Block Corruption Scenarios", test_ledger_block_corruption_scenarios);
-  runner.run_test("Ledger Transaction Batch Processing", test_ledger_transaction_batch_processing);
+  runner.run_test("Ledger Large Block Handling",
+                  test_ledger_large_block_handling);
+  runner.run_test("Ledger Block Corruption Scenarios",
+                  test_ledger_block_corruption_scenarios);
+  runner.run_test("Ledger Transaction Batch Processing",
+                  test_ledger_transaction_batch_processing);
   runner.run_test("Ledger Recovery Scenarios", test_ledger_recovery_scenarios);
   runner.run_test("Ledger Storage Limits", test_ledger_storage_limits);
-  runner.run_test("Ledger Database Consistency", test_ledger_database_consistency);
-  runner.run_test("Ledger Performance Under Load", test_ledger_performance_under_load);
+  runner.run_test("Ledger Database Consistency",
+                  test_ledger_database_consistency);
+  runner.run_test("Ledger Performance Under Load",
+                  test_ledger_performance_under_load);
   runner.run_test("Ledger Memory Management", test_ledger_memory_management);
 }

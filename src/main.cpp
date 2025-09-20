@@ -69,9 +69,11 @@ void print_usage(const char *program_name) {
       << std::endl;
   std::cout << "  --allow-stale-rpc          Allow RPC before fully caught up"
             << std::endl;
-  std::cout << "  --faucet-port PORT         Enable faucet on specified port (enables CLI airdrop support)"
+  std::cout << "  --faucet-port PORT         Enable faucet on specified port "
+               "(enables CLI airdrop support)"
             << std::endl;
-  std::cout << "  --rpc-faucet-address ADDR  Faucet bind address (default: 127.0.0.1:9900)"
+  std::cout << "  --rpc-faucet-address ADDR  Faucet bind address (default: "
+               "127.0.0.1:9900)"
             << std::endl;
   std::cout << "  --no-rpc                   Disable RPC server" << std::endl;
   std::cout << "  --no-gossip                Disable gossip protocol"
@@ -402,10 +404,11 @@ slonana::common::ValidatorConfig parse_arguments(int argc, char *argv[]) {
       config.allow_stale_rpc = true;
     } else if (arg == "--faucet-port" && i + 1 < argc) {
       config.faucet_port = std::stoi(argv[++i]);
-      config.enable_faucet = true;  // Auto-enable faucet when port is specified
+      config.enable_faucet = true; // Auto-enable faucet when port is specified
     } else if (arg == "--rpc-faucet-address" && i + 1 < argc) {
       config.rpc_faucet_address = argv[++i];
-      config.enable_faucet = true;  // Auto-enable faucet when address is specified
+      config.enable_faucet =
+          true; // Auto-enable faucet when address is specified
     } else if (arg == "--no-rpc") {
       config.enable_rpc = false;
     } else if (arg == "--no-gossip") {
@@ -612,16 +615,17 @@ int main(int argc, char *argv[]) {
       std::cout << "🚀 Fast mode: Ready for benchmarking/testing" << std::endl;
     }
     std::cout << "Log level: " << config.log_level << std::endl;
-    
+
     // Display faucet status
     if (config.enable_faucet) {
-      std::cout << "Faucet: ENABLED on " << config.rpc_faucet_address 
+      std::cout << "Faucet: ENABLED on " << config.rpc_faucet_address
                 << " (supports CLI airdrop commands)" << std::endl;
     } else {
-      std::cout << "Faucet: DISABLED (use --faucet-port to enable CLI airdrop support)" 
+      std::cout << "Faucet: DISABLED (use --faucet-port to enable CLI airdrop "
+                   "support)"
                 << std::endl;
     }
-    
+
     if (!config.metrics_output_path.empty()) {
       std::cout << "Metrics output: " << config.metrics_output_path
                 << std::endl;

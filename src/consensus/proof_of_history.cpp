@@ -9,8 +9,8 @@
 #else
 // Simple lock-free queue fallback using traditional containers
 // WARNING: This fallback uses blocking mutex-based queue operations.
-// Performance will be significantly reduced compared to true lock-free boost::lockfree.
-// Consider installing boost::lockfree for production use.
+// Performance will be significantly reduced compared to true lock-free
+// boost::lockfree. Consider installing boost::lockfree for production use.
 namespace boost {
 namespace lockfree {
 template <typename T> class queue {
@@ -135,9 +135,9 @@ ProofOfHistory::ProofOfHistory(const PohConfig &config) : config_(config) {
   stats_.lock_contention_ratio = 0.0;
 }
 
-ProofOfHistory::~ProofOfHistory() { 
-  stop(); 
-  
+ProofOfHistory::~ProofOfHistory() {
+  stop();
+
   // Clean up any remaining pointers in lock-free queue
 #if HAS_LOCKFREE_QUEUE
   if (lock_free_mix_queue_) {
@@ -210,7 +210,9 @@ void ProofOfHistory::stop() {
   running_.store(false, std::memory_order_release);
 }
 
-bool ProofOfHistory::is_running() const { return running_.load(std::memory_order_acquire); }
+bool ProofOfHistory::is_running() const {
+  return running_.load(std::memory_order_acquire);
+}
 
 PohEntry ProofOfHistory::get_current_entry() const {
   std::lock_guard<std::mutex> lock(state_mutex_);
@@ -221,7 +223,9 @@ uint64_t ProofOfHistory::get_current_sequence() const {
   return current_sequence_.load(std::memory_order_acquire);
 }
 
-Slot ProofOfHistory::get_current_slot() const { return current_slot_.load(std::memory_order_acquire); }
+Slot ProofOfHistory::get_current_slot() const {
+  return current_slot_.load(std::memory_order_acquire);
+}
 
 uint64_t ProofOfHistory::mix_data(const Hash &data) {
   if (config_.enable_lock_contention_tracking) {
@@ -247,16 +251,17 @@ uint64_t ProofOfHistory::mix_data(const Hash &data) {
   // Traditional mutex-based approach (fallback or when lock-free disabled)
   // Apply backpressure to prevent OOM under flood conditions
   std::lock_guard<std::mutex> lock(mix_queue_mutex_);
-  
+
   // Check if queue is approaching capacity limit to prevent memory explosion
   if (pending_mix_data_.size() >= config_.max_entries_buffer) {
     // Drop oldest entries when at capacity (FIFO dropping policy)
     pending_mix_data_.pop_front();
     if (config_.enable_lock_contention_tracking) {
-      lock_contention_count_.fetch_add(1, std::memory_order_relaxed); // Track dropped entries
+      lock_contention_count_.fetch_add(
+          1, std::memory_order_relaxed); // Track dropped entries
     }
   }
-  
+
   pending_mix_data_.push_back(data);
 
   {
@@ -264,7 +269,8 @@ uint64_t ProofOfHistory::mix_data(const Hash &data) {
     stats_.pending_data_mixes = pending_mix_data_.size();
   }
 
-  return current_sequence_.load(std::memory_order_acquire) + pending_mix_data_.size();
+  return current_sequence_.load(std::memory_order_acquire) +
+         pending_mix_data_.size();
 }
 
 std::vector<PohEntry> ProofOfHistory::get_slot_entries(Slot slot) const {
@@ -296,7 +302,8 @@ ProofOfHistory::PohStats ProofOfHistory::get_stats() const {
 }
 
 void ProofOfHistory::hashing_thread_func() {
-  while (running_.load(std::memory_order_acquire) && !stopping_.load(std::memory_order_acquire)) {
+  while (running_.load(std::memory_order_acquire) &&
+         !stopping_.load(std::memory_order_acquire)) {
     if (config_.enable_batch_processing) {
       // Process batches of hashes for better performance
       process_tick_batch();
@@ -310,7 +317,8 @@ void ProofOfHistory::hashing_thread_func() {
 void ProofOfHistory::tick_thread_func() {
   auto next_tick_time = std::chrono::system_clock::now();
 
-  while (running_.load(std::memory_order_acquire) && !stopping_.load(std::memory_order_acquire)) {
+  while (running_.load(std::memory_order_acquire) &&
+         !stopping_.load(std::memory_order_acquire)) {
     if (config_.enable_batch_processing) {
       process_tick_batch();
     } else {
@@ -484,7 +492,8 @@ void ProofOfHistory::process_tick_batch() {
     // Calculate lock contention ratio only if tracking is enabled
     if (config_.enable_lock_contention_tracking) {
       uint64_t attempts = lock_attempts_.load(std::memory_order_relaxed);
-      uint64_t contentions = lock_contention_count_.load(std::memory_order_relaxed);
+      uint64_t contentions =
+          lock_contention_count_.load(std::memory_order_relaxed);
       if (attempts > 0) {
         stats_.lock_contention_ratio = (double)contentions / attempts;
       }
@@ -521,7 +530,8 @@ void ProofOfHistory::process_tick() {
     new_entry.mixed_data = std::move(mixed_data);
 
     current_entry_ = new_entry;
-    current_sequence_.store(new_entry.sequence_number, std::memory_order_release);
+    current_sequence_.store(new_entry.sequence_number,
+                            std::memory_order_release);
   }
 
   // Add to history
@@ -693,14 +703,15 @@ ProofOfHistory &GlobalProofOfHistory::instance() {
   return *instance_;
 }
 
-bool GlobalProofOfHistory::initialize(const PohConfig &config, const Hash &initial_hash) {
+bool GlobalProofOfHistory::initialize(const PohConfig &config,
+                                      const Hash &initial_hash) {
   std::lock_guard<std::mutex> lock(instance_mutex_);
   if (instance_) {
     return false; // Already initialized
   }
 
   instance_ = std::make_unique<ProofOfHistory>(config);
-  
+
   // Start the PoH instance immediately with the provided initial hash
   auto start_result = instance_->start(initial_hash);
   if (!start_result.is_ok()) {
@@ -708,7 +719,7 @@ bool GlobalProofOfHistory::initialize(const PohConfig &config, const Hash &initi
     instance_.reset();
     return false;
   }
-  
+
   return true;
 }
 
@@ -754,7 +765,8 @@ Slot GlobalProofOfHistory::get_current_slot() {
   return instance_->get_current_slot();
 }
 
-bool GlobalProofOfHistory::set_tick_callback(ProofOfHistory::TickCallback callback) {
+bool GlobalProofOfHistory::set_tick_callback(
+    ProofOfHistory::TickCallback callback) {
   std::lock_guard<std::mutex> lock(instance_mutex_);
   if (!instance_) {
     return false; // Cannot set callback when uninitialized
@@ -763,7 +775,8 @@ bool GlobalProofOfHistory::set_tick_callback(ProofOfHistory::TickCallback callba
   return true;
 }
 
-bool GlobalProofOfHistory::set_slot_callback(ProofOfHistory::SlotCallback callback) {
+bool GlobalProofOfHistory::set_slot_callback(
+    ProofOfHistory::SlotCallback callback) {
   std::lock_guard<std::mutex> lock(instance_mutex_);
   if (!instance_) {
     return false; // Cannot set callback when uninitialized
