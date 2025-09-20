@@ -361,6 +361,15 @@ target_include_directories(slonana_hardware_wallet_tests PRIVATE "${CMAKE_SOURCE
 target_compile_definitions(slonana_hardware_wallet_tests PRIVATE STANDALONE_HARDWARE_WALLET_TESTS)
 add_test(NAME hardware_wallet_tests COMMAND slonana_hardware_wallet_tests)
 
+# Fault tolerance test suite
+add_executable(slonana_fault_tolerance_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_fault_tolerance.cpp"
+)
+target_link_libraries(slonana_fault_tolerance_tests slonana_core)
+target_include_directories(slonana_fault_tolerance_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_fault_tolerance_tests PRIVATE STANDALONE_FAULT_TOLERANCE_TESTS)
+add_test(NAME fault_tolerance_tests COMMAND slonana_fault_tolerance_tests)
+
 
 
 # Genesis CLI tool
