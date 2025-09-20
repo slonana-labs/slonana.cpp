@@ -1,0 +1,50 @@
+version: 2
+updates:
+  # GitHub Actions dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "04:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "security"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+
+  # Docker dependencies (if Docker images are used)
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"  
+      time: "04:30"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "docker"
+      - "security"
+    commit-message:
+      prefix: "docker"
+      include: "scope"
+
+  # C++ dependencies via GitHub's ecosystem detection
+  # Note: Dependabot has limited C++ support, but will detect some patterns
+  - package-ecosystem: "gitsubmodule"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "05:00"
+    open-pull-requests-limit: 2
+    labels:
+      - "dependencies"
+      - "submodules"
+      - "security"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
