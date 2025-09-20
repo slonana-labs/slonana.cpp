@@ -400,6 +400,15 @@ target_include_directories(slonana_bug_fix_tests PRIVATE "${CMAKE_SOURCE_DIR}/te
 target_compile_definitions(slonana_bug_fix_tests PRIVATE STANDALONE_BUG_FIX_TESTS)
 add_test(NAME bug_fix_validation_tests COMMAND slonana_bug_fix_tests)
 
+# Logging and alerting test suite
+add_executable(slonana_logging_alerting_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_logging_alerting.cpp"
+)
+target_link_libraries(slonana_logging_alerting_tests slonana_core)
+target_include_directories(slonana_logging_alerting_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_logging_alerting_tests PRIVATE STANDALONE_LOGGING_ALERTING_TESTS)
+add_test(NAME logging_alerting_tests COMMAND slonana_logging_alerting_tests)
+
 
 
 # Genesis CLI tool
