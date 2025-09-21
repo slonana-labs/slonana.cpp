@@ -9,6 +9,7 @@
 #include <openssl/ssl.h>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace slonana {
@@ -142,7 +143,7 @@ private:
   SecureMessagingConfig config_;
   EVP_PKEY* signing_key_;
   std::map<std::string, EVP_PKEY*> peer_keys_;
-  std::set<uint64_t> used_nonces_;
+  std::unordered_map<uint64_t, std::chrono::steady_clock::time_point> used_nonces_;
   std::mutex nonce_mutex_;
   
   bool load_signing_key();

@@ -598,29 +598,57 @@ uint64_t MessageCrypto::generate_nonce() {
 }
 
 bool MessageCrypto::is_nonce_used(uint64_t nonce) {
-  return used_nonces_.find(nonce) != used_nonces_.end();
+  auto now = std::chrono::steady_clock::now();
+  auto it = used_nonces_.find(nonce);
+  
+  if (it == used_nonces_.end()) {
+    return false; // Nonce not found, so not used
+  }
+  
+  // Check if the nonce is expired
+  auto ttl = std::chrono::seconds(config_.message_ttl_seconds);
+  if (now - it->second > ttl) {
+    // Nonce is expired, remove it and consider it not used
+    used_nonces_.erase(it);
+    return false;
+  }
+  
+  return true; // Nonce exists and is still valid
 }
 
 void MessageCrypto::add_used_nonce(uint64_t nonce) {
-  used_nonces_.insert(nonce);
+  auto now = std::chrono::steady_clock::now();
+  used_nonces_[nonce] = now;
   
-  // Cleanup if cache is too large
+  // Cleanup expired nonces and check size limit
+  cleanup_expired_nonces();
+  
+  // If still too large after cleanup, remove oldest entries
   if (used_nonces_.size() > config_.nonce_cache_size) {
-    cleanup_expired_nonces();
+    // Find the oldest entry by timestamp
+    auto oldest = std::min_element(used_nonces_.begin(), used_nonces_.end(),
+                                  [](const auto& a, const auto& b) {
+                                    return a.second < b.second;
+                                  });
+    
+    if (oldest != used_nonces_.end()) {
+      used_nonces_.erase(oldest);
+    }
   }
 }
 
 void MessageCrypto::cleanup_expired_nonces() {
-  uint64_t current_time = get_current_timestamp_ms();
-  uint64_t expiry_threshold = current_time - (config_.message_ttl_seconds * 1000);
+  auto now = std::chrono::steady_clock::now();
+  auto ttl = std::chrono::seconds(config_.message_ttl_seconds);
   
-  // Remove nonces that are too old based on timestamp
-  // This requires storing nonces with timestamps
-  // For now, keep simple approach but limit by size more aggressively
-  if (used_nonces_.size() > config_.nonce_cache_size) {
-    auto it = used_nonces_.begin();
-    std::advance(it, used_nonces_.size() / 2);
-    used_nonces_.erase(used_nonces_.begin(), it);
+  // Remove all nonces that are older than TTL
+  auto it = used_nonces_.begin();
+  while (it != used_nonces_.end()) {
+    if (now - it->second > ttl) {
+      it = used_nonces_.erase(it);
+    } else {
+      ++it;
+    }
   }
 }
 

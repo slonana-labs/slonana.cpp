@@ -262,6 +262,59 @@ void test_peer_trust_management() {
   ASSERT_TRUE(messaging.is_peer_trusted("trusted_peer"));
 }
 
+// Test TTL-based nonce cleanup
+void test_nonce_ttl_based_cleanup() {
+  SecureMessagingConfig config;
+  config.enable_message_signing = false;
+  config.enable_message_encryption = false;
+  config.enable_replay_protection = true;
+  config.message_ttl_seconds = 1; // Very short TTL for testing
+  config.nonce_cache_size = 1000; // Large enough to not trigger size-based cleanup
+  
+  MessageCrypto crypto(config);
+  auto init_result = crypto.initialize();
+  ASSERT_TRUE(init_result.is_ok());
+  
+  // Create some test messages with different nonces
+  std::vector<uint8_t> plaintext = {0x54, 0x65, 0x73, 0x74}; // "Test"
+  
+  // Generate and validate first message
+  auto msg1_result = crypto.protect_message(plaintext, "test1", "peer");
+  ASSERT_TRUE(msg1_result.is_ok());
+  auto msg1 = msg1_result.value();
+  
+  // Validate freshness - should succeed and add nonce to cache
+  ASSERT_TRUE(crypto.validate_message_freshness(msg1));
+  
+  // Immediately try to validate same message again - should fail (replay)
+  ASSERT_FALSE(crypto.validate_message_freshness(msg1));
+  
+  // Wait for TTL to expire
+  std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+  
+  // Generate a new message with different nonce
+  auto msg2_result = crypto.protect_message(plaintext, "test2", "peer");
+  ASSERT_TRUE(msg2_result.is_ok());
+  auto msg2 = msg2_result.value();
+  
+  // Validate new message - should succeed
+  ASSERT_TRUE(crypto.validate_message_freshness(msg2));
+  
+  // Now try the original message again - should succeed because the nonce
+  // should have been expired and removed from cache
+  auto msg1_reuse_result = crypto.protect_message(plaintext, "test1", "peer");
+  ASSERT_TRUE(msg1_reuse_result.is_ok());
+  auto msg1_reuse = msg1_reuse_result.value();
+  
+  // Set the nonce to the same value as msg1 to test if old nonce was cleaned up
+  msg1_reuse.nonce = msg1.nonce;
+  msg1_reuse.timestamp_ms = msg1.timestamp_ms;
+  
+  // This should succeed if the TTL-based cleanup worked properly
+  // (the old nonce should have been removed due to TTL expiry)
+  ASSERT_TRUE(crypto.validate_message_freshness(msg1_reuse));
+}
+
 // Main test runner
 int main() {
   std::cout << "=== Secure Messaging Tests ===" << std::endl;
@@ -293,6 +346,9 @@ int main() {
     
     test_peer_trust_management();
     std::cout << "✓ Peer Trust Management" << std::endl;
+    
+    test_nonce_ttl_based_cleanup();
+    std::cout << "✓ Nonce TTL-Based Cleanup" << std::endl;
     
     std::cout << std::endl << "=== All Secure Messaging Tests Passed! ===" << std::endl;
     return 0;
