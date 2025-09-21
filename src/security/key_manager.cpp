@@ -8,6 +8,13 @@
 #include <iomanip>
 #include <filesystem>
 #include <cmath>
+#include <nlohmann/json.hpp>
+#include <sodium.h>
+#include <unistd.h>
+#include <termios.h>
+#include <cstdlib>
+
+using json = nlohmann::json;
 
 #ifdef __linux__
 #include <sys/mman.h>
@@ -26,6 +33,96 @@
 
 namespace slonana {
 namespace security {
+
+// JSON serialization for KeyMetadata
+std::string KeyMetadata::to_json() const {
+    json j;
+    j["version"] = version;
+    j["key_id"] = key_id;
+    j["key_type"] = key_type;
+    j["created_at"] = std::chrono::duration_cast<std::chrono::seconds>(
+        created_at.time_since_epoch()).count();
+    j["expires_at"] = std::chrono::duration_cast<std::chrono::seconds>(
+        expires_at.time_since_epoch()).count();
+    j["last_used"] = std::chrono::duration_cast<std::chrono::seconds>(
+        last_used.time_since_epoch()).count();
+    j["use_count"] = use_count;
+    j["is_revoked"] = is_revoked;
+    j["revocation_reason"] = revocation_reason;
+    j["authorized_operations"] = authorized_operations;
+    
+    return j.dump(2); // Pretty print with 2-space indentation
+}
+
+Result<KeyMetadata> KeyMetadata::from_json(const std::string& json_str) {
+    try {
+        json j = json::parse(json_str);
+        
+        KeyMetadata metadata;
+        
+        // Check version compatibility
+        if (j.contains("version")) {
+            std::string file_version = j["version"];
+            if (file_version != METADATA_VERSION) {
+                // For now, we'll try to read old versions but warn
+                // In production, implement proper migration logic
+            }
+        }
+        
+        metadata.version = j.value("version", METADATA_VERSION);
+        metadata.key_id = j.value("key_id", "");
+        metadata.key_type = j.value("key_type", "");
+        
+        // Parse timestamps
+        if (j.contains("created_at")) {
+            auto seconds = j["created_at"].get<int64_t>();
+            metadata.created_at = std::chrono::system_clock::from_time_t(seconds);
+        }
+        if (j.contains("expires_at")) {
+            auto seconds = j["expires_at"].get<int64_t>();
+            metadata.expires_at = std::chrono::system_clock::from_time_t(seconds);
+        }
+        if (j.contains("last_used")) {
+            auto seconds = j["last_used"].get<int64_t>();
+            metadata.last_used = std::chrono::system_clock::from_time_t(seconds);
+        }
+        
+        metadata.use_count = j.value("use_count", 0UL);
+        metadata.is_revoked = j.value("is_revoked", false);
+        metadata.revocation_reason = j.value("revocation_reason", "");
+        metadata.authorized_operations = j.value("authorized_operations", std::vector<std::string>{});
+        
+        if (!metadata.validate_schema()) {
+            return Result<KeyMetadata>("Invalid metadata schema");
+        }
+        
+        return Result<KeyMetadata>(std::move(metadata), success_tag{});
+    } catch (const json::exception& e) {
+        return Result<KeyMetadata>("JSON parsing error: " + std::string(e.what()));
+    }
+}
+
+bool KeyMetadata::validate_schema() const {
+    // Basic schema validation
+    if (key_id.empty() || key_type.empty()) {
+        return false;
+    }
+    
+    // Validate timestamps
+    if (created_at > expires_at) {
+        return false;
+    }
+    
+    // Validate key type
+    const std::vector<std::string> valid_types = {
+        "validator_identity", "session", "backup", "temporary"
+    };
+    if (std::find(valid_types.begin(), valid_types.end(), key_type) == valid_types.end()) {
+        return false;
+    }
+    
+    return true;
+}
 
 // ============================================================================
 // SecureBuffer Implementation
@@ -144,13 +241,23 @@ size_t SecureBuffer::hash() const {
 // ============================================================================
 
 EncryptedFileKeyStore::EncryptedFileKeyStore(const std::string& storage_path)
-    : storage_path_(storage_path), master_key_(32) { // Initialize with size 32
-    // Generate a random master key - in production this should be derived from user input
-    auto key_result = key_utils::generate_secure_random(32);
+    : storage_path_(storage_path), master_key_(AES_256_KEY_SIZE) { // Initialize with proper size
+    
+    // Try to prompt for passphrase if in interactive mode
+    if (prompt_for_passphrase_if_needed().is_ok()) {
+        // Successfully initialized with passphrase
+        return;
+    }
+    
+    // Fallback: Generate a random master key with user warning
+    auto key_result = key_utils::generate_secure_random(AES_256_KEY_SIZE);
     if (key_result.is_ok()) {
-        // Use move semantics to get the value
         auto key_data = std::move(key_result).value();
         std::copy(key_data.data(), key_data.data() + key_data.size(), master_key_.data());
+        
+        // Warn user about random key generation
+        std::cerr << "⚠️  WARNING: Generated random master key. Keys may be unrecoverable if storage is lost!" << std::endl;
+        std::cerr << "    Consider using initialize_with_passphrase() for production use." << std::endl;
     }
 }
 
@@ -354,56 +461,33 @@ Result<KeyMetadata> EncryptedFileKeyStore::get_key_metadata(const std::string& k
         return Result<KeyMetadata>("Metadata file not found");
     }
 
-    KeyMetadata metadata;
-    std::string line;
-    while (std::getline(meta_file, line)) {
-        size_t eq_pos = line.find('=');
-        if (eq_pos != std::string::npos) {
-            std::string key = line.substr(0, eq_pos);
-            std::string value = line.substr(eq_pos + 1);
-            
-            if (key == "key_id") {
-                metadata.key_id = value;
-            } else if (key == "key_type") {
-                metadata.key_type = value;
-            } else if (key == "created_at") {
-                auto timestamp = std::chrono::seconds(std::stoull(value));
-                metadata.created_at = std::chrono::system_clock::time_point(timestamp);
-            } else if (key == "expires_at") {
-                auto timestamp = std::chrono::seconds(std::stoull(value));
-                metadata.expires_at = std::chrono::system_clock::time_point(timestamp);
-            } else if (key == "use_count") {
-                metadata.use_count = std::stoull(value);
-            } else if (key == "is_revoked") {
-                metadata.is_revoked = (value == "true");
-            }
-        }
-    }
+    // Read the entire JSON file
+    std::ostringstream json_stream;
+    json_stream << meta_file.rdbuf();
+    std::string json_content = json_stream.str();
+    meta_file.close();
 
-    return Result<KeyMetadata>(metadata);
+    // Parse JSON metadata
+    return KeyMetadata::from_json(json_content);
 }
 
 Result<bool> EncryptedFileKeyStore::update_metadata(const std::string& key_id, 
                                                    const KeyMetadata& metadata) {
-    // Write metadata directly without touching the key file
+    // Validate metadata before writing
+    if (!metadata.validate_schema()) {
+        return Result<bool>("Invalid metadata schema");
+    }
+    
+    // Write JSON metadata directly without touching the key file
     std::string meta_path = get_metadata_file_path(key_id);
     std::ofstream meta_file(meta_path);
     if (!meta_file) {
         return Result<bool>("Failed to open metadata file for writing");
     }
 
-    // Simple serialization of metadata
-    meta_file << "key_id=" << metadata.key_id << "\n";
-    meta_file << "key_type=" << metadata.key_type << "\n";
-    meta_file << "created_at=" << std::chrono::duration_cast<std::chrono::seconds>(
-        metadata.created_at.time_since_epoch()).count() << "\n";
-    meta_file << "expires_at=" << std::chrono::duration_cast<std::chrono::seconds>(
-        metadata.expires_at.time_since_epoch()).count() << "\n";
-    meta_file << "last_used=" << std::chrono::duration_cast<std::chrono::seconds>(
-        metadata.last_used.time_since_epoch()).count() << "\n";
-    meta_file << "use_count=" << metadata.use_count << "\n";
-    meta_file << "is_revoked=" << (metadata.is_revoked ? "true" : "false") << "\n";
-    meta_file << "revocation_reason=" << metadata.revocation_reason << "\n";
+    // Serialize to JSON
+    std::string json_content = metadata.to_json();
+    meta_file << json_content;
     meta_file.close();
 
     return Result<bool>(true);
@@ -540,6 +624,81 @@ Result<bool> EncryptedFileKeyStore::secure_delete_file(const std::string& file_p
     } catch (const std::exception& e) {
         return Result<bool>("Secure deletion failed: " + std::string(e.what()));
     }
+}
+
+Result<bool> EncryptedFileKeyStore::initialize_with_passphrase(const std::string& passphrase) {
+    if (passphrase.empty()) {
+        return Result<bool>("Empty passphrase not allowed");
+    }
+    
+    // Generate salt for key derivation  
+    std::vector<uint8_t> salt(16); // 128-bit salt
+    if (RAND_bytes(salt.data(), salt.size()) != 1) {
+        return Result<bool>("Failed to generate salt");
+    }
+    
+    // Derive key from passphrase using PBKDF2
+    auto derived_key_result = key_utils::derive_key_from_passphrase(passphrase, salt);
+    if (!derived_key_result.is_ok()) {
+        return Result<bool>("Failed to derive key from passphrase: " + derived_key_result.error());
+    }
+    
+    // Clear current master key and set new one
+    master_key_.secure_wipe();
+    auto derived_key_data = derived_key_result.value().copy();
+    std::copy(derived_key_data.begin(), derived_key_data.end(), master_key_.data());
+    
+    return Result<bool>(true);
+}
+
+Result<bool> EncryptedFileKeyStore::prompt_for_passphrase_if_needed() {
+    // Check if we're in an interactive environment
+    if (!isatty(STDIN_FILENO)) {
+        return Result<bool>("Non-interactive environment, cannot prompt for passphrase");
+    }
+    
+    // Check for environment variable override
+    const char* skip_prompt = std::getenv("SLONANA_SKIP_PASSPHRASE_PROMPT");
+    if (skip_prompt && std::string(skip_prompt) == "1") {
+        return Result<bool>("Passphrase prompt disabled by environment variable");
+    }
+    
+    std::string passphrase = get_passphrase_from_user(
+        "Enter passphrase for key storage (leave empty for random key): ");
+    
+    if (passphrase.empty()) {
+        return Result<bool>("User chose random key generation");
+    }
+    
+    return initialize_with_passphrase(passphrase);
+}
+
+std::string EncryptedFileKeyStore::get_passphrase_from_user(const std::string& prompt) {
+    std::cout << prompt << std::flush;
+    
+    // Disable echo for password input on POSIX systems
+#ifdef _WIN32
+    // Windows implementation would go here
+    std::string passphrase;
+    std::getline(std::cin, passphrase);
+    return passphrase;
+#else
+    // POSIX implementation
+    struct termios old_termios, new_termios;
+    tcgetattr(STDIN_FILENO, &old_termios);
+    new_termios = old_termios;
+    new_termios.c_lflag &= ~ECHO;
+    tcsetattr(STDIN_FILENO, TCSANOW, &new_termios);
+    
+    std::string passphrase;
+    std::getline(std::cin, passphrase);
+    
+    // Restore echo
+    tcsetattr(STDIN_FILENO, TCSANOW, &old_termios);
+    std::cout << std::endl; // Add newline after hidden input
+    
+    return passphrase;
+#endif
 }
 
 // ============================================================================

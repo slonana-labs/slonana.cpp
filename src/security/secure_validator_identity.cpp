@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <fstream>
 #include <openssl/evp.h>
+#include <sodium.h>
 
 namespace slonana {
 namespace security {
@@ -133,25 +134,30 @@ Result<common::PublicKey> SecureValidatorIdentity::get_public_key() {
         return Result<common::PublicKey>("Failed to get key: " + key_result.error());
     }
     
-    // For Ed25519, derive the public key from the private key using proper cryptographic methods
+    // For Ed25519, derive the public key from the private key using libsodium
     const auto& private_key = key_result.value();
-    if (private_key.size() != 32) {
-        return Result<common::PublicKey>("Invalid private key size");
+    if (private_key.size() != crypto_sign_SECRETKEYBYTES) {
+        return Result<common::PublicKey>("Invalid private key size for Ed25519");
     }
     
-    // Use SHA-256 hash as a better derivation method (placeholder for proper Ed25519)
-    common::PublicKey public_key(32);
-    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-    if (ctx) {
-        if (EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) == 1) {
-            EVP_DigestUpdate(ctx, private_key.data(), 32);
-            unsigned int digest_len;
-            EVP_DigestFinal_ex(ctx, public_key.data(), &digest_len);
-        }
-        EVP_MD_CTX_free(ctx);
-    } else {
-        return Result<common::PublicKey>("Failed to create digest context");
+    // Use proper Ed25519 public key derivation
+    common::PublicKey public_key(crypto_sign_PUBLICKEYBYTES);
+    
+    // libsodium expects a 64-byte secret key (32 private + 32 public), but we only have 32-byte private
+    // For proper Ed25519, we need to derive the full keypair from the seed
+    unsigned char full_secret_key[crypto_sign_SECRETKEYBYTES];
+    unsigned char public_key_bytes[crypto_sign_PUBLICKEYBYTES];
+    
+    // Copy our 32-byte private key as the seed
+    std::copy(private_key.data(), private_key.data() + 32, full_secret_key);
+    
+    // Derive the full Ed25519 keypair from the seed
+    if (crypto_sign_seed_keypair(public_key_bytes, full_secret_key, private_key.data()) != 0) {
+        return Result<common::PublicKey>("Failed to derive Ed25519 public key");
     }
+    
+    // Copy the derived public key
+    std::copy(public_key_bytes, public_key_bytes + crypto_sign_PUBLICKEYBYTES, public_key.data());
     
     return Result<common::PublicKey>(public_key);
 }
@@ -228,27 +234,21 @@ Result<bool> SecureValidatorIdentity::export_for_legacy_use(const std::string& o
         return Result<bool>("Invalid key size for export");
     }
     
-    // Create 64-byte legacy format (32 private + 32 public)
+    // Create 64-byte legacy format (32 private + 32 public) using proper Ed25519
     std::vector<uint8_t> legacy_keypair(64);
     std::copy(private_key.data(), private_key.data() + 32, legacy_keypair.begin());
     
-    // Generate public key using proper Ed25519 derivation
-    // For now, we'll use a simplified approach that at least doesn't copy private key
-    // In production, this should use proper Ed25519 public key derivation
-    std::vector<uint8_t> public_key(32);
+    // Generate proper Ed25519 public key from private key
+    unsigned char full_secret_key[crypto_sign_SECRETKEYBYTES];
+    unsigned char public_key_bytes[crypto_sign_PUBLICKEYBYTES];
     
-    // Use a hash-based derivation as a placeholder for proper Ed25519
-    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-    if (ctx) {
-        if (EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) == 1) {
-            EVP_DigestUpdate(ctx, private_key.data(), 32);
-            unsigned int digest_len;
-            EVP_DigestFinal_ex(ctx, public_key.data(), &digest_len);
-        }
-        EVP_MD_CTX_free(ctx);
+    // Derive the full Ed25519 keypair from the seed
+    if (crypto_sign_seed_keypair(public_key_bytes, full_secret_key, private_key.data()) != 0) {
+        return Result<bool>("Failed to derive Ed25519 public key for export");
     }
     
-    std::copy(public_key.begin(), public_key.end(), legacy_keypair.begin() + 32);
+    std::copy(public_key_bytes, public_key_bytes + crypto_sign_PUBLICKEYBYTES, 
+              legacy_keypair.begin() + 32);
     
     // Write to file
     std::ofstream file(output_path, std::ios::binary);

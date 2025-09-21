@@ -15,6 +15,38 @@ namespace security {
 
 using namespace slonana::common;
 
+// Key size constants
+constexpr size_t ED25519_PRIVATE_KEY_SIZE = 32;
+constexpr size_t ED25519_PUBLIC_KEY_SIZE = 32;
+constexpr size_t ED25519_SIGNATURE_SIZE = 64;
+constexpr size_t SOLANA_KEYPAIR_SIZE = 64; // 32 private + 32 public
+constexpr size_t AES_256_KEY_SIZE = 32;
+constexpr size_t DEFAULT_KEY_SIZE = 32;
+
+// Rotation intervals
+constexpr auto DEFAULT_ROTATION_INTERVAL = std::chrono::hours(24 * 30); // 30 days
+constexpr auto DEVELOPMENT_ROTATION_INTERVAL = std::chrono::hours(24 * 7); // 7 days  
+constexpr auto HIGH_SECURITY_ROTATION_INTERVAL = std::chrono::hours(24 * 7); // 7 days
+constexpr auto DEFAULT_GRACE_PERIOD = std::chrono::hours(24); // 24 hours
+
+// Use count limits
+constexpr uint64_t DEFAULT_MAX_USE_COUNT = 1000000;
+constexpr uint64_t DEVELOPMENT_MAX_USE_COUNT = 100000;
+constexpr uint64_t HIGH_SECURITY_MAX_USE_COUNT = 50000;
+
+// Thread timing
+constexpr auto ROTATION_CHECK_INTERVAL = std::chrono::hours(1);
+constexpr auto ROTATION_CHECK_JITTER_MAX = std::chrono::minutes(30);
+
+// Storage constants
+constexpr const char* METADATA_VERSION = "1.0";
+constexpr const char* DEFAULT_STORAGE_SUBDIR = ".slonana/keys";
+
+namespace slonana {
+namespace security {
+
+using ::slonana::common::Result;
+
 // Forward declarations
 class SecureBuffer;
 class KeyStore;
@@ -63,7 +95,7 @@ public:
 };
 
 /**
- * Key metadata for lifecycle management
+ * Key metadata for lifecycle management with JSON serialization
  */
 struct KeyMetadata {
     std::string key_id;
@@ -75,21 +107,36 @@ struct KeyMetadata {
     bool is_revoked;
     std::string revocation_reason;
     std::vector<std::string> authorized_operations;
+    std::string version = METADATA_VERSION; // Schema version
+    
+    // JSON serialization methods
+    std::string to_json() const;
+    static Result<KeyMetadata> from_json(const std::string& json_str);
+    bool validate_schema() const;
 };
 
 /**
  * Key rotation policy configuration
  */
 struct KeyRotationPolicy {
-    std::chrono::seconds rotation_interval = std::chrono::hours(24 * 30); // 30 days
-    uint64_t max_use_count = UINT64_MAX;
+    std::chrono::seconds rotation_interval = DEFAULT_ROTATION_INTERVAL;
+    uint64_t max_use_count = DEFAULT_MAX_USE_COUNT;
     bool rotate_on_suspicious_activity = true;
     bool automatic_rotation_enabled = true;
-    std::chrono::seconds grace_period = std::chrono::hours(24); // 24 hours
+    std::chrono::seconds grace_period = DEFAULT_GRACE_PERIOD;
+    bool add_jitter = true; // Add random jitter to avoid thundering herd
+    std::chrono::seconds check_interval = ROTATION_CHECK_INTERVAL; // Configurable check interval
 };
 
 /**
  * Abstract interface for key storage backends
+ * 
+ * THREAD SAFETY: Implementations are responsible for thread safety.
+ * EncryptedFileKeyStore is currently NOT thread-safe and requires external
+ * synchronization if accessed from multiple threads.
+ * 
+ * Future HSM implementations should provide their own thread safety
+ * guarantees as appropriate for the hardware.
  */
 class KeyStore {
 public:
@@ -150,6 +197,11 @@ public:
     // Configuration
     Result<bool> initialize_storage();
     Result<bool> change_master_key(const SecureBuffer& new_master_key);
+    
+    // Master key management
+    Result<bool> initialize_with_passphrase(const std::string& passphrase);
+    Result<bool> prompt_for_passphrase_if_needed();
+    static std::string get_passphrase_from_user(const std::string& prompt);
     
     // Public encryption interface for backup operations
     Result<SecureBuffer> encrypt_data_for_backup(const SecureBuffer& plaintext) const {

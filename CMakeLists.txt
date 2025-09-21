@@ -180,7 +180,7 @@ target_link_libraries(slonana_concurrency_stress_test slonana_core)
 
 # Find OpenSSL for PoH cryptographic operations
 find_package(OpenSSL REQUIRED)
-target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto)
+target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto sodium)
 target_link_libraries(slonana_proof_of_history_tests OpenSSL::SSL OpenSSL::Crypto)
 
 # Add individual test targets

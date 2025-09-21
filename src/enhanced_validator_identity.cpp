@@ -24,14 +24,17 @@ common::Result<bool> EnhancedValidatorIdentity::initialize() {
     if (use_secure_management_ && secure_identity_) {
         auto init_result = secure_identity_->initialize();
         if (!init_result.is_ok()) {
-            // Fallback to legacy mode if secure initialization fails
-            std::cout << "⚠️  Secure key management initialization failed, falling back to legacy mode: " 
-                      << init_result.error() << "\n";
+            // Make fallback more explicit and alarming
+            std::cerr << "🚨 CRITICAL SECURITY WARNING: Secure key management initialization failed!" << "\n";
+            std::cerr << "   Error: " << init_result.error() << "\n";
+            std::cerr << "   Falling back to LEGACY MODE with reduced security!" << "\n";
+            std::cerr << "   This is NOT recommended for production use!" << "\n";
+            std::cerr << "   Please fix the secure key management configuration." << "\n";
             use_secure_management_ = false;
             return common::Result<bool>(true);
         }
         
-        std::cout << "✅ Secure key lifecycle management initialized\n";
+        std::cout << "✅ Secure key lifecycle management initialized with enterprise-grade security\n";
         return common::Result<bool>(true);
     }
     

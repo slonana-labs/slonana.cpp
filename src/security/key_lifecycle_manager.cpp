@@ -74,8 +74,18 @@ void KeyRotationScheduler::rotation_worker_thread() {
     std::unique_lock<std::mutex> lock(scheduler_mutex_);
     
     while (is_running_) {
-        // Wait for 1 hour or until stopped
-        if (scheduler_cv_.wait_for(lock, std::chrono::hours(1), [this] { return !is_running_; })) {
+        // Calculate wait time with jitter to avoid thundering herd
+        auto wait_time = ROTATION_CHECK_INTERVAL;
+        if (policy_.add_jitter) {
+            std::random_device rd;
+            std::mt19937 gen(rd());
+            std::uniform_int_distribution<> dis(0, static_cast<int>(ROTATION_CHECK_JITTER_MAX.count()));
+            auto jitter = std::chrono::minutes(dis(gen));
+            wait_time += jitter;
+        }
+        
+        // Wait for calculated time or until stopped
+        if (scheduler_cv_.wait_for(lock, wait_time, [this] { return !is_running_; })) {
             break; // Stopped
         }
         
