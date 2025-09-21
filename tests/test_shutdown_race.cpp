@@ -5,6 +5,7 @@
 #include <thread>
 #include <vector>
 #include <cstdlib>
+#include <random>
 
 // Simple verbosity control for CI
 static bool verbose_output = true;
@@ -83,9 +84,13 @@ public:
                             
                             local_ops++;
                             
-                            // Short delay
+                            // Short delay with randomization to emulate real-world jitter
                             if (local_ops % 10 == 0) {
-                                std::this_thread::sleep_for(std::chrono::microseconds(1));
+                                // Add randomized jitter (0.5-2.0 microseconds)
+                                std::random_device rd;
+                                std::mt19937 gen(rd());
+                                std::uniform_int_distribution<> dist(500, 2000);
+                                std::this_thread::sleep_for(std::chrono::nanoseconds(dist(gen)));
                             }
                             
                         } catch (const std::exception& e) {
@@ -106,8 +111,11 @@ public:
                     threads.emplace_back(worker, i);
                 }
                 
-                // Let threads run briefly
-                std::this_thread::sleep_for(std::chrono::milliseconds(1 + (cycle % 5)));
+                // Let threads run briefly with randomized timing
+                std::random_device rd;
+                std::mt19937 gen(rd());
+                std::uniform_int_distribution<> delay_dist(1, 6);
+                std::this_thread::sleep_for(std::chrono::milliseconds(delay_dist(gen)));
                 
                 // Signal stop and shutdown
                 stop_workers.store(true, std::memory_order_release);

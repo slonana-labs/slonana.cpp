@@ -5,6 +5,7 @@
 #include <thread>
 #include <vector>
 #include <cstdlib>
+#include <random>
 
 // Simple verbosity control for CI
 static bool verbose_output = true;
@@ -72,9 +73,13 @@ public:
                         }
                     }
                     
-                    // Minimal delay to allow other threads to compete
+                    // Minimal delay to allow other threads to compete with some randomization
                     if (i % 50 == 0) {
-                        std::this_thread::sleep_for(std::chrono::microseconds(1));
+                        // Add randomized jitter (0.5-1.5 microseconds) to emulate real-world timing
+                        std::random_device rd;
+                        std::mt19937 gen(rd());
+                        std::uniform_int_distribution<> dist(500, 1500);
+                        std::this_thread::sleep_for(std::chrono::nanoseconds(dist(gen)));
                     }
                     
                 } catch (const std::exception& e) {

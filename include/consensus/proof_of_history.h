@@ -250,15 +250,13 @@ private:
     
   public:
     InstrumentedLockGuard(std::mutex& mutex, std::atomic<uint64_t>& attempts, 
-                         std::atomic<uint64_t>& contentions) {
+                         std::atomic<uint64_t>& contentions) 
+        : guard_(mutex, std::defer_lock) {
       attempts.fetch_add(1, std::memory_order_relaxed);
       // Simple contention detection: try_lock first, if it fails, we have contention
-      if (!mutex.try_lock()) {
+      if (!guard_.try_lock()) {
         contentions.fetch_add(1, std::memory_order_relaxed);
-      }
-      // Ensure we have the lock regardless
-      guard_ = std::unique_lock<std::mutex>(mutex, std::adopt_lock_t{});
-      if (!guard_.owns_lock()) {
+        // Now do the blocking lock
         guard_.lock();
       }
     }
