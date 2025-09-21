@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cstring>
 #include <fstream>
+#include <iostream>
 #include <openssl/aes.h>
 #include <openssl/err.h>
 #include <openssl/pem.h>
@@ -45,49 +46,49 @@ std::string get_openssl_error() {
 std::vector<uint8_t> SecureMessage::serialize() const {
   std::vector<uint8_t> result;
   
-  // Version (1 byte)
-  result.push_back(0x01);
+  // Version (1 byte) + format flags
+  result.push_back(0x02); // Version 2 with network byte order
   
-  // Message type length + data
+  // Message type length + data (network byte order)
   uint16_t type_len = static_cast<uint16_t>(message_type.length());
+  result.push_back((type_len >> 8) & 0xFF); // Big-endian
   result.push_back(type_len & 0xFF);
-  result.push_back((type_len >> 8) & 0xFF);
   result.insert(result.end(), message_type.begin(), message_type.end());
   
-  // Timestamp (8 bytes)
-  for (int i = 0; i < 8; ++i) {
+  // Timestamp (8 bytes, network byte order)
+  for (int i = 7; i >= 0; --i) {
     result.push_back((timestamp_ms >> (i * 8)) & 0xFF);
   }
   
-  // Nonce (8 bytes)
-  for (int i = 0; i < 8; ++i) {
+  // Nonce (8 bytes, network byte order)
+  for (int i = 7; i >= 0; --i) {
     result.push_back((nonce >> (i * 8)) & 0xFF);
   }
   
   // Sender public key (32 bytes for Ed25519)
   result.insert(result.end(), sender_public_key.begin(), sender_public_key.end());
   
-  // IV length + data
+  // IV length + data (network byte order)
   uint16_t iv_len = static_cast<uint16_t>(iv.size());
+  result.push_back((iv_len >> 8) & 0xFF); // Big-endian
   result.push_back(iv_len & 0xFF);
-  result.push_back((iv_len >> 8) & 0xFF);
   result.insert(result.end(), iv.begin(), iv.end());
   
-  // Auth tag length + data
+  // Auth tag length + data (network byte order)
   uint16_t tag_len = static_cast<uint16_t>(auth_tag.size());
+  result.push_back((tag_len >> 8) & 0xFF); // Big-endian
   result.push_back(tag_len & 0xFF);
-  result.push_back((tag_len >> 8) & 0xFF);
   result.insert(result.end(), auth_tag.begin(), auth_tag.end());
   
-  // Signature length + data
+  // Signature length + data (network byte order)
   uint16_t sig_len = static_cast<uint16_t>(signature.size());
+  result.push_back((sig_len >> 8) & 0xFF); // Big-endian
   result.push_back(sig_len & 0xFF);
-  result.push_back((sig_len >> 8) & 0xFF);
   result.insert(result.end(), signature.begin(), signature.end());
   
-  // Encrypted payload length + data
+  // Encrypted payload length + data (network byte order)
   uint32_t payload_len = static_cast<uint32_t>(encrypted_payload.size());
-  for (int i = 0; i < 4; ++i) {
+  for (int i = 3; i >= 0; --i) {
     result.push_back((payload_len >> (i * 8)) & 0xFF);
   }
   result.insert(result.end(), encrypted_payload.begin(), encrypted_payload.end());
@@ -104,31 +105,56 @@ Result<SecureMessage> SecureMessage::deserialize(const std::vector<uint8_t>& dat
   SecureMessage msg;
   
   try {
-    // Version check
-    if (data[offset++] != 0x01) {
-      return Result<SecureMessage>("Unsupported message version");
+    // Version check - support both v1 (little-endian) and v2 (big-endian)
+    uint8_t version = data[offset++];
+    bool use_big_endian = false;
+    
+    if (version == 0x01) {
+      use_big_endian = false; // Legacy little-endian format
+    } else if (version == 0x02) {
+      use_big_endian = true;  // New network byte order format
+    } else {
+      return Result<SecureMessage>("Unsupported message version: " + std::to_string(version));
     }
     
-    // Message type
-    uint16_t type_len = data[offset] | (data[offset + 1] << 8);
+    // Message type (handle endianness)
+    uint16_t type_len;
+    if (use_big_endian) {
+      type_len = (data[offset] << 8) | data[offset + 1];
+    } else {
+      type_len = data[offset] | (data[offset + 1] << 8);
+    }
     offset += 2;
+    
     if (offset + type_len > data.size()) {
       return Result<SecureMessage>("Invalid message type length");
     }
     msg.message_type = std::string(data.begin() + offset, data.begin() + offset + type_len);
     offset += type_len;
     
-    // Timestamp
+    // Timestamp (handle endianness)
     msg.timestamp_ms = 0;
-    for (int i = 0; i < 8; ++i) {
-      msg.timestamp_ms |= static_cast<uint64_t>(data[offset + i]) << (i * 8);
+    if (use_big_endian) {
+      for (int i = 0; i < 8; ++i) {
+        msg.timestamp_ms = (msg.timestamp_ms << 8) | data[offset + i];
+      }
+    } else {
+      for (int i = 0; i < 8; ++i) {
+        msg.timestamp_ms |= static_cast<uint64_t>(data[offset + i]) << (i * 8);
+      }
     }
     offset += 8;
     
-    // Nonce
+    // Nonce (handle endianness)
     msg.nonce = 0;
-    for (int i = 0; i < 8; ++i) {
-      msg.nonce |= static_cast<uint64_t>(data[offset + i]) << (i * 8);
+    if (use_big_endian) {
+      for (int i = 0; i < 8; ++i) {
+        msg.nonce = (msg.nonce << 8) | data[offset + i];
+      }
+    } else {
+      for (int i = 0; i < 8; ++i) {
+        msg.nonce |= static_cast<uint64_t>(data[offset + i]) << (i * 8);
+      }
     }
     offset += 8;
     
@@ -139,8 +165,13 @@ Result<SecureMessage> SecureMessage::deserialize(const std::vector<uint8_t>& dat
     msg.sender_public_key.assign(data.begin() + offset, data.begin() + offset + 32);
     offset += 32;
     
-    // IV
-    uint16_t iv_len = data[offset] | (data[offset + 1] << 8);
+    // IV (handle endianness)
+    uint16_t iv_len;
+    if (use_big_endian) {
+      iv_len = (data[offset] << 8) | data[offset + 1];
+    } else {
+      iv_len = data[offset] | (data[offset + 1] << 8);
+    }
     offset += 2;
     if (offset + iv_len > data.size()) {
       return Result<SecureMessage>("Invalid IV length");
@@ -148,8 +179,13 @@ Result<SecureMessage> SecureMessage::deserialize(const std::vector<uint8_t>& dat
     msg.iv.assign(data.begin() + offset, data.begin() + offset + iv_len);
     offset += iv_len;
     
-    // Auth tag
-    uint16_t tag_len = data[offset] | (data[offset + 1] << 8);
+    // Auth tag (handle endianness)
+    uint16_t tag_len;
+    if (use_big_endian) {
+      tag_len = (data[offset] << 8) | data[offset + 1];
+    } else {
+      tag_len = data[offset] | (data[offset + 1] << 8);
+    }
     offset += 2;
     if (offset + tag_len > data.size()) {
       return Result<SecureMessage>("Invalid auth tag length");
@@ -157,8 +193,13 @@ Result<SecureMessage> SecureMessage::deserialize(const std::vector<uint8_t>& dat
     msg.auth_tag.assign(data.begin() + offset, data.begin() + offset + tag_len);
     offset += tag_len;
     
-    // Signature
-    uint16_t sig_len = data[offset] | (data[offset + 1] << 8);
+    // Signature (handle endianness)
+    uint16_t sig_len;
+    if (use_big_endian) {
+      sig_len = (data[offset] << 8) | data[offset + 1];
+    } else {
+      sig_len = data[offset] | (data[offset + 1] << 8);
+    }
     offset += 2;
     if (offset + sig_len > data.size()) {
       return Result<SecureMessage>("Invalid signature length");
@@ -166,12 +207,19 @@ Result<SecureMessage> SecureMessage::deserialize(const std::vector<uint8_t>& dat
     msg.signature.assign(data.begin() + offset, data.begin() + offset + sig_len);
     offset += sig_len;
     
-    // Encrypted payload
+    // Encrypted payload (handle endianness)
     uint32_t payload_len = 0;
-    for (int i = 0; i < 4; ++i) {
-      payload_len |= static_cast<uint32_t>(data[offset + i]) << (i * 8);
+    if (use_big_endian) {
+      for (int i = 0; i < 4; ++i) {
+        payload_len = (payload_len << 8) | data[offset + i];
+      }
+    } else {
+      for (int i = 0; i < 4; ++i) {
+        payload_len |= static_cast<uint32_t>(data[offset + i]) << (i * 8);
+      }
     }
     offset += 4;
+    
     if (offset + payload_len != data.size()) {
       return Result<SecureMessage>("Invalid payload length");
     }
@@ -242,21 +290,42 @@ bool TlsContextManager::load_certificates() {
   // Load certificate files
   if (!config_.tls_cert_path.empty()) {
     if (SSL_CTX_use_certificate_file(server_ctx_, config_.tls_cert_path.c_str(), SSL_FILETYPE_PEM) <= 0) {
+      std::cerr << "Failed to load server certificate from " << config_.tls_cert_path 
+                << ": " << get_openssl_error() << std::endl;
       return false;
     }
     if (SSL_CTX_use_certificate_file(client_ctx_, config_.tls_cert_path.c_str(), SSL_FILETYPE_PEM) <= 0) {
+      std::cerr << "Failed to load client certificate from " << config_.tls_cert_path 
+                << ": " << get_openssl_error() << std::endl;
       return false;
     }
+    std::cout << "✅ Loaded TLS certificate from " << config_.tls_cert_path << std::endl;
   }
   
   // Load private key files
   if (!config_.tls_key_path.empty()) {
     if (SSL_CTX_use_PrivateKey_file(server_ctx_, config_.tls_key_path.c_str(), SSL_FILETYPE_PEM) <= 0) {
+      std::cerr << "Failed to load server private key from " << config_.tls_key_path 
+                << ": " << get_openssl_error() << std::endl;
       return false;
     }
     if (SSL_CTX_use_PrivateKey_file(client_ctx_, config_.tls_key_path.c_str(), SSL_FILETYPE_PEM) <= 0) {
+      std::cerr << "Failed to load client private key from " << config_.tls_key_path 
+                << ": " << get_openssl_error() << std::endl;
       return false;
     }
+    
+    // Verify that the private key matches the certificate
+    if (SSL_CTX_check_private_key(server_ctx_) != 1) {
+      std::cerr << "Server private key does not match certificate: " << get_openssl_error() << std::endl;
+      return false;
+    }
+    if (SSL_CTX_check_private_key(client_ctx_) != 1) {
+      std::cerr << "Client private key does not match certificate: " << get_openssl_error() << std::endl;
+      return false;
+    }
+    
+    std::cout << "✅ Loaded and verified TLS private key from " << config_.tls_key_path << std::endl;
   }
   
   return true;
@@ -271,12 +340,21 @@ bool TlsContextManager::setup_verification() {
     // Load CA certificates for verification
     if (!config_.ca_cert_path.empty()) {
       if (SSL_CTX_load_verify_locations(client_ctx_, config_.ca_cert_path.c_str(), nullptr) != 1) {
+        std::cerr << "Failed to load CA certificate for client from " << config_.ca_cert_path 
+                  << ": " << get_openssl_error() << std::endl;
         return false;
       }
       if (SSL_CTX_load_verify_locations(server_ctx_, config_.ca_cert_path.c_str(), nullptr) != 1) {
+        std::cerr << "Failed to load CA certificate for server from " << config_.ca_cert_path 
+                  << ": " << get_openssl_error() << std::endl;
         return false;
       }
+      std::cout << "✅ Loaded CA certificate for mutual TLS from " << config_.ca_cert_path << std::endl;
+    } else {
+      std::cout << "⚠️  Mutual TLS enabled but no CA certificate specified - using default locations" << std::endl;
     }
+  } else {
+    std::cout << "ℹ️  Mutual TLS authentication disabled" << std::endl;
   }
   
   return true;
@@ -374,10 +452,6 @@ Result<SecureMessage> MessageCrypto::protect_message(
     const std::string& message_type,
     const std::string& recipient_id) {
   
-  if (!config_.enable_message_encryption && !config_.enable_message_signing) {
-    return Result<SecureMessage>("No protection enabled");
-  }
-  
   SecureMessage msg;
   msg.message_type = message_type;
   msg.timestamp_ms = get_current_timestamp_ms();
@@ -388,27 +462,47 @@ Result<SecureMessage> MessageCrypto::protect_message(
       // Generate random IV for AES-GCM
       msg.iv = generate_random_bytes(12); // 96-bit IV for GCM
       
-      // For simplicity, use a derived key (in production, use proper key exchange)
-      std::vector<uint8_t> key = generate_random_bytes(32); // 256-bit key
+      // Use a node-specific symmetric key derived from signing key
+      std::vector<uint8_t> symmetric_key;
+      if (!derive_symmetric_key(symmetric_key)) {
+        return Result<SecureMessage>("Failed to derive symmetric key");
+      }
       
-      // Encrypt with AES-GCM (simplified implementation)
-      msg.encrypted_payload = plaintext; // TODO: Implement actual AES-GCM encryption
-      msg.auth_tag = generate_random_bytes(16); // 128-bit auth tag
+      // Encrypt with AES-GCM
+      auto encrypt_result = encrypt_aes_gcm(plaintext, symmetric_key, msg.iv, msg.auth_tag);
+      if (!encrypt_result.is_ok()) {
+        return Result<SecureMessage>("AES-GCM encryption failed: " + encrypt_result.error());
+      }
+      msg.encrypted_payload = encrypt_result.value();
     } else {
       msg.encrypted_payload = plaintext;
     }
     
     if (config_.enable_message_signing && signing_key_) {
-      // Create signature over the message content
-      // TODO: Implement Ed25519 signing
-      msg.signature = generate_random_bytes(64); // Ed25519 signature size
-      msg.sender_public_key = generate_random_bytes(32); // Ed25519 public key size
+      // Extract public key from signing key
+      auto pubkey_result = extract_public_key();
+      if (!pubkey_result.is_ok()) {
+        return Result<SecureMessage>("Failed to extract public key: " + pubkey_result.error());
+      }
+      msg.sender_public_key = pubkey_result.value();
+      
+      // Create signature over the message content (payload + metadata)
+      auto signature_data = create_signature_data(msg);
+      auto signature_result = sign_ed25519(signature_data);
+      if (!signature_result.is_ok()) {
+        return Result<SecureMessage>("Ed25519 signing failed: " + signature_result.error());
+      }
+      msg.signature = signature_result.value();
+    } else {
+      // No signing - leave signature empty
+      msg.signature.clear();
+      msg.sender_public_key.clear();
     }
     
     return Result<SecureMessage>(std::move(msg));
     
   } catch (const std::exception& e) {
-    return Result<SecureMessage>("Encryption failed: " + std::string(e.what()));
+    return Result<SecureMessage>("Message protection failed: " + std::string(e.what()));
   }
 }
 
@@ -430,9 +524,19 @@ Result<std::vector<uint8_t>> MessageCrypto::unprotect_message(
   
   // Decrypt if enabled
   if (config_.enable_message_encryption) {
-    // TODO: Implement actual AES-GCM decryption
-    // For now, return the payload as-is
-    return Result<std::vector<uint8_t>>(secure_msg.encrypted_payload);
+    // Derive the same symmetric key used for encryption
+    std::vector<uint8_t> symmetric_key;
+    if (!derive_symmetric_key(symmetric_key)) {
+      return Result<std::vector<uint8_t>>("Failed to derive symmetric key for decryption");
+    }
+    
+    // Decrypt with AES-GCM
+    auto decrypt_result = decrypt_aes_gcm(secure_msg.encrypted_payload, symmetric_key, 
+                                        secure_msg.iv, secure_msg.auth_tag);
+    if (!decrypt_result.is_ok()) {
+      return Result<std::vector<uint8_t>>("AES-GCM decryption failed: " + decrypt_result.error());
+    }
+    return decrypt_result;
   } else {
     return Result<std::vector<uint8_t>>(secure_msg.encrypted_payload);
   }
@@ -440,9 +544,33 @@ Result<std::vector<uint8_t>> MessageCrypto::unprotect_message(
 
 bool MessageCrypto::verify_message_signature(const SecureMessage& secure_msg,
                                             const std::vector<uint8_t>& sender_public_key) {
-  // TODO: Implement Ed25519 signature verification
-  // For now, return true for basic functionality
-  return true;
+  if (sender_public_key.size() != 32) {
+    std::cerr << "Invalid public key size: " << sender_public_key.size() << " (expected 32)" << std::endl;
+    return false;
+  }
+  
+  if (secure_msg.signature.size() != 64) {
+    std::cerr << "Invalid signature size: " << secure_msg.signature.size() << " (expected 64)" << std::endl;
+    return false;
+  }
+  
+  try {
+    // Create the same signature data that was signed
+    auto signature_data = create_signature_data(secure_msg);
+    
+    // Verify Ed25519 signature using OpenSSL
+    auto verify_result = verify_ed25519(signature_data, secure_msg.signature, sender_public_key);
+    if (!verify_result.is_ok()) {
+      std::cerr << "Ed25519 verification failed: " << verify_result.error() << std::endl;
+      return false;
+    }
+    
+    return verify_result.value();
+    
+  } catch (const std::exception& e) {
+    std::cerr << "Signature verification exception: " << e.what() << std::endl;
+    return false;
+  }
 }
 
 bool MessageCrypto::validate_message_freshness(const SecureMessage& secure_msg) {
@@ -483,12 +611,331 @@ void MessageCrypto::add_used_nonce(uint64_t nonce) {
 }
 
 void MessageCrypto::cleanup_expired_nonces() {
-  // Simple cleanup - remove oldest nonces
-  // In production, this should be time-based
-  if (used_nonces_.size() > config_.nonce_cache_size / 2) {
+  uint64_t current_time = get_current_timestamp_ms();
+  uint64_t expiry_threshold = current_time - (config_.message_ttl_seconds * 1000);
+  
+  // Remove nonces that are too old based on timestamp
+  // This requires storing nonces with timestamps
+  // For now, keep simple approach but limit by size more aggressively
+  if (used_nonces_.size() > config_.nonce_cache_size) {
     auto it = used_nonces_.begin();
-    std::advance(it, used_nonces_.size() / 4);
+    std::advance(it, used_nonces_.size() / 2);
     used_nonces_.erase(used_nonces_.begin(), it);
+  }
+}
+
+// ============================================================================
+// Cryptographic Implementation Methods
+// ============================================================================
+
+bool MessageCrypto::derive_symmetric_key(std::vector<uint8_t>& key) {
+  if (!signing_key_) {
+    return false;
+  }
+  
+  // Derive a 32-byte symmetric key from the Ed25519 private key using HKDF
+  key.resize(32);
+  
+  // Get raw key material from EVP_PKEY
+  size_t raw_key_len = 32;
+  std::vector<uint8_t> raw_key(raw_key_len);
+  
+  if (EVP_PKEY_get_raw_private_key(signing_key_, raw_key.data(), &raw_key_len) != 1) {
+    std::cerr << "Failed to extract raw private key: " << get_openssl_error() << std::endl;
+    return false;
+  }
+  
+  // Use SHA-256 to derive symmetric key from Ed25519 private key
+  EVP_MD_CTX* md_ctx = EVP_MD_CTX_new();
+  if (!md_ctx) {
+    return false;
+  }
+  
+  if (EVP_DigestInit_ex(md_ctx, EVP_sha256(), nullptr) != 1 ||
+      EVP_DigestUpdate(md_ctx, raw_key.data(), raw_key_len) != 1 ||
+      EVP_DigestUpdate(md_ctx, "slonana_symmetric_key", 20) != 1 ||
+      EVP_DigestFinal_ex(md_ctx, key.data(), nullptr) != 1) {
+    EVP_MD_CTX_free(md_ctx);
+    return false;
+  }
+  
+  EVP_MD_CTX_free(md_ctx);
+  return true;
+}
+
+Result<std::vector<uint8_t>> MessageCrypto::encrypt_aes_gcm(
+    const std::vector<uint8_t>& plaintext,
+    const std::vector<uint8_t>& key,
+    const std::vector<uint8_t>& iv,
+    std::vector<uint8_t>& auth_tag) {
+  
+  if (key.size() != 32) {
+    return Result<std::vector<uint8_t>>("Invalid key size for AES-256-GCM");
+  }
+  
+  if (iv.size() != 12) {
+    return Result<std::vector<uint8_t>>("Invalid IV size for AES-GCM");
+  }
+  
+  EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+  if (!ctx) {
+    return Result<std::vector<uint8_t>>("Failed to create cipher context");
+  }
+  
+  std::vector<uint8_t> ciphertext(plaintext.size() + 16); // Extra space for tag
+  int len;
+  int ciphertext_len;
+  
+  try {
+    // Initialize encryption
+    if (EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1) {
+      throw std::runtime_error("Failed to initialize AES-256-GCM");
+    }
+    
+    // Set IV length
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv.size(), nullptr) != 1) {
+      throw std::runtime_error("Failed to set IV length");
+    }
+    
+    // Set key and IV
+    if (EVP_EncryptInit_ex(ctx, nullptr, nullptr, key.data(), iv.data()) != 1) {
+      throw std::runtime_error("Failed to set key and IV");
+    }
+    
+    // Encrypt plaintext
+    if (EVP_EncryptUpdate(ctx, ciphertext.data(), &len, plaintext.data(), plaintext.size()) != 1) {
+      throw std::runtime_error("Failed to encrypt data");
+    }
+    ciphertext_len = len;
+    
+    // Finalize encryption
+    if (EVP_EncryptFinal_ex(ctx, ciphertext.data() + len, &len) != 1) {
+      throw std::runtime_error("Failed to finalize encryption");
+    }
+    ciphertext_len += len;
+    
+    // Get authentication tag
+    auth_tag.resize(16);
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, auth_tag.data()) != 1) {
+      throw std::runtime_error("Failed to get authentication tag");
+    }
+    
+    ciphertext.resize(ciphertext_len);
+    EVP_CIPHER_CTX_free(ctx);
+    
+    return Result<std::vector<uint8_t>>(std::move(ciphertext));
+    
+  } catch (const std::exception& e) {
+    EVP_CIPHER_CTX_free(ctx);
+    return Result<std::vector<uint8_t>>("AES-GCM encryption failed: " + std::string(e.what()));
+  }
+}
+
+Result<std::vector<uint8_t>> MessageCrypto::decrypt_aes_gcm(
+    const std::vector<uint8_t>& ciphertext,
+    const std::vector<uint8_t>& key,
+    const std::vector<uint8_t>& iv,
+    const std::vector<uint8_t>& auth_tag) {
+  
+  if (key.size() != 32) {
+    return Result<std::vector<uint8_t>>("Invalid key size for AES-256-GCM");
+  }
+  
+  if (iv.size() != 12) {
+    return Result<std::vector<uint8_t>>("Invalid IV size for AES-GCM");
+  }
+  
+  if (auth_tag.size() != 16) {
+    return Result<std::vector<uint8_t>>("Invalid authentication tag size");
+  }
+  
+  EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+  if (!ctx) {
+    return Result<std::vector<uint8_t>>("Failed to create cipher context");
+  }
+  
+  std::vector<uint8_t> plaintext(ciphertext.size());
+  int len;
+  int plaintext_len;
+  
+  try {
+    // Initialize decryption
+    if (EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1) {
+      throw std::runtime_error("Failed to initialize AES-256-GCM");
+    }
+    
+    // Set IV length
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv.size(), nullptr) != 1) {
+      throw std::runtime_error("Failed to set IV length");
+    }
+    
+    // Set key and IV
+    if (EVP_DecryptInit_ex(ctx, nullptr, nullptr, key.data(), iv.data()) != 1) {
+      throw std::runtime_error("Failed to set key and IV");
+    }
+    
+    // Decrypt ciphertext
+    if (EVP_DecryptUpdate(ctx, plaintext.data(), &len, ciphertext.data(), ciphertext.size()) != 1) {
+      throw std::runtime_error("Failed to decrypt data");
+    }
+    plaintext_len = len;
+    
+    // Set authentication tag
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, auth_tag.size(), 
+                           const_cast<uint8_t*>(auth_tag.data())) != 1) {
+      throw std::runtime_error("Failed to set authentication tag");
+    }
+    
+    // Finalize decryption and verify tag
+    int ret = EVP_DecryptFinal_ex(ctx, plaintext.data() + len, &len);
+    if (ret <= 0) {
+      throw std::runtime_error("Authentication tag verification failed");
+    }
+    plaintext_len += len;
+    
+    plaintext.resize(plaintext_len);
+    EVP_CIPHER_CTX_free(ctx);
+    
+    return Result<std::vector<uint8_t>>(std::move(plaintext));
+    
+  } catch (const std::exception& e) {
+    EVP_CIPHER_CTX_free(ctx);
+    return Result<std::vector<uint8_t>>("AES-GCM decryption failed: " + std::string(e.what()));
+  }
+}
+
+Result<std::vector<uint8_t>> MessageCrypto::extract_public_key() {
+  if (!signing_key_) {
+    return Result<std::vector<uint8_t>>("No signing key available");
+  }
+  
+  size_t pub_key_len = 32;
+  std::vector<uint8_t> pub_key(pub_key_len);
+  
+  if (EVP_PKEY_get_raw_public_key(signing_key_, pub_key.data(), &pub_key_len) != 1) {
+    return Result<std::vector<uint8_t>>("Failed to extract public key: " + get_openssl_error());
+  }
+  
+  if (pub_key_len != 32) {
+    return Result<std::vector<uint8_t>>("Invalid public key length");
+  }
+  
+  return Result<std::vector<uint8_t>>(std::move(pub_key));
+}
+
+std::vector<uint8_t> MessageCrypto::create_signature_data(const SecureMessage& msg) {
+  std::vector<uint8_t> data;
+  
+  // Include all message fields except the signature itself
+  // Use network byte order (big-endian) for better compatibility
+  
+  // Message type
+  data.insert(data.end(), msg.message_type.begin(), msg.message_type.end());
+  
+  // Timestamp (8 bytes, big-endian)
+  for (int i = 7; i >= 0; --i) {
+    data.push_back((msg.timestamp_ms >> (i * 8)) & 0xFF);
+  }
+  
+  // Nonce (8 bytes, big-endian)
+  for (int i = 7; i >= 0; --i) {
+    data.push_back((msg.nonce >> (i * 8)) & 0xFF);
+  }
+  
+  // IV
+  data.insert(data.end(), msg.iv.begin(), msg.iv.end());
+  
+  // Auth tag
+  data.insert(data.end(), msg.auth_tag.begin(), msg.auth_tag.end());
+  
+  // Encrypted payload
+  data.insert(data.end(), msg.encrypted_payload.begin(), msg.encrypted_payload.end());
+  
+  return data;
+}
+
+Result<std::vector<uint8_t>> MessageCrypto::sign_ed25519(const std::vector<uint8_t>& data) {
+  if (!signing_key_) {
+    return Result<std::vector<uint8_t>>("No signing key available");
+  }
+  
+  EVP_MD_CTX* md_ctx = EVP_MD_CTX_new();
+  if (!md_ctx) {
+    return Result<std::vector<uint8_t>>("Failed to create signing context");
+  }
+  
+  std::vector<uint8_t> signature(64); // Ed25519 signatures are always 64 bytes
+  size_t sig_len = signature.size();
+  
+  try {
+    if (EVP_DigestSignInit(md_ctx, nullptr, nullptr, nullptr, signing_key_) != 1) {
+      throw std::runtime_error("Failed to initialize signing");
+    }
+    
+    if (EVP_DigestSign(md_ctx, signature.data(), &sig_len, data.data(), data.size()) != 1) {
+      throw std::runtime_error("Failed to sign data: " + get_openssl_error());
+    }
+    
+    if (sig_len != 64) {
+      throw std::runtime_error("Invalid signature length: " + std::to_string(sig_len));
+    }
+    
+    EVP_MD_CTX_free(md_ctx);
+    return Result<std::vector<uint8_t>>(std::move(signature));
+    
+  } catch (const std::exception& e) {
+    EVP_MD_CTX_free(md_ctx);
+    return Result<std::vector<uint8_t>>("Ed25519 signing failed: " + std::string(e.what()));
+  }
+}
+
+Result<bool> MessageCrypto::verify_ed25519(const std::vector<uint8_t>& data,
+                                          const std::vector<uint8_t>& signature,
+                                          const std::vector<uint8_t>& public_key) {
+  if (signature.size() != 64) {
+    return Result<bool>("Invalid signature size");
+  }
+  
+  if (public_key.size() != 32) {
+    return Result<bool>("Invalid public key size");
+  }
+  
+  // Create EVP_PKEY from raw public key
+  EVP_PKEY* pub_key = EVP_PKEY_new_raw_public_key(EVP_PKEY_ED25519, nullptr, 
+                                                  public_key.data(), public_key.size());
+  if (!pub_key) {
+    return Result<bool>("Failed to create public key: " + get_openssl_error());
+  }
+  
+  EVP_MD_CTX* md_ctx = EVP_MD_CTX_new();
+  if (!md_ctx) {
+    EVP_PKEY_free(pub_key);
+    return Result<bool>("Failed to create verification context");
+  }
+  
+  try {
+    if (EVP_DigestVerifyInit(md_ctx, nullptr, nullptr, nullptr, pub_key) != 1) {
+      throw std::runtime_error("Failed to initialize verification");
+    }
+    
+    int result = EVP_DigestVerify(md_ctx, signature.data(), signature.size(), 
+                                 data.data(), data.size());
+    
+    EVP_MD_CTX_free(md_ctx);
+    EVP_PKEY_free(pub_key);
+    
+    if (result == 1) {
+      return Result<bool>(true);
+    } else if (result == 0) {
+      return Result<bool>(false); // Signature verification failed
+    } else {
+      return Result<bool>("Verification error: " + get_openssl_error());
+    }
+    
+  } catch (const std::exception& e) {
+    EVP_MD_CTX_free(md_ctx);
+    EVP_PKEY_free(pub_key);
+    return Result<bool>("Ed25519 verification failed: " + std::string(e.what()));
   }
 }
 
@@ -563,12 +1010,30 @@ Result<std::vector<uint8_t>> SecureMessaging::process_inbound_message(
 }
 
 bool SecureMessaging::is_peer_trusted(const std::string& peer_id) const {
-  // TODO: Implement peer trust validation
+  if (!config_.require_mutual_auth) {
+    return true; // Trust all peers if mutual auth is not required
+  }
+  
+  // Check if peer is in our trusted peer list
+  std::lock_guard<std::mutex> lock(trusted_peers_mutex_);
+  auto it = trusted_peers_.find(peer_id);
+  if (it == trusted_peers_.end()) {
+    std::cerr << "⚠️  Peer " << peer_id << " is not in trusted peer list" << std::endl;
+    return false;
+  }
+  
   return true;
 }
 
 void SecureMessaging::add_trusted_peer(const std::string& peer_id, const std::vector<uint8_t>& public_key) {
-  // TODO: Implement trusted peer management
+  if (public_key.size() != 32) {
+    std::cerr << "Invalid public key size for peer " << peer_id << ": " << public_key.size() << " (expected 32)" << std::endl;
+    return;
+  }
+  
+  std::lock_guard<std::mutex> lock(trusted_peers_mutex_);
+  trusted_peers_[peer_id] = public_key;
+  std::cout << "✅ Added trusted peer: " << peer_id << std::endl;
 }
 
 SecureMessaging::SecurityStats SecureMessaging::get_security_stats() const {

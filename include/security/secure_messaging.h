@@ -151,6 +151,23 @@ private:
   bool is_nonce_used(uint64_t nonce);
   void add_used_nonce(uint64_t nonce);
   void cleanup_expired_nonces();
+  
+  // Cryptographic implementation methods
+  bool derive_symmetric_key(std::vector<uint8_t>& key);
+  Result<std::vector<uint8_t>> encrypt_aes_gcm(const std::vector<uint8_t>& plaintext,
+                                              const std::vector<uint8_t>& key,
+                                              const std::vector<uint8_t>& iv,
+                                              std::vector<uint8_t>& auth_tag);
+  Result<std::vector<uint8_t>> decrypt_aes_gcm(const std::vector<uint8_t>& ciphertext,
+                                              const std::vector<uint8_t>& key,
+                                              const std::vector<uint8_t>& iv,
+                                              const std::vector<uint8_t>& auth_tag);
+  Result<std::vector<uint8_t>> extract_public_key();
+  std::vector<uint8_t> create_signature_data(const SecureMessage& msg);
+  Result<std::vector<uint8_t>> sign_ed25519(const std::vector<uint8_t>& data);
+  Result<bool> verify_ed25519(const std::vector<uint8_t>& data,
+                             const std::vector<uint8_t>& signature,
+                             const std::vector<uint8_t>& public_key);
 };
 
 /**
@@ -204,6 +221,10 @@ private:
   MessageCrypto message_crypto_;
   mutable SecurityStats stats_;
   mutable std::mutex stats_mutex_;
+  
+  // Trusted peer management
+  std::map<std::string, std::vector<uint8_t>> trusted_peers_;
+  mutable std::mutex trusted_peers_mutex_;
   
   void update_stats(const std::string& metric, uint64_t count = 1);
 };

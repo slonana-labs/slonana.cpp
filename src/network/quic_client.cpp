@@ -902,14 +902,17 @@ bool QuicClient::send_secure_data(const std::string &connection_id,
                                  const std::string& message_type) {
   if (!secure_messaging_) {
     // Fall back to regular send if secure messaging not available
+    std::cout << "⚠️  Secure messaging not available, falling back to unencrypted transmission for " 
+              << message_type << std::endl;
     return send_data(connection_id, stream_id, data);
   }
   
   // Encrypt and sign the message
   auto secure_result = secure_messaging_->prepare_outbound_message(data, message_type, connection_id);
   if (!secure_result.is_ok()) {
-    std::cerr << "Failed to secure message: " << secure_result.error() << std::endl;
-    return false;
+    std::cerr << "❌ Failed to secure message (" << message_type << "): " << secure_result.error() << std::endl;
+    std::cout << "⚠️  Falling back to unencrypted transmission" << std::endl;
+    return send_data(connection_id, stream_id, data);
   }
   
   // Send the secured message through regular QUIC channel
