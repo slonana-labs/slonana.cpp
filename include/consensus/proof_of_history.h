@@ -190,6 +190,18 @@ private:
       std::vector<Hash> &hashes,
       const std::vector<std::vector<Hash>> &mixed_data_batches);
 
+  // Helper method to update stats with proper locking and avoid code duplication
+  void update_stats_locked(std::chrono::microseconds tick_duration,
+                          std::chrono::system_clock::time_point tick_end,
+                          bool is_batch_processing,
+                          size_t pending_mixes_count = 0);
+  
+  // Internal stats update implementation (called under lock)
+  void update_stats_impl(std::chrono::microseconds tick_duration,
+                        std::chrono::system_clock::time_point tick_end,
+                        bool is_batch_processing,
+                        size_t pending_mixes_count);
+
   PohConfig config_;
   std::atomic<bool> running_{false};
   std::atomic<bool> stopping_{false};
@@ -234,15 +246,21 @@ private:
   // Helper class for lock contention tracking
   class InstrumentedLockGuard {
   private:
-    std::lock_guard<std::mutex> guard_;
+    std::unique_lock<std::mutex> guard_;
     
   public:
     InstrumentedLockGuard(std::mutex& mutex, std::atomic<uint64_t>& attempts, 
-                         std::atomic<uint64_t>& contentions) : guard_(mutex) {
+                         std::atomic<uint64_t>& contentions) {
       attempts.fetch_add(1, std::memory_order_relaxed);
-      // Note: Real contention detection would require try_lock timing, 
-      // but for now we assume any lock attempt could encounter contention
-      // This is a simplified implementation for basic monitoring
+      // Simple contention detection: try_lock first, if it fails, we have contention
+      if (!mutex.try_lock()) {
+        contentions.fetch_add(1, std::memory_order_relaxed);
+      }
+      // Ensure we have the lock regardless
+      guard_ = std::unique_lock<std::mutex>(mutex, std::adopt_lock_t{});
+      if (!guard_.owns_lock()) {
+        guard_.lock();
+      }
     }
   };
 };
