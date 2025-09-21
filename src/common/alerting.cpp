@@ -117,18 +117,31 @@ FileAlertChannel::FileAlertChannel(const std::string& file_path, bool enabled)
 
 void FileAlertChannel::send_alert(const LogEntry& entry) {
     std::ofstream file(file_path_, std::ios::app);
-    if (file.is_open()) {
-        auto time_t = std::chrono::system_clock::to_time_t(entry.timestamp);
-        
-        file << "[" << std::put_time(std::gmtime(&time_t), "%Y-%m-%d %H:%M:%S UTC") << "] "
-             << "CRITICAL ALERT - Module: " << entry.module 
-             << ", Message: " << entry.message;
-        
-        if (!entry.error_code.empty()) {
-            file << ", Error: " << entry.error_code;
-        }
-        
-        file << std::endl;
+    if (!file.is_open()) {
+        // Fallback to stderr if file cannot be opened
+        std::cerr << "ALERT: Failed to open alert file '" << file_path_ 
+                  << "' - Module: " << entry.module 
+                  << ", Message: " << entry.message << std::endl;
+        return;
+    }
+    
+    auto time_t = std::chrono::system_clock::to_time_t(entry.timestamp);
+    
+    file << "[" << std::put_time(std::gmtime(&time_t), "%Y-%m-%d %H:%M:%S UTC") << "] "
+         << "CRITICAL ALERT - Module: " << entry.module 
+         << ", Message: " << entry.message;
+    
+    if (!entry.error_code.empty()) {
+        file << ", Error: " << entry.error_code;
+    }
+    
+    file << std::endl;
+    
+    // Check if write was successful
+    if (file.fail()) {
+        std::cerr << "ALERT: Failed to write to alert file '" << file_path_ 
+                  << "' - Module: " << entry.module 
+                  << ", Message: " << entry.message << std::endl;
     }
 }
 

@@ -196,7 +196,75 @@ graph TD
     J --> K
 ```
 
-## Production Deployment
+## Environment Variables and Configuration
+
+### Core Logging Environment Variables
+```bash
+# Logging level configuration
+export SLONANA_LOG_LEVEL=INFO              # TRACE, DEBUG, INFO, WARN, ERROR, CRITICAL
+export SLONANA_LOG_FORMAT=json             # text, json
+export SLONANA_LOG_ASYNC=true              # true, false
+
+# Performance tuning
+export SLONANA_LOG_QUEUE_SIZE=10000        # Maximum async log queue size
+export SLONANA_LOG_RATE_LIMIT=60           # Alert rate limiting interval in seconds
+```
+
+### Alert Channel Configuration
+```bash
+# Console alerts
+export SLONANA_ALERT_CONSOLE_ENABLED=true  # Enable console alerts
+
+# File-based alerts
+export SLONANA_ALERT_FILE_PATH=/var/log/slonana/critical_alerts.log
+
+# Slack integration
+export SLONANA_SLACK_WEBHOOK_URL="https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+export SLONANA_SLACK_CHANNEL="#alerts"
+export SLONANA_SLACK_USERNAME="Slonana Validator"
+
+# Email alerts
+export SLONANA_SMTP_SERVER="smtp.gmail.com"
+export SLONANA_SMTP_PORT="587"
+export SLONANA_SMTP_USERNAME="validator@example.com"
+export SLONANA_SMTP_PASSWORD="app_specific_password"
+export SLONANA_ALERT_EMAIL_FROM="validator@example.com"
+export SLONANA_ALERT_EMAIL_TO="oncall@example.com"
+
+# Prometheus metrics
+export SLONANA_ALERT_PROMETHEUS_ENABLED=true
+```
+
+### Configuration File Support
+Create `/etc/slonana/logging.conf`:
+```ini
+[logging]
+level=INFO
+format=json
+async=true
+queue_size=10000
+
+[alerts]
+rate_limit_seconds=60
+console_enabled=true
+file_path=/var/log/slonana/critical_alerts.log
+
+[slack]
+webhook_url=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+channel=#alerts
+username=Slonana Validator
+
+[email]
+smtp_server=smtp.gmail.com
+smtp_port=587
+username=validator@example.com
+password=app_specific_password
+from_email=validator@example.com
+to_email=oncall@example.com
+
+[prometheus]
+enabled=true
+```
 
 ### Docker Configuration
 

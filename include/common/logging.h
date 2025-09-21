@@ -105,9 +105,34 @@ public:
         return static_cast<int>(level) >= current_level_.load(std::memory_order_relaxed);
     }
     
-    /// Log a simple message (backward compatibility)
+    /// Log a simple message (backward compatibility) 
+    /// Note: Uses "unknown" module - prefer log_structured() for better observability
     template<typename... Args>
     void log(LogLevel level, Args&&... args) {
+        if (!is_enabled(level)) return;
+        
+        std::ostringstream oss;
+        (oss << ... << args);
+        
+        // Try to infer module from call context
+        std::string module = infer_module_from_context();
+        
+        LogEntry entry{
+            std::chrono::system_clock::now(),
+            level,
+            module,
+            get_thread_id(),
+            oss.str(),
+            "",
+            {}
+        };
+        
+        process_log_entry(entry);
+    }
+    
+    /// Log with explicit module (preferred for better observability)
+    template<typename... Args>
+    void log(LogLevel level, const std::string& module, Args&&... args) {
         if (!is_enabled(level)) return;
         
         std::ostringstream oss;
@@ -116,7 +141,7 @@ public:
         LogEntry entry{
             std::chrono::system_clock::now(),
             level,
-            "unknown",
+            module,
             get_thread_id(),
             oss.str(),
             "",
@@ -176,20 +201,27 @@ private:
     std::atomic<bool> async_enabled_;
     std::atomic<bool> worker_shutdown_;
     
-    // Async logging support
+    // Async logging support with bounded queue
+    static const size_t MAX_QUEUE_SIZE = 10000;  // Prevent runaway memory usage
     std::queue<LogEntry> log_queue_;
     std::mutex queue_mutex_;
     std::condition_variable queue_cv_;
     std::thread worker_thread_;
     
-    // Alerting support
+    // Alerting support with rate limiting
     std::vector<std::unique_ptr<IAlertChannel>> alert_channels_;
     std::mutex alert_mutex_;
+    std::unordered_map<std::string, std::chrono::steady_clock::time_point> last_alert_time_;
+    static constexpr std::chrono::seconds ALERT_RATE_LIMIT_INTERVAL{60};  // 1 minute between same alerts
     
     void process_log_entry(const LogEntry& entry) {
         if (async_enabled_.load()) {
             {
                 std::lock_guard<std::mutex> lock(queue_mutex_);
+                // Drop oldest entries if queue is full to prevent memory exhaustion
+                if (log_queue_.size() >= MAX_QUEUE_SIZE) {
+                    log_queue_.pop();  // Drop oldest entry
+                }
                 log_queue_.push(entry);
             }
             queue_cv_.notify_one();
@@ -208,13 +240,29 @@ private:
     
     void trigger_alerts(const LogEntry& entry) {
         std::lock_guard<std::mutex> lock(alert_mutex_);
+        
+        // Create rate limiting key from module and error code
+        std::string rate_key = entry.module + ":" + entry.error_code;
+        auto now = std::chrono::steady_clock::now();
+        
+        // Check rate limiting
+        auto it = last_alert_time_.find(rate_key);
+        if (it != last_alert_time_.end()) {
+            if (now - it->second < ALERT_RATE_LIMIT_INTERVAL) {
+                return;  // Skip alert due to rate limiting
+            }
+        }
+        last_alert_time_[rate_key] = now;
+        
         for (auto& channel : alert_channels_) {
             if (channel->is_enabled()) {
                 try {
                     channel->send_alert(entry);
                 } catch (const std::exception& e) {
                     // Don't let alerting failures crash the logger
-                    std::cerr << "Alert channel failed: " << e.what() << std::endl;
+                    // Use fallback to stderr instead of std::cout to avoid circular logging
+                    std::cerr << "Alert channel '" << channel->get_name() 
+                              << "' failed: " << e.what() << std::endl;
                 }
             }
         }
@@ -224,6 +272,8 @@ private:
     std::string format_json(const LogEntry& entry) const;
     std::string format_text(const LogEntry& entry) const;
     std::string level_to_string(LogLevel level) const;
+    std::string infer_module_from_context() const;
+    std::string escape_json_string(const std::string& input) const;
     
     void start_async_worker();
     void stop_async_worker();

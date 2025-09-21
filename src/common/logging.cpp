@@ -23,6 +23,36 @@ std::string Logger::level_to_string(LogLevel level) const {
     }
 }
 
+std::string Logger::escape_json_string(const std::string& input) const {
+    std::ostringstream escaped;
+    for (char c : input) {
+        switch (c) {
+            case '"':  escaped << "\\\""; break;
+            case '\\': escaped << "\\\\"; break;
+            case '\b': escaped << "\\b"; break;
+            case '\f': escaped << "\\f"; break;
+            case '\n': escaped << "\\n"; break;
+            case '\r': escaped << "\\r"; break;
+            case '\t': escaped << "\\t"; break;
+            default:
+                if (c >= 0 && c < 32) {
+                    // Control characters - escape as unicode
+                    escaped << "\\u" << std::hex << std::setfill('0') << std::setw(4) << static_cast<int>(c);
+                } else {
+                    escaped << c;
+                }
+                break;
+        }
+    }
+    return escaped.str();
+}
+
+std::string Logger::infer_module_from_context() const {
+    // Simple heuristic: try to infer module from thread name or other context
+    // For now, return "inferred" - could be enhanced with stack trace analysis
+    return "inferred";
+}
+
 std::string Logger::format_json(const LogEntry& entry) const {
     std::ostringstream json;
     
@@ -36,12 +66,12 @@ std::string Logger::format_json(const LogEntry& entry) const {
          << "\"timestamp\":\"" << std::put_time(std::gmtime(&time_t), "%Y-%m-%dT%H:%M:%S")
          << "." << std::setfill('0') << std::setw(3) << ms.count() << "Z\","
          << "\"level\":\"" << level_to_string(entry.level) << "\","
-         << "\"module\":\"" << entry.module << "\","
-         << "\"thread_id\":\"" << entry.thread_id << "\","
-         << "\"message\":\"" << entry.message << "\"";
+         << "\"module\":\"" << escape_json_string(entry.module) << "\","
+         << "\"thread_id\":\"" << escape_json_string(entry.thread_id) << "\","
+         << "\"message\":\"" << escape_json_string(entry.message) << "\"";
     
     if (!entry.error_code.empty()) {
-        json << ",\"error_code\":\"" << entry.error_code << "\"";
+        json << ",\"error_code\":\"" << escape_json_string(entry.error_code) << "\"";
     }
     
     if (!entry.context.empty()) {
@@ -49,7 +79,7 @@ std::string Logger::format_json(const LogEntry& entry) const {
         bool first = true;
         for (const auto& [key, value] : entry.context) {
             if (!first) json << ",";
-            json << "\"" << key << "\":\"" << value << "\"";
+            json << "\"" << escape_json_string(key) << "\":\"" << escape_json_string(value) << "\"";
             first = false;
         }
         json << "}";
