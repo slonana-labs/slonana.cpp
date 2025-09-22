@@ -1212,6 +1212,14 @@ test_transaction_throughput() {
         current_rpc_url=$(solana config get | grep "RPC URL" | awk '{print $3}' 2>/dev/null) || current_rpc_url="unknown"
         log_info "✅ Solana CLI configured for RPC endpoint: $current_rpc_url"
         
+        # **DEBUG OUTPUT**: Add CLI configuration debugging as suggested in code review
+        if [[ "$VERBOSE" == true ]]; then
+            log_verbose "🔍 Solana CLI Configuration:"
+            solana config get 2>&1 | while read line; do
+                log_verbose "   $line"
+            done
+        fi
+        
         # Verify endpoint matches expectation
         if [[ "$current_rpc_url" != "$expected_url" ]]; then
             log_warning "⚠️  CLI endpoint mismatch: expected $expected_url, got $current_rpc_url"
@@ -1597,6 +1605,20 @@ EOF
         log_warning "solana config appears to have issues, but continuing anyway"
     fi
     
+    # **PRE-TRANSACTION VALIDATION**: Check sender balance and keypair as suggested in code review
+    log_info "🔍 Pre-transaction validation:"
+    log_info "   • Sender keypair: $sender_keypair"
+    log_info "   • Sender pubkey: $sender_pubkey_cli"
+    
+    # Check if sender has sufficient balance for transactions
+    local sender_balance
+    sender_balance=$(solana balance --keypair "$sender_keypair" 2>/dev/null | awk '{print $1}') || sender_balance="unknown"
+    log_info "   • Sender balance: $sender_balance SOL"
+    
+    if [[ "$sender_balance" != "unknown" ]] && (( $(echo "$sender_balance < 1.0" | bc -l 2>/dev/null || echo "1") )); then
+        log_warning "⚠️  Sender balance appears low ($sender_balance SOL), transactions may fail"
+    fi
+    
     # **ENHANCED LOOP DIAGNOSTICS**: Comprehensive debugging to identify early exit causes
     local loop_iteration=0
     local loop_exit_reason=""
@@ -1729,6 +1751,14 @@ EOF
                 --no-wait 2>&1)
             transfer_result=$?
             
+            # **DEBUG OUTPUT**: Log transaction details for debugging as suggested in code review
+            if [[ "$VERBOSE" == true ]]; then
+                log_verbose "🔍 Transaction attempt $txn_count:"
+                log_verbose "   • Command: solana transfer $recipient_pubkey $transfer_amount --keypair $sender_keypair --no-wait"
+                log_verbose "   • Result: $transfer_result"
+                log_verbose "   • Output: $transfer_output"
+            fi
+            
             # **POST-TRANSACTION HEALTH CHECK**: Verify validator survived the transaction
             if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
                 local validator_pid
@@ -1744,7 +1774,15 @@ EOF
             
             if [[ $transfer_result -eq 0 ]]; then
                 success_count=$(( success_count + 1 ))
+                log_verbose "✅ Transaction $txn_count successful"
             else
+                # **ENHANCED ERROR LOGGING**: Log transaction failures for debugging as suggested in code review
+                log_warning "❌ Transaction $txn_count failed:"
+                log_warning "   • Exit code: $transfer_result"
+                log_warning "   • Output: $transfer_output"
+                log_warning "   • Amount: $transfer_amount SOL"
+                log_warning "   • Recipient: $recipient_pubkey"
+                
                 # **DISCIPLINED EMERGENCY FUNDING**: Detect insufficient funds and apply disciplined emergency funding
                 if [[ "$transfer_output" == *"insufficient funds"* ]]; then
                     log_verbose "Insufficient funds detected, attempting disciplined emergency funding..."
