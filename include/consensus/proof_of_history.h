@@ -169,7 +169,7 @@ public:
     uint64_t batches_processed;    // Number of batch operations
     double batch_efficiency;       // Average batch utilization
     bool simd_acceleration_active; // Whether SIMD is being used
-    double lock_contention_ratio;  // Lock contention metrics
+    double lock_contention_ratio;  // Lock contention metrics (-1.0 = not tracked, >= 0.0 = contention ratio)
   };
 
   PohStats get_stats() const;

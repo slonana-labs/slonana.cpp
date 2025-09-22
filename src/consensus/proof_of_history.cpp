@@ -630,7 +630,9 @@ void ProofOfHistory::update_stats_impl(std::chrono::microseconds tick_duration,
       stats_.lock_contention_ratio = (double)contentions / attempts;
     }
   } else {
-    stats_.lock_contention_ratio = -1.0; // Sentinel value indicating "not tracked"
+    // **SENTINEL VALUE**: -1.0 indicates "not tracked" state (consumers should check >= 0)
+    // This disambiguates from 0.0 which could mean "no contention detected"
+    stats_.lock_contention_ratio = -1.0;
   }
 
   // Handle pending data mixes consistently

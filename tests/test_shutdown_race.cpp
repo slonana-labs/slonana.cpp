@@ -24,6 +24,11 @@ public:
         std::atomic<int> successful_cycles{0};
         std::atomic<int> failed_cycles{0};
         
+        // **PERFORMANCE OPTIMIZATION**: Initialize PRNG once for cycle delays as suggested in code review
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<> delay_dist(1, 6);
+        
         for (int cycle = 0; cycle < num_cycles; ++cycle) {
             try {
                 // Initialize GlobalProofOfHistory
@@ -45,6 +50,11 @@ public:
                 
                 // Worker thread that performs operations
                 auto worker = [&](int thread_id) {
+                    // **PERFORMANCE OPTIMIZATION**: Initialize PRNG once per thread as suggested in code review
+                    std::random_device rd;
+                    std::mt19937 gen(rd());
+                    std::uniform_int_distribution<> jitter_dist(500, 2000);
+                    
                     int local_ops = 0;
                     while (!stop_workers.load(std::memory_order_acquire)) {
                         try {
@@ -87,10 +97,8 @@ public:
                             // Short delay with randomization to emulate real-world jitter
                             if (local_ops % 10 == 0) {
                                 // Add randomized jitter (0.5-2.0 microseconds)
-                                std::random_device rd;
-                                std::mt19937 gen(rd());
-                                std::uniform_int_distribution<> dist(500, 2000);
-                                std::this_thread::sleep_for(std::chrono::nanoseconds(dist(gen)));
+                                // Using pre-initialized PRNG for performance
+                                std::this_thread::sleep_for(std::chrono::nanoseconds(jitter_dist(gen)));
                             }
                             
                         } catch (const std::exception& e) {
@@ -112,9 +120,7 @@ public:
                 }
                 
                 // Let threads run briefly with randomized timing
-                std::random_device rd;
-                std::mt19937 gen(rd());
-                std::uniform_int_distribution<> delay_dist(1, 6);
+                // Using pre-initialized PRNG for performance
                 std::this_thread::sleep_for(std::chrono::milliseconds(delay_dist(gen)));
                 
                 // Signal stop and shutdown

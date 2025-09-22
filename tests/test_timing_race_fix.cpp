@@ -44,6 +44,11 @@ public:
         
         // Thread function that rapidly accesses timing-sensitive operations
         auto worker = [&](int thread_id) {
+            // **PERFORMANCE OPTIMIZATION**: Initialize PRNG once per thread as suggested in code review
+            std::random_device rd;
+            std::mt19937 gen(rd());
+            std::uniform_int_distribution<> jitter_dist(500, 1500);
+            
             // Wait for synchronized start
             while (!start_flag.load(std::memory_order_acquire)) {
                 std::this_thread::yield();
@@ -76,10 +81,8 @@ public:
                     // Minimal delay to allow other threads to compete with some randomization
                     if (i % 50 == 0) {
                         // Add randomized jitter (0.5-1.5 microseconds) to emulate real-world timing
-                        std::random_device rd;
-                        std::mt19937 gen(rd());
-                        std::uniform_int_distribution<> dist(500, 1500);
-                        std::this_thread::sleep_for(std::chrono::nanoseconds(dist(gen)));
+                        // Using pre-initialized PRNG for performance
+                        std::this_thread::sleep_for(std::chrono::nanoseconds(jitter_dist(gen)));
                     }
                     
                 } catch (const std::exception& e) {
