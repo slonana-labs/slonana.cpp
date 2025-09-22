@@ -1978,6 +1978,8 @@ CLEANUP_IN_PROGRESS=false
 
 # Cleanup validator process and activity generators
 cleanup_validator() {
+    tail -30 "$RESULTS_DIR/validator.log" || true
+
     # Prevent recursive cleanup calls
     if [[ "$CLEANUP_IN_PROGRESS" == "true" ]]; then
         return 0
