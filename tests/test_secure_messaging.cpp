@@ -315,6 +315,51 @@ void test_nonce_ttl_based_cleanup() {
   ASSERT_TRUE(crypto.validate_message_freshness(msg1_reuse));
 }
 
+// Test cryptographically secure nonce generation
+void test_nonce_generation_security() {
+  SecureMessagingConfig config;
+  config.enable_message_signing = false;
+  config.enable_message_encryption = false;
+  config.enable_replay_protection = true;
+  
+  MessageCrypto crypto(config);
+  auto init_result = crypto.initialize();
+  ASSERT_TRUE(init_result.is_ok());
+  
+  // Generate multiple nonces and verify they are unique and unpredictable
+  std::set<uint64_t> generated_nonces;
+  const int num_nonces = 1000;
+  
+  for (int i = 0; i < num_nonces; ++i) {
+    std::vector<uint8_t> plaintext = {0x54, 0x65, 0x73, 0x74}; // "Test"
+    auto msg_result = crypto.protect_message(plaintext, "test", "peer");
+    ASSERT_TRUE(msg_result.is_ok());
+    
+    auto msg = msg_result.value();
+    
+    // Verify nonce uniqueness
+    ASSERT_TRUE(generated_nonces.find(msg.nonce) == generated_nonces.end());
+    generated_nonces.insert(msg.nonce);
+    
+    // Verify nonce is not zero (should never happen with crypto RNG)
+    ASSERT_TRUE(msg.nonce != 0);
+  }
+  
+  // Verify we got the expected number of unique nonces
+  ASSERT_EQ(generated_nonces.size(), num_nonces);
+  
+  // Basic entropy check - nonces should be distributed across full range
+  // Count bits set in all nonces combined
+  uint64_t combined_or = 0;
+  for (uint64_t nonce : generated_nonces) {
+    combined_or |= nonce;
+  }
+  
+  // Should have bits set in most positions (not perfect test but catches obvious issues)
+  int bits_set = __builtin_popcountll(combined_or);
+  ASSERT_TRUE(bits_set > 50); // Expect most of 64 bits to be represented
+}
+
 // Main test runner
 int main() {
   std::cout << "=== Secure Messaging Tests ===" << std::endl;
@@ -349,6 +394,9 @@ int main() {
     
     test_nonce_ttl_based_cleanup();
     std::cout << "✓ Nonce TTL-Based Cleanup" << std::endl;
+    
+    test_nonce_generation_security();
+    std::cout << "✓ Nonce Generation Security" << std::endl;
     
     std::cout << std::endl << "=== All Secure Messaging Tests Passed! ===" << std::endl;
     return 0;

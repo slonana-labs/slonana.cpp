@@ -130,8 +130,33 @@ gossip.broadcast_message(message);  // Automatically encrypted and signed
 
 - **AES-GCM Encryption**: Authenticated encryption for message confidentiality and integrity
 - **Ed25519 Signatures**: Fast elliptic curve signatures for message authentication
-- **Nonce-based Replay Protection**: Prevents replay attacks with cryptographic nonces
+- **Cryptographically Secure Nonces**: Uses OpenSSL RAND_bytes for unpredictable nonce generation
+- **Nonce-based Replay Protection**: Prevents replay attacks with cryptographic nonces and TTL-based expiry
 - **Timestamp Validation**: Rejects messages outside valid time windows
+
+### Clock Synchronization Requirements
+
+**Important**: The replay protection system relies on accurate timestamps and requires synchronized clocks across all validator nodes:
+
+- **Time Sync Protocol**: All validator nodes must use NTP or equivalent time synchronization
+- **Clock Skew Tolerance**: Messages with timestamps more than `message_ttl_seconds` old/future are rejected
+- **Default TTL**: 300 seconds (5 minutes) provides reasonable tolerance for clock skew
+- **Monitoring**: Monitor system clock synchronization status and NTP daemon health
+- **Deployment**: Ensure NTP is configured before enabling secure messaging
+
+**NTP Configuration Example**:
+```bash
+# Install and configure NTP
+sudo apt install ntp
+sudo systemctl enable ntp
+sudo systemctl start ntp
+
+# Verify time synchronization
+timedatectl status
+ntpq -p
+```
+
+If clocks become significantly desynchronized, valid messages may be rejected or replay attacks may succeed. Monitor NTP synchronization status in production deployments.
 
 ### Security Monitoring
 

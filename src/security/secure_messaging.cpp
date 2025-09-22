@@ -442,8 +442,34 @@ bool MessageCrypto::load_signing_key() {
 }
 
 bool MessageCrypto::load_peer_keys() {
-  // Implementation would load peer public keys from directory
-  // For now, return true as it's optional for basic functionality
+  if (config_.verification_keys_dir.empty()) {
+    return true; // Optional - no peer keys directory specified
+  }
+  
+  // Check if directory exists
+  std::ifstream dir_check(config_.verification_keys_dir);
+  if (!dir_check.good()) {
+    std::cerr << "⚠️  Peer keys directory does not exist: " << config_.verification_keys_dir << std::endl;
+    return true; // Non-fatal - allow operation without peer keys
+  }
+  
+  // Implementation note: In a full implementation, this would:
+  // 1. Scan the verification_keys_dir for .pem files
+  // 2. Load each public key file and associate with peer ID (filename)
+  // 3. Store in peer_keys_ map for later verification
+  // 4. Validate key format and reject malformed keys
+  
+  // For now, log that the directory was found but implementation is pending
+  std::cout << "ℹ️  Peer keys directory found: " << config_.verification_keys_dir 
+            << " (key loading implementation pending)" << std::endl;
+  
+  // TODO: Implement full peer key loading:
+  // - Directory scanning for *.pem files
+  // - PEM public key parsing with OpenSSL
+  // - Peer ID extraction from filenames
+  // - Key validation and storage in peer_keys_ map
+  // - Error handling for corrupted/invalid key files
+  
   return true;
 }
 
@@ -592,9 +618,23 @@ bool MessageCrypto::validate_message_freshness(const SecureMessage& secure_msg) 
 }
 
 uint64_t MessageCrypto::generate_nonce() {
-  std::random_device rd;
-  std::mt19937_64 gen(rd());
-  return gen();
+  // Use cryptographically secure random number generation
+  // to ensure nonces are unpredictable and collision-resistant
+  uint64_t nonce;
+  if (RAND_bytes(reinterpret_cast<unsigned char*>(&nonce), sizeof(nonce)) != 1) {
+    // Fallback to timestamp + random if OpenSSL fails
+    auto now = std::chrono::steady_clock::now();
+    auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
+    
+    std::random_device rd;
+    std::mt19937_64 gen(rd());
+    
+    // Combine timestamp (for uniqueness) with random (for unpredictability)
+    // Use upper 32 bits for timestamp, lower 32 bits for random
+    nonce = (static_cast<uint64_t>(timestamp & 0xFFFFFFFF) << 32) | (gen() & 0xFFFFFFFF);
+  }
+  
+  return nonce;
 }
 
 bool MessageCrypto::is_nonce_used(uint64_t nonce) {
