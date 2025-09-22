@@ -170,6 +170,7 @@ public:
     double batch_efficiency;       // Average batch utilization
     bool simd_acceleration_active; // Whether SIMD is being used
     double lock_contention_ratio;  // Lock contention metrics (-1.0 = not tracked, >= 0.0 = contention ratio)
+    uint64_t dropped_mixes;        // Number of mix operations dropped due to queue overflow
   };
 
   PohStats get_stats() const;
@@ -242,6 +243,7 @@ private:
   std::chrono::system_clock::time_point start_time_;
   std::atomic<uint64_t> lock_contention_count_{0};
   std::atomic<uint64_t> lock_attempts_{0};
+  std::atomic<uint64_t> dropped_mixes_{0};
   
   // Helper class for lock contention tracking
   class InstrumentedLockGuard {

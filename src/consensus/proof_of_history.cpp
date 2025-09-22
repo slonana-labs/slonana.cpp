@@ -130,6 +130,7 @@ ProofOfHistory::ProofOfHistory(const PohConfig &config) : config_(config) {
   stats_.pending_data_mixes = 0;
   stats_.batches_processed = 0;
   stats_.batch_efficiency = 0.0;
+  stats_.dropped_mixes = 0;
   stats_.simd_acceleration_active =
       config_.enable_simd_acceleration && SLONANA_HAS_SIMD;
   stats_.lock_contention_ratio = 0.0;
@@ -256,10 +257,8 @@ uint64_t ProofOfHistory::mix_data(const Hash &data) {
   if (pending_mix_data_.size() >= config_.max_entries_buffer) {
     // Drop oldest entries when at capacity (FIFO dropping policy)
     pending_mix_data_.pop_front();
-    if (config_.enable_lock_contention_tracking) {
-      lock_contention_count_.fetch_add(
-          1, std::memory_order_relaxed); // Track dropped entries
-    }
+    // **METRICS**: Track dropped mixes for backpressure monitoring
+    dropped_mixes_.fetch_add(1, std::memory_order_relaxed);
   }
 
   pending_mix_data_.push_back(data);
@@ -298,7 +297,10 @@ void ProofOfHistory::set_slot_callback(SlotCallback callback) {
 
 ProofOfHistory::PohStats ProofOfHistory::get_stats() const {
   std::lock_guard<std::mutex> lock(stats_mutex_);
-  return stats_;
+  PohStats current_stats = stats_;
+  // **ATOMIC METRICS**: Include dropped mixes from atomic counter
+  current_stats.dropped_mixes = dropped_mixes_.load(std::memory_order_relaxed);
+  return current_stats;
 }
 
 void ProofOfHistory::hashing_thread_func() {
@@ -590,9 +592,14 @@ void ProofOfHistory::update_stats_impl(std::chrono::microseconds tick_duration,
                                       bool is_batch_processing,
                                       size_t pending_mixes_count) {
   stats_.total_ticks++;
-  stats_.total_hashes++;
+  // **ACCURATE HASH COUNTING**: Count actual hashes processed, not just ticks
   if (is_batch_processing) {
     stats_.batches_processed++;
+    // Count the actual number of hashes processed in this batch
+    stats_.total_hashes += pending_mixes_count > 0 ? pending_mixes_count : 1;
+  } else {
+    // Single tick processing - count all pending mixes plus the tick itself
+    stats_.total_hashes += pending_mixes_count + 1;
   }
   stats_.last_tick_duration = tick_duration;
 
