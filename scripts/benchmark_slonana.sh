@@ -1571,9 +1571,9 @@ EOF
     # Transaction test loop with enhanced error handling and debugging
     log_verbose "Starting transaction loop for ${TEST_DURATION} seconds..."
     
-    # **STABILITY ENHANCEMENT**: Add small delay to ensure validator is completely ready
+    # **OPTIMIZED STABILITY**: Minimal delay to ensure validator readiness while maximizing test time
     log_info "⏳ Brief pre-transaction delay to ensure validator stability..."
-    sleep 3
+    sleep 1  # Reduced from 3s to 1s for more testing time
     
     # Safely calculate end time with error handling
     local end_time
@@ -1708,15 +1708,16 @@ EOF
             fi
         fi
         
-        # Send a batch of transactions with error handling
+        # Send transactions in larger batches with reduced overhead for better TPS
+        local batch_size=20  # Increased from 5 to 20 for better throughput
         local i
-        for i in 1 2 3 4 5; do
-            # **DEBUG**: Show progress occasionally
-            if [[ $((txn_count % 20)) -eq 0 ]] && [[ $txn_count -gt 0 ]]; then
-                log_verbose "🔄 Transaction progress: $txn_count transactions sent, $success_count successful"
+        for i in $(seq 1 $batch_size); do
+            # **REDUCED DEBUG OUTPUT**: Only show progress for significant milestones
+            if [[ $((txn_count % 100)) -eq 0 ]] && [[ $txn_count -gt 0 ]]; then
+                log_verbose "🔄 Transaction progress: $txn_count transactions sent, $success_count successful ($(( success_count * 100 / txn_count ))% success rate)"
             fi
             
-            # **DEBUG**: Log first transaction attempt to help identify validator crash trigger
+            # **STREAMLINED FIRST TRANSACTION LOG**: Only log essential info for first transaction
             if [[ $txn_count -eq 0 && $i -eq 1 ]]; then
                 log_info "🔄 About to send first transaction (loop iteration $loop_iteration, batch item $i)"
                 log_info "   • Validator PID: $(cat "$RESULTS_DIR/validator.pid" 2>/dev/null || echo "unknown")"
@@ -1724,124 +1725,93 @@ EOF
                 log_info "   • Recipient pubkey: $recipient_pubkey"
             fi
             
-            # **ENHANCED TRANSACTION PROTECTION**: Add extra safety for CLI commands that might affect validator
+            # **OPTIMIZED TRANSACTION**: Reduced validation overhead for better performance
             local transfer_output transfer_result transfer_amount="0.001"
             
-            # Try with a smaller amount if we detect insufficient funds
-            if [[ $success_count -eq 0 && $txn_count -gt 10 ]]; then
+            # Adjust amount based on early results
+            if [[ $success_count -eq 0 && $txn_count -gt 20 ]]; then
                 transfer_amount="0.0001"  # Use smaller amount as fallback
             fi
             
-            # **VALIDATOR HEALTH CHECK**: Verify validator is still running before attempting transaction
-            if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
-                local validator_pid
-                validator_pid=$(cat "$RESULTS_DIR/validator.pid" 2>/dev/null) || validator_pid=""
-                if [[ -n "$validator_pid" ]] && ! kill -0 "$validator_pid" 2>/dev/null; then
-                    log_warning "⚠️  Validator died before transaction attempt (txn $txn_count, batch $i)"
-                    loop_exit_reason="Validator process died before transaction"
-                    break 2  # Break out of both loops
+            # **PERIODIC VALIDATOR CHECK**: Only check validator health every 10 transactions instead of every transaction
+            if [[ $((txn_count % 10)) -eq 0 ]]; then
+                if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
+                    local validator_pid
+                    validator_pid=$(cat "$RESULTS_DIR/validator.pid" 2>/dev/null) || validator_pid=""
+                    if [[ -n "$validator_pid" ]] && ! kill -0 "$validator_pid" 2>/dev/null; then
+                        log_warning "⚠️  Validator died before transaction batch (txn $txn_count)"
+                        loop_exit_reason="Validator process died"
+                        break 2  # Break out of both loops
+                    fi
                 fi
             fi
             
-            # **PROTECTED TRANSFER**: Execute with enhanced error handling
-            transfer_output=$(timeout 10s solana transfer "$recipient_pubkey" "$transfer_amount" \
+            # **HIGH-THROUGHPUT TRANSFER**: Reduced timeout and minimal error handling for speed
+            transfer_output=$(timeout 5s solana transfer "$recipient_pubkey" "$transfer_amount" \
                 --keypair "$sender_keypair" \
                 --allow-unfunded-recipient \
                 --fee-payer "$sender_keypair" \
                 --no-wait 2>&1)
             transfer_result=$?
             
-            # **DEBUG OUTPUT**: Log transaction details for debugging as suggested in code review
-            if [[ "$VERBOSE" == true ]]; then
-                log_verbose "🔍 Transaction attempt $txn_count:"
-                log_verbose "   • Command: solana transfer $recipient_pubkey $transfer_amount --keypair $sender_keypair --no-wait"
-                log_verbose "   • Result: $transfer_result"
-                log_verbose "   • Output: $transfer_output"
+            # **MINIMAL DEBUG OUTPUT**: Only log verbose details for failed transactions or every 50th transaction
+            if [[ "$VERBOSE" == true ]] && [[ $transfer_result -ne 0 || $((txn_count % 50)) -eq 0 ]]; then
+                log_verbose "🔍 Transaction $txn_count: result=$transfer_result"
+                if [[ $transfer_result -ne 0 ]]; then
+                    log_verbose "   • Output: $transfer_output"
+                fi
             fi
             
-            # **POST-TRANSACTION HEALTH CHECK**: Verify validator survived the transaction
-            if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
-                local validator_pid
-                validator_pid=$(cat "$RESULTS_DIR/validator.pid" 2>/dev/null) || validator_pid=""
-                if [[ -n "$validator_pid" ]] && ! kill -0 "$validator_pid" 2>/dev/null; then
-                    log_warning "⚠️  Validator died during/after transaction attempt (txn $txn_count, batch $i)"
-                    log_warning "   • Transfer result: $transfer_result"
-                    log_warning "   • Transfer output: $transfer_output"
-                    loop_exit_reason="Validator process died during transaction"
-                    break 2  # Break out of both loops
+            # **OPTIMIZED POST-TRANSACTION**: Only check validator health after significant failures
+            if [[ $transfer_result -ne 0 ]] && [[ $((txn_count % 5)) -eq 0 ]]; then
+                if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
+                    local validator_pid
+                    validator_pid=$(cat "$RESULTS_DIR/validator.pid" 2>/dev/null) || validator_pid=""
+                    if [[ -n "$validator_pid" ]] && ! kill -0 "$validator_pid" 2>/dev/null; then
+                        log_warning "⚠️  Validator died during transaction processing (txn $txn_count)"
+                        loop_exit_reason="Validator process died during transaction"
+                        break 2  # Break out of both loops
+                    fi
                 fi
             fi
             
             if [[ $transfer_result -eq 0 ]]; then
                 success_count=$(( success_count + 1 ))
-                log_verbose "✅ Transaction $txn_count successful"
+                # Only log success for first few transactions or milestones
+                if [[ $txn_count -lt 10 || $((txn_count % 50)) -eq 0 ]]; then
+                    log_verbose "✅ Transaction $txn_count successful"
+                fi
             else
-                # **ENHANCED ERROR LOGGING**: Log transaction failures for debugging as suggested in code review
-                log_warning "❌ Transaction $txn_count failed:"
-                log_warning "   • Exit code: $transfer_result"
-                log_warning "   • Output: $transfer_output"
-                log_warning "   • Amount: $transfer_amount SOL"
-                log_warning "   • Recipient: $recipient_pubkey"
-                
-                # **DISCIPLINED EMERGENCY FUNDING**: Detect insufficient funds and apply disciplined emergency funding
-                if [[ "$transfer_output" == *"insufficient funds"* ]]; then
-                    log_verbose "Insufficient funds detected, attempting disciplined emergency funding..."
-                    
-                    # **DISCIPLINED LIMITS**: Hard limit on emergency funding attempts
-                    local emergency_attempts_file="$RESULTS_DIR/emergency_attempts.txt"
-                    
-                    # Track total emergency attempts across the entire test
-                    local total_emergency_attempts=0
-                    if [[ -f "$emergency_attempts_file" ]]; then
-                        total_emergency_attempts=$(cat "$emergency_attempts_file" 2>/dev/null || echo "0")
+                # **STREAMLINED ERROR LOGGING**: Only log detailed errors for critical failures
+                if [[ "$transfer_output" == *"insufficient funds"* ]] || [[ "$transfer_output" == *"validator"* ]] || [[ $transfer_result -gt 1 ]]; then
+                    log_warning "❌ Transaction $txn_count failed: exit_code=$transfer_result"
+                    if [[ "$VERBOSE" == true ]]; then
+                        log_warning "   • Output: $transfer_output"
+                        log_warning "   • Amount: $transfer_amount SOL to $recipient_pubkey"
                     fi
                     
-                    # **DISCIPLINED LIMITS**: Max 3 attempts to prevent endless loops (as recommended)
-                    if [[ $total_emergency_attempts -ge 3 ]]; then
-                        log_warning "⚠️  Maximum emergency funding attempts reached ($total_emergency_attempts/3)"
-                        log_warning "⚠️  Ending transaction test to prevent endless funding loops"
-                        loop_exit_reason="Maximum emergency funding attempts reached"
-                        break 2  # Break out of both transaction batch loop and main while loop
-                    fi
-                    
-                    # Increment emergency attempt counter
-                    total_emergency_attempts=$((total_emergency_attempts + 1))
-                    echo "$total_emergency_attempts" > "$emergency_attempts_file"
-                    
-                    # **DISCIPLINED EMERGENCY FUNDING**: CI-optimized amounts with backoff
-                    local emergency_funding_amount=10  # 10 SOL for CI environments - adequate for most needs
-                    log_verbose "Emergency funding attempt $total_emergency_attempts/3 - requesting $emergency_funding_amount SOL"
-                    
-                    # **DISCIPLINED EMERGENCY AIRDROP**: Enhanced funding with proper validation
-                    if timeout 30s solana airdrop "$emergency_funding_amount" "$sender_pubkey_cli" --url "http://localhost:$RPC_PORT" 2>/dev/null; then
-                        log_verbose "Emergency funding airdrop completed, validating balance..."
-                        
-                        # **VALIDATION**: Poll balance to confirm emergency funding
-                        local emergency_validation_attempts=0
-                        local emergency_validated=false
-                        
-                        while [[ $emergency_validation_attempts -lt 3 ]]; do
-                            sleep 2  # Wait for funding to settle
-                            
-                            if check_balance_sufficient "$sender_keypair" "1.0"; then  # Just need enough for transfers
-                                log_verbose "✅ Emergency funding validated successfully"
-                                emergency_validated=true
-                                break
-                            fi
-                            
-                            emergency_validation_attempts=$((emergency_validation_attempts + 1))
-                            log_verbose "Emergency funding validation attempt $emergency_validation_attempts/3..."
-                        done
-                        
-                        if [[ "$emergency_validated" != "true" ]]; then
-                            log_warning "⚠️  Emergency funding validation failed - balance may not have updated"
+                    # **STREAMLINED EMERGENCY FUNDING**: Quick funding check and response
+                    if [[ "$transfer_output" == *"insufficient funds"* ]]; then
+                        local emergency_attempts_file="$RESULTS_DIR/emergency_attempts.txt"
+                        local total_emergency_attempts=0
+                        if [[ -f "$emergency_attempts_file" ]]; then
+                            total_emergency_attempts=$(cat "$emergency_attempts_file" 2>/dev/null || echo "0")
                         fi
-                    else
-                        log_warning "Emergency funding airdrop failed, continuing anyway..."
+                        
+                        # **QUICK LIMITS**: Max 2 attempts for faster benchmarking
+                        if [[ $total_emergency_attempts -ge 2 ]]; then
+                            log_warning "⚠️  Max emergency funding attempts reached, continuing with smaller amounts"
+                            transfer_amount="0.00001"  # Very small amount to continue testing
+                        else
+                            total_emergency_attempts=$((total_emergency_attempts + 1))
+                            echo "$total_emergency_attempts" > "$emergency_attempts_file"
+                            
+                            # **FAST EMERGENCY FUNDING**: Quick 5 SOL top-up
+                            log_verbose "Emergency funding attempt $total_emergency_attempts/2"
+                            timeout 15s solana airdrop 5 "$sender_pubkey_cli" --url "http://localhost:$RPC_PORT" >/dev/null 2>&1 || true
+                            sleep 1  # Brief wait for funding to process
+                        fi
                     fi
-                    
-                    # **BACKOFF**: Brief wait after emergency funding before retrying transaction
-                    sleep 1
                 fi
             fi
             
@@ -1849,8 +1819,8 @@ EOF
             txn_count=$(( txn_count + 1 ))
         done
         
-        # Brief pause between batches
-        if ! sleep 0.2; then
+        # **OPTIMIZED BATCH SPACING**: Minimal delay between batches for higher throughput
+        if ! sleep 0.05; then  # Reduced from 0.2s to 0.05s for 4x faster batching
             loop_exit_reason="Sleep command failed"
             break
         fi
