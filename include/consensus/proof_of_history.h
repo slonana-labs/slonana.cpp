@@ -60,7 +60,8 @@ struct PohConfig {
   bool enable_batch_processing = true;     // Batch process multiple hashes
   uint32_t batch_size = 8;                 // Number of hashes to batch process
   bool enable_lock_free_structures = true; // Use lock-free data structures
-  bool enable_lock_contention_tracking = false; // Track lock contention metrics
+  bool enable_lock_contention_tracking = false; // Track lock contention metrics (can cause overhead under extreme contention)
+  bool enable_dynamic_contention_tracking = true; // Allow runtime enabling/disabling of contention tracking
 };
 
 /**
@@ -243,9 +244,21 @@ private:
   std::chrono::system_clock::time_point start_time_;
   std::atomic<uint64_t> lock_contention_count_{0};
   std::atomic<uint64_t> lock_attempts_{0};
-  std::atomic<uint64_t> dropped_mixes_{0};
+  std::atomic<uint64_t> dropped_mixes_{0};  // Note: uint64_t wraparound protection handled by modular arithmetic
+  
+  // Slot memory management for long-running validators
+  static constexpr size_t MAX_SLOT_HISTORY = 1000;  // Keep only recent slots in memory
   
   // Helper class for lock contention tracking
+  /**
+   * @brief Instrumented lock guard for stats mutex with contention tracking
+   * 
+   * Tracks lock attempts and contention when enable_lock_contention_tracking is true.
+   * Uses try_lock() first to detect contention with minimal overhead.
+   * 
+   * WARNING: Under extreme contention, try_lock() overhead can impact performance.
+   * Consider disabling via config if profiling shows significant impact.
+   */
   class InstrumentedLockGuard {
   private:
     std::unique_lock<std::mutex> guard_;

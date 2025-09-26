@@ -24,9 +24,8 @@ public:
         std::atomic<int> successful_cycles{0};
         std::atomic<int> failed_cycles{0};
         
-        // **PERFORMANCE OPTIMIZATION**: Initialize PRNG once for cycle delays as suggested in code review
-        std::random_device rd;
-        std::mt19937 gen(rd());
+        // **PERFORMANCE OPTIMIZATION**: Initialize PRNG once for cycle delays with deterministic seeding for CI reproducibility
+        std::mt19937 gen(98765);  // Fixed seed for deterministic CI runs
         std::uniform_int_distribution<> delay_dist(1, 6);
         
         for (int cycle = 0; cycle < num_cycles; ++cycle) {
@@ -50,9 +49,8 @@ public:
                 
                 // Worker thread that performs operations
                 auto worker = [&](int thread_id) {
-                    // **PERFORMANCE OPTIMIZATION**: Initialize PRNG once per thread as suggested in code review
-                    std::random_device rd;
-                    std::mt19937 gen(rd());
+                    // **PERFORMANCE OPTIMIZATION**: Initialize PRNG once per thread with deterministic seeding for CI reproducibility
+                    std::mt19937 gen(54321 + cycle * 100 + thread_id);  // Fixed seed for deterministic CI runs
                     std::uniform_int_distribution<> jitter_dist(500, 2000);
                     
                     int local_ops = 0;

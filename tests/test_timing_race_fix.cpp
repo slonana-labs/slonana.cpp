@@ -44,9 +44,8 @@ public:
         
         // Thread function that rapidly accesses timing-sensitive operations
         auto worker = [&](int thread_id) {
-            // **PERFORMANCE OPTIMIZATION**: Initialize PRNG once per thread as suggested in code review
-            std::random_device rd;
-            std::mt19937 gen(rd());
+            // **PERFORMANCE OPTIMIZATION**: Initialize PRNG once per thread with deterministic seeding for CI reproducibility
+            std::mt19937 gen(12345 + thread_id);  // Fixed seed for deterministic CI runs
             std::uniform_int_distribution<> jitter_dist(500, 1500);
             
             // Wait for synchronized start

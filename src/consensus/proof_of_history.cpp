@@ -553,13 +553,19 @@ void ProofOfHistory::check_slot_completion() {
               << config_.ticks_per_slot << " ticks, advancing to slot "
               << new_slot << " (sequence: " << sequence << ")" << std::endl;
 
-    // Get slot entries
+    // Get slot entries and manage slot memory for long-running validators
     std::vector<PohEntry> slot_entries;
     {
       std::lock_guard<std::mutex> lock(history_mutex_);
       auto it = slot_entries_.find(completed_slot);
       if (it != slot_entries_.end()) {
         slot_entries = it->second;
+      }
+      
+      // Memory management: Remove old slots to prevent unbounded growth
+      if (slot_entries_.size() > MAX_SLOT_HISTORY) {
+        auto oldest_slot_it = slot_entries_.begin();
+        slot_entries_.erase(oldest_slot_it);
       }
     }
 
