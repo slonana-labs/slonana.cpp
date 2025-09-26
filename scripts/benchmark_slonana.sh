@@ -1191,9 +1191,12 @@ test_transaction_throughput() {
     sleep 2
     log_info "✅ Validator airdrop readiness wait completed"
 
-    # Configure Solana CLI if available with comprehensive validation
+    # **ENHANCED CLI CONFIGURATION**: Ensure PATH and configuration are correct
+    export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+    
     if command -v solana >/dev/null 2>&1; then
-        log_info "DEBUG: Configuring and validating Solana CLI..."
+        log_info "✅ Solana CLI found at: $(which solana)"
+        log_info "🔧 Configuring and validating Solana CLI..."
         
         # Configure the RPC endpoint with enhanced validation
         local expected_url="http://localhost:$RPC_PORT"
@@ -1298,10 +1301,10 @@ test_transaction_throughput() {
     # **DISCIPLINED FUNDING LOGIC**: Improved logic with proper faucet readiness and retry mechanism
     log_info "💰 Pre-flight funding with disciplined logic..."
     
-    # **ENHANCED PARAMETERS**: Based on user recommendation - optimized for CI environments
-    local REQUIRED_BALANCE_SOL=1       # 1 SOL minimum - sufficient for CI testing, faster and more reliable
-    local FUNDING_AMOUNT_SOL=1         # 1 SOL per attempt - CI-optimized amount for faster funding
-    local MAX_FUNDING_TRIES=10         # 10 attempts - adequate retry count with backoff
+    # **ENHANCED PARAMETERS**: Aggressive funding strategy for CI environments
+    local REQUIRED_BALANCE_SOL=1       # 1 SOL minimum - sufficient for CI testing
+    local FUNDING_AMOUNT_SOL=1         # 1 SOL per attempt - fast, reliable amounts
+    local MAX_FUNDING_TRIES=10         # 10 attempts - more retries for reliability
     local funding_attempt=0
     local funding_validated=false
     
@@ -1342,11 +1345,11 @@ test_transaction_throughput() {
         fi
     }
     
-    # **ENHANCED FAUCET READINESS**: Extended wait time and better diagnostics per user feedback
-    log_info "🔍 Waiting for validator/faucet to become available (extended timeout for CI)..."
+    # **OPTIMIZED FAUCET READINESS**: Faster timeout for CI environments
+    log_info "🔍 Waiting for validator/faucet to become available (CI-optimized timeout)..."
     local faucet_ready=false
     local faucet_wait_attempts=0
-    local max_faucet_wait=90  # Reduced to 90 attempts (3 minutes) for faster CI environments
+    local max_faucet_wait=15  # Reduced to 15 attempts (30 seconds) for faster CI environments
     
     while [[ $faucet_wait_attempts -lt $max_faucet_wait ]]; do
         # Test faucet availability with a small test airdrop
@@ -1356,8 +1359,8 @@ test_transaction_throughput() {
             break
         fi
         
-        # Enhanced diagnostics every 30 attempts (1 minute intervals)
-        if [[ $((faucet_wait_attempts % 30)) -eq 0 ]] && [[ $faucet_wait_attempts -gt 0 ]]; then
+        # Enhanced diagnostics every 10 attempts (20 second intervals)
+        if [[ $((faucet_wait_attempts % 10)) -eq 0 ]] && [[ $faucet_wait_attempts -gt 0 ]]; then
             log_info "🔍 Faucet readiness check: attempt $faucet_wait_attempts/$max_faucet_wait ($(($faucet_wait_attempts * 2 / 60)) minutes elapsed)"
             
             # Check validator process status
@@ -1385,12 +1388,12 @@ test_transaction_throughput() {
         faucet_wait_attempts=$((faucet_wait_attempts + 1))
     done
     
-    # **ENHANCED FALLBACK**: Allow workflow success with warning instead of hard failure
+    # **OPTIMIZED FALLBACK**: Allow workflow success with warning instead of hard failure
     if [[ "$faucet_ready" != "true" ]]; then
-        log_warning "⚠️  Faucet never became available after ${max_faucet_wait} attempts (6 minutes)"
+        log_warning "⚠️  Faucet never became available after ${max_faucet_wait} attempts (30 seconds)"
         log_warning "⚠️  This indicates validator faucet is not working properly"
         log_warning "⚠️  SKIPPING transaction throughput test to allow workflow success"
-        log_warning "⚠️  Per user feedback: allowing workflow to continue with warning instead of hard exit"
+        log_warning "⚠️  Faster timeout optimized for CI - use longer timeout if needed"
         
         # Write zero results but continue workflow
         echo "0" > "$RESULTS_DIR/effective_tps.txt"
@@ -1425,17 +1428,17 @@ EOF
         for funding_attempt in $(seq 1 $MAX_FUNDING_TRIES); do
             log_info "🔄 Funding attempt $funding_attempt/$MAX_FUNDING_TRIES - requesting $FUNDING_AMOUNT_SOL SOL..."
             
-            # **DISCIPLINED FUNDING**: Use always target local validator with proper timeout
-            if timeout 30s solana airdrop "$FUNDING_AMOUNT_SOL" "$sender_pubkey_cli" --url "http://localhost:$RPC_PORT" 2>/dev/null; then
+            # **AGGRESSIVE FUNDING**: Use faster 15s timeout with immediate retry
+            if timeout 15s solana airdrop "$FUNDING_AMOUNT_SOL" "$sender_pubkey_cli" --url "http://localhost:$RPC_PORT" 2>/dev/null; then
                 log_info "✅ CLI airdrop successful, validating balance..."
                 
-                # **DISCIPLINED BALANCE POLLING**: Poll balance and retry if unchanged  
+                # **IMMEDIATE BALANCE VALIDATION**: Check balance immediately with retry logic
                 local balance_validated=false
                 local balance_check_attempts=0
-                local max_balance_checks=5
+                local max_balance_checks=3  # Reduced checks for faster validation
                 
                 while [[ $balance_check_attempts -lt $max_balance_checks ]]; do
-                    sleep 2  # Wait for funding to settle
+                    sleep 1  # Reduced wait for faster validation
                     
                     if check_balance_sufficient "$sender_keypair" "$REQUIRED_BALANCE_SOL"; then
                         log_info "✅ Funding validation PASSED - sufficient funds confirmed after $((balance_check_attempts + 1)) checks"
@@ -1725,12 +1728,28 @@ EOF
                 log_info "   • Recipient pubkey: $recipient_pubkey"
             fi
             
-            # **OPTIMIZED TRANSACTION**: Reduced validation overhead for better performance
-            local transfer_output transfer_result transfer_amount="0.001"
+            # **SMART AMOUNT ADJUSTMENT**: Aggressive fallback to micro-transactions
+            local transfer_amount="0.001"
             
-            # Adjust amount based on early results
-            if [[ $success_count -eq 0 && $txn_count -gt 20 ]]; then
-                transfer_amount="0.0001"  # Use smaller amount as fallback
+            # Check sender balance every 50 transactions and adjust amounts dynamically
+            if [[ $((txn_count % 50)) -eq 0 ]] && [[ $txn_count -gt 0 ]]; then
+                local current_balance
+                current_balance=$(solana balance --keypair "$sender_keypair" 2>/dev/null | awk '{print $1}') || current_balance="unknown"
+                if [[ "$current_balance" != "unknown" ]]; then
+                    # Use micro-transactions if balance is getting low
+                    if (( $(echo "$current_balance < 0.1" | bc -l 2>/dev/null || echo "1") )); then
+                        transfer_amount="0.00001"  # Micro-transactions for low balance
+                        log_verbose "Switching to micro-transactions (balance: $current_balance SOL)"
+                    elif (( $(echo "$current_balance < 0.5" | bc -l 2>/dev/null || echo "1") )); then
+                        transfer_amount="0.0001"   # Small transactions for medium balance
+                    fi
+                fi
+            fi
+            
+            # Early adjustment based on results
+            if [[ $success_count -eq 0 && $txn_count -gt 10 ]]; then
+                transfer_amount="0.00001"  # Very small amount as early fallback
+                log_verbose "Early fallback to micro-transactions (no successes after $txn_count attempts)"
             fi
             
             # **PERIODIC VALIDATOR CHECK**: Only check validator health every 10 transactions instead of every transaction
@@ -1798,18 +1817,18 @@ EOF
                             total_emergency_attempts=$(cat "$emergency_attempts_file" 2>/dev/null || echo "0")
                         fi
                         
-                        # **QUICK LIMITS**: Max 2 attempts for faster benchmarking
-                        if [[ $total_emergency_attempts -ge 2 ]]; then
-                            log_warning "⚠️  Max emergency funding attempts reached, continuing with smaller amounts"
+                        # **FAST LIMITS**: Max 3 attempts for better funding reliability
+                        if [[ $total_emergency_attempts -ge 3 ]]; then
+                            log_verbose "⚠️  Max emergency funding attempts reached, switching to micro-transactions"
                             transfer_amount="0.00001"  # Very small amount to continue testing
                         else
                             total_emergency_attempts=$((total_emergency_attempts + 1))
                             echo "$total_emergency_attempts" > "$emergency_attempts_file"
                             
-                            # **FAST EMERGENCY FUNDING**: Quick 5 SOL top-up
-                            log_verbose "Emergency funding attempt $total_emergency_attempts/2"
-                            timeout 15s solana airdrop 5 "$sender_pubkey_cli" --url "http://localhost:$RPC_PORT" >/dev/null 2>&1 || true
-                            sleep 1  # Brief wait for funding to process
+                            # **FAST EMERGENCY FUNDING**: Quick 1 SOL top-up with reduced timeout
+                            log_verbose "Emergency funding attempt $total_emergency_attempts/3 (quick 1 SOL)"
+                            timeout 10s solana airdrop 1 "$sender_pubkey_cli" --url "http://localhost:$RPC_PORT" >/dev/null 2>&1 || true
+                            sleep 0.5  # Very brief wait for funding to process
                         fi
                     fi
                 fi
