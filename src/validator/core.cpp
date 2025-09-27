@@ -504,6 +504,14 @@ common::Result<bool> ValidatorCore::start() {
                                 "Initialize it before starting ValidatorCore.");
   }
 
+  // Connect banking stage to ledger manager for block creation
+  if (ledger_) {
+    banking_stage_->set_ledger_manager(ledger_);
+    std::cout << "Banking stage connected to ledger manager" << std::endl;
+  } else {
+    std::cerr << "WARNING: No ledger manager available for banking stage" << std::endl;
+  }
+
   // Initialize and start banking stage
   if (!banking_stage_->initialize()) {
     return common::Result<bool>("Failed to initialize banking stage");
