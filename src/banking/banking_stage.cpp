@@ -416,8 +416,8 @@ size_t ResourceMonitor::calculate_memory_usage() {
 
 // BankingStage implementation
 BankingStage::BankingStage()
-    : initialized_(false), running_(false), batch_size_(64),
-      batch_timeout_(std::chrono::milliseconds(100)), parallel_stages_(4),
+    : initialized_(false), running_(false), batch_size_(1),
+      batch_timeout_(std::chrono::milliseconds(10)), parallel_stages_(4),
       max_concurrent_batches_(16), worker_thread_count_(8),
       adaptive_batching_enabled_(true), resource_monitoring_enabled_(true),
       priority_processing_enabled_(false), ledger_manager_(nullptr),
@@ -623,22 +623,14 @@ void BankingStage::submit_transaction(TransactionPtr transaction) {
   if (!running_) {
     std::cerr << "WARNING: Banking stage not running, rejecting transaction"
               << std::endl;
-    std::cout << "WARNING: Banking stage not running, rejecting transaction"
-              << std::endl;
     return;
   }
 
   if (!transaction) {
     std::cerr << "ERROR: Null transaction pointer submitted to banking stage"
               << std::endl;
-    std::cout << "ERROR: Null transaction pointer submitted to banking stage"
-              << std::endl;
     return;
   }
-
-  // **CRITICAL DEBUG** - Make sure we see if transactions are actually reaching here
-  std::cout << "BANKING STAGE: *** RECEIVED TRANSACTION FOR PROCESSING ***" << std::endl;
-  std::cerr << "BANKING STAGE: *** RECEIVED TRANSACTION FOR PROCESSING ***" << std::endl;
 
   try {
     // **ADDITIONAL TRANSACTION VALIDATION** - Ensure transaction is well-formed
