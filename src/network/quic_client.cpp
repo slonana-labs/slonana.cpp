@@ -1,4 +1,5 @@
 #include "network/quic_client.h"
+#include "security/secure_messaging.h"
 #include <algorithm>
 #include <arpa/inet.h>
 #include <chrono>
@@ -582,8 +583,8 @@ void QuicConnection::cleanup_tls() {
 }
 
 // QuicClient implementation
-QuicClient::QuicClient()
-    : initialized_(false), connection_pooling_enabled_(true),
+QuicClient::QuicClient(const slonana::common::ValidatorConfig& config)
+    : initialized_(false), config_(config), connection_pooling_enabled_(true),
       max_connections_(100), total_bytes_sent_(0), total_bytes_received_(0),
       send_buffer_size_(65536), receive_buffer_size_(65536),
       should_stop_(false) {}
@@ -599,6 +600,11 @@ bool QuicClient::initialize() {
   SSL_library_init();
   SSL_load_error_strings();
   OpenSSL_add_all_algorithms();
+
+  // Set up secure messaging if enabled
+  if (!setup_secure_messaging()) {
+    std::cerr << "Warning: Failed to initialize secure messaging" << std::endl;
+  }
 
   // Start event processor
   event_processor_ = std::thread(&QuicClient::process_events, this);
@@ -858,6 +864,69 @@ void QuicClient::update_connection_stats() {
   } catch (const std::exception &e) {
     std::cerr << "Connection stats update error: " << e.what() << std::endl;
   }
+}
+
+// Secure messaging implementation
+bool QuicClient::setup_secure_messaging() {
+  if (!config_.enable_secure_messaging) {
+    return true; // Not enabled, so success
+  }
+  
+  slonana::security::SecureMessagingConfig sec_config;
+  sec_config.enable_tls = config_.enable_tls;
+  sec_config.require_mutual_auth = config_.require_mutual_tls;
+  sec_config.tls_cert_path = config_.tls_certificate_path;
+  sec_config.tls_key_path = config_.tls_private_key_path;
+  sec_config.ca_cert_path = config_.ca_certificate_path;
+  sec_config.signing_key_path = config_.node_signing_key_path;
+  sec_config.verification_keys_dir = config_.peer_keys_directory;
+  sec_config.enable_message_encryption = config_.enable_message_encryption;
+  sec_config.enable_replay_protection = config_.enable_replay_protection;
+  sec_config.message_ttl_seconds = config_.message_ttl_seconds;
+  sec_config.handshake_timeout_ms = config_.tls_handshake_timeout_ms;
+  
+  secure_messaging_ = std::make_unique<slonana::security::SecureMessaging>(sec_config);
+  
+  auto init_result = secure_messaging_->initialize();
+  if (!init_result.is_ok()) {
+    std::cerr << "Secure messaging initialization failed: " << init_result.error() << std::endl;
+    return false;
+  }
+  
+  return true;
+}
+
+bool QuicClient::send_secure_data(const std::string &connection_id,
+                                 QuicStream::StreamId stream_id,
+                                 const std::vector<uint8_t> &data,
+                                 const std::string& message_type) {
+  if (!secure_messaging_) {
+    // Fall back to regular send if secure messaging not available
+    std::cout << "⚠️  Secure messaging not available, falling back to unencrypted transmission for " 
+              << message_type << std::endl;
+    return send_data(connection_id, stream_id, data);
+  }
+  
+  // Encrypt and sign the message
+  auto secure_result = secure_messaging_->prepare_outbound_message(data, message_type, connection_id);
+  if (!secure_result.is_ok()) {
+    std::cerr << "❌ Failed to secure message (" << message_type << "): " << secure_result.error() << std::endl;
+    std::cout << "⚠️  Falling back to unencrypted transmission" << std::endl;
+    return send_data(connection_id, stream_id, data);
+  }
+  
+  // Send the secured message through regular QUIC channel
+  return send_data(connection_id, stream_id, secure_result.value());
+}
+
+slonana::security::SecureMessaging::SecurityStats QuicClient::get_security_stats() const {
+  if (secure_messaging_) {
+    return secure_messaging_->get_security_stats();
+  }
+  
+  // Return empty stats if secure messaging not available
+  slonana::security::SecureMessaging::SecurityStats empty_stats = {};
+  return empty_stats;
 }
 
 } // namespace network

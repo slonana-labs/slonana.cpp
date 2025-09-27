@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/types.h"
+#include "security/secure_messaging.h"
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -131,7 +132,7 @@ public:
       std::function<void(const std::vector<uint8_t> &, const std::string &)>;
   using ErrorCallback = std::function<void(const std::string &)>;
 
-  QuicClient();
+  explicit QuicClient(const slonana::common::ValidatorConfig& config = {});
   ~QuicClient();
 
   // Client lifecycle
@@ -145,7 +146,13 @@ public:
   std::shared_ptr<QuicConnection>
   get_connection(const std::string &connection_id);
 
-  // Data transmission
+  // Secure data transmission
+  bool send_secure_data(const std::string &connection_id,
+                       QuicStream::StreamId stream_id,
+                       const std::vector<uint8_t> &data,
+                       const std::string& message_type = "quic_data");
+  
+  // Traditional data transmission (for backward compatibility)
   bool send_data(const std::string &connection_id,
                  QuicStream::StreamId stream_id,
                  const std::vector<uint8_t> &data);
@@ -168,6 +175,9 @@ public:
   size_t get_connection_count() const;
   size_t get_total_bytes_sent() const { return total_bytes_sent_; }
   size_t get_total_bytes_received() const { return total_bytes_received_; }
+  
+  // Security statistics
+  slonana::security::SecureMessaging::SecurityStats get_security_stats() const;
 
   // Performance tuning
   void set_send_buffer_size(size_t size) { send_buffer_size_ = size; }
@@ -175,6 +185,8 @@ public:
 
 private:
   bool initialized_;
+  slonana::common::ValidatorConfig config_;
+  std::unique_ptr<slonana::security::SecureMessaging> secure_messaging_;
   DataCallback data_callback_;
   ErrorCallback error_callback_;
 
@@ -207,6 +219,9 @@ private:
   void update_congestion_control();
   void handle_retransmissions();
   void update_connection_stats();
+  
+  // Secure messaging helpers
+  bool setup_secure_messaging();
 };
 
 } // namespace network
