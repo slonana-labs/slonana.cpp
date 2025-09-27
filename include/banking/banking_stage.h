@@ -214,6 +214,9 @@ public:
   void set_completion_callback(CompletionCallback callback) {
     completion_callback_ = callback;
   }
+  void set_block_notification_callback(BlockNotificationCallback callback) {
+    block_notification_callback_ = callback;
+  }
 
   // Pipeline configuration
   void set_parallel_stages(size_t stages) { parallel_stages_ = stages; }
@@ -299,6 +302,7 @@ private:
 
   // Callbacks
   CompletionCallback completion_callback_;
+  BlockNotificationCallback block_notification_callback_;
 
   // Resource monitoring
   std::unique_ptr<ResourceMonitor> resource_monitor_;
