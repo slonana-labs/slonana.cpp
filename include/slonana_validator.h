@@ -94,6 +94,9 @@ private:
   Result<bool> initialize_components();
   Result<bool> setup_event_handlers();
   Result<bool> bootstrap_ledger();
+  
+  // Logging and alerting setup
+  void setupLoggingAndAlerting();
 
   class Impl;
   std::unique_ptr<Impl> impl_;
