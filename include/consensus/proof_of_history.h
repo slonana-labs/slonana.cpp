@@ -223,7 +223,9 @@ private:
   std::unique_ptr<boost::lockfree::queue<Hash *>> lock_free_mix_queue_;
 #endif
 
-  // Fallback traditional data mixing
+  // Mutex-based data mixing queue (fallback - not lock-free!)
+  // NOTE: This is a traditional mutex-protected queue, not a lock-free structure.
+  // Used as fallback when boost::lockfree is unavailable or disabled.
   mutable std::mutex mix_queue_mutex_;
   std::deque<Hash> pending_mix_data_;
 
@@ -247,6 +249,9 @@ private:
   std::atomic<uint64_t> dropped_mixes_{0};  // Note: uint64_t wraparound protection handled by modular arithmetic
   
   // Slot memory management for long-running validators
+  // Limits slot_entries_ map size to prevent unbounded memory growth
+  // during extended validator operation (months/years). When exceeded,
+  // oldest slots are automatically pruned in check_slot_completion().
   static constexpr size_t MAX_SLOT_HISTORY = 1000;  // Keep only recent slots in memory
   
   // Helper class for lock contention tracking

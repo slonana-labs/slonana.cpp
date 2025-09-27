@@ -249,7 +249,8 @@ uint64_t ProofOfHistory::mix_data(const Hash &data) {
   }
 #endif
 
-  // Traditional mutex-based approach (fallback or when lock-free disabled)
+  // Mutex-based approach (fallback - not lock-free!)
+  // This uses traditional mutex locking, not a lock-free queue.
   // Apply backpressure to prevent OOM under flood conditions
   std::lock_guard<std::mutex> lock(mix_queue_mutex_);
 
@@ -404,7 +405,7 @@ void ProofOfHistory::process_tick_batch() {
   } else
 #endif
   {
-    // Fallback to traditional queue
+    // Use mutex-protected queue (not lock-free)
     std::lock_guard<std::mutex> lock(mix_queue_mutex_);
     size_t batch_size = std::min(
         config_.batch_size, static_cast<uint32_t>(pending_mix_data_.size()));
