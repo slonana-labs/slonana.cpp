@@ -549,6 +549,16 @@ bool BankingStage::start() {
       }
     }
 
+    // **START BATCH PROCESSOR THREAD** - Critical for transaction processing
+    try {
+      should_stop_ = false;
+      batch_processor_ = std::thread(&BankingStage::process_batches, this);
+      std::cout << "Banking stage batch processor thread started successfully" << std::endl;
+    } catch (const std::exception &e) {
+      std::cerr << "ERROR: Failed to start batch processor thread: " << e.what() << std::endl;
+      return false;
+    }
+
     running_ = true;
     std::cout << "Banking stage started successfully" << std::endl;
     return true;
