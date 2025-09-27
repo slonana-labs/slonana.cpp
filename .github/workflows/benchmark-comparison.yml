@@ -16,6 +16,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
+        ref: ${{ github.ref }}
         token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Set up dependencies
@@ -313,7 +314,18 @@ jobs:
           - Latency improvement: $(jq -r '.results.improvements.latency_percent' benchmark_comparison.json)%
 
           Automated benchmark comparison run on $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          git push
+          
+          # Handle detached HEAD state in CI environments
+          if [ -n "$GITHUB_HEAD_REF" ]; then
+            # For pull requests, push to the PR branch
+            git push origin HEAD:$GITHUB_HEAD_REF
+          elif [ -n "$GITHUB_REF_NAME" ]; then
+            # For direct branch pushes, use the branch name
+            git push origin HEAD:$GITHUB_REF_NAME
+          else
+            # Fallback for other cases
+            git push origin HEAD:main
+          fi
         fi
 
     - name: Upload benchmark artifacts

@@ -60,7 +60,8 @@ struct PohConfig {
   bool enable_batch_processing = true;     // Batch process multiple hashes
   uint32_t batch_size = 8;                 // Number of hashes to batch process
   bool enable_lock_free_structures = true; // Use lock-free data structures
-  bool enable_lock_contention_tracking = false; // Track lock contention metrics
+  bool enable_lock_contention_tracking = false; // Track lock contention metrics (can cause overhead under extreme contention)
+  bool enable_dynamic_contention_tracking = true; // Allow runtime enabling/disabling of contention tracking
 };
 
 /**
@@ -169,7 +170,8 @@ public:
     uint64_t batches_processed;    // Number of batch operations
     double batch_efficiency;       // Average batch utilization
     bool simd_acceleration_active; // Whether SIMD is being used
-    double lock_contention_ratio;  // Lock contention metrics
+    double lock_contention_ratio;  // Lock contention metrics (-1.0 = not tracked, >= 0.0 = contention ratio)
+    uint64_t dropped_mixes;        // Number of mix operations dropped due to queue overflow
   };
 
   PohStats get_stats() const;
@@ -190,6 +192,18 @@ private:
       std::vector<Hash> &hashes,
       const std::vector<std::vector<Hash>> &mixed_data_batches);
 
+  // Helper method to update stats with proper locking and avoid code duplication
+  void update_stats_locked(std::chrono::microseconds tick_duration,
+                          std::chrono::system_clock::time_point tick_end,
+                          bool is_batch_processing,
+                          size_t pending_mixes_count = 0);
+  
+  // Internal stats update implementation (called under lock)
+  void update_stats_impl(std::chrono::microseconds tick_duration,
+                        std::chrono::system_clock::time_point tick_end,
+                        bool is_batch_processing,
+                        size_t pending_mixes_count);
+
   PohConfig config_;
   std::atomic<bool> running_{false};
   std::atomic<bool> stopping_{false};
@@ -209,7 +223,9 @@ private:
   std::unique_ptr<boost::lockfree::queue<Hash *>> lock_free_mix_queue_;
 #endif
 
-  // Fallback traditional data mixing
+  // Mutex-based data mixing queue (fallback - not lock-free!)
+  // NOTE: This is a traditional mutex-protected queue, not a lock-free structure.
+  // Used as fallback when boost::lockfree is unavailable or disabled.
   mutable std::mutex mix_queue_mutex_;
   std::deque<Hash> pending_mix_data_;
 
@@ -230,6 +246,41 @@ private:
   std::chrono::system_clock::time_point start_time_;
   std::atomic<uint64_t> lock_contention_count_{0};
   std::atomic<uint64_t> lock_attempts_{0};
+  std::atomic<uint64_t> dropped_mixes_{0};  // Note: uint64_t wraparound protection handled by modular arithmetic
+  
+  // Slot memory management for long-running validators
+  // Limits slot_entries_ map size to prevent unbounded memory growth
+  // during extended validator operation (months/years). When exceeded,
+  // oldest slots are automatically pruned in check_slot_completion().
+  static constexpr size_t MAX_SLOT_HISTORY = 1000;  // Keep only recent slots in memory
+  
+  // Helper class for lock contention tracking
+  /**
+   * @brief Instrumented lock guard for stats mutex with contention tracking
+   * 
+   * Tracks lock attempts and contention when enable_lock_contention_tracking is true.
+   * Uses try_lock() first to detect contention with minimal overhead.
+   * 
+   * WARNING: Under extreme contention, try_lock() overhead can impact performance.
+   * Consider disabling via config if profiling shows significant impact.
+   */
+  class InstrumentedLockGuard {
+  private:
+    std::unique_lock<std::mutex> guard_;
+    
+  public:
+    InstrumentedLockGuard(std::mutex& mutex, std::atomic<uint64_t>& attempts, 
+                         std::atomic<uint64_t>& contentions) 
+        : guard_(mutex, std::defer_lock) {
+      attempts.fetch_add(1, std::memory_order_relaxed);
+      // Simple contention detection: try_lock first, if it fails, we have contention
+      if (!guard_.try_lock()) {
+        contentions.fetch_add(1, std::memory_order_relaxed);
+        // Now do the blocking lock
+        guard_.lock();
+      }
+    }
+  };
 };
 
 /**

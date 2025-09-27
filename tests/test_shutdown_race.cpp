@@ -4,6 +4,11 @@
 #include <iostream>
 #include <thread>
 #include <vector>
+#include <cstdlib>
+#include <random>
+
+// Simple verbosity control for CI
+static bool verbose_output = true;
 
 /**
  * High-contention shutdown race condition test
@@ -18,6 +23,10 @@ public:
         const int num_threads_per_cycle = 4;
         std::atomic<int> successful_cycles{0};
         std::atomic<int> failed_cycles{0};
+        
+        // **PERFORMANCE OPTIMIZATION**: Initialize PRNG once for cycle delays with deterministic seeding for CI reproducibility
+        std::mt19937 gen(98765);  // Fixed seed for deterministic CI runs
+        std::uniform_int_distribution<> delay_dist(1, 6);
         
         for (int cycle = 0; cycle < num_cycles; ++cycle) {
             try {
@@ -40,6 +49,10 @@ public:
                 
                 // Worker thread that performs operations
                 auto worker = [&](int thread_id) {
+                    // **PERFORMANCE OPTIMIZATION**: Initialize PRNG once per thread with deterministic seeding for CI reproducibility
+                    std::mt19937 gen(54321 + cycle * 100 + thread_id);  // Fixed seed for deterministic CI runs
+                    std::uniform_int_distribution<> jitter_dist(500, 2000);
+                    
                     int local_ops = 0;
                     while (!stop_workers.load(std::memory_order_acquire)) {
                         try {
@@ -49,20 +62,51 @@ public:
                                 byte = static_cast<uint8_t>((cycle + thread_id + local_ops) % 256);
                             }
                             
-                            // Try operations
-                            (void)slonana::consensus::GlobalProofOfHistory::mix_transaction(tx_hash);
-                            (void)slonana::consensus::GlobalProofOfHistory::get_current_entry();
-                            (void)slonana::consensus::GlobalProofOfHistory::get_current_slot();
+                            // Try operations with individual exception handling
+                            try {
+                                (void)slonana::consensus::GlobalProofOfHistory::mix_transaction(tx_hash);
+                            } catch (const std::exception& e) {
+                                // Expected during shutdown, don't log unless verbose
+                                if (verbose_output && local_ops < 5) {
+                                    std::cout << "ℹ️  Thread " << thread_id << " mix_transaction error (expected): " << e.what() << "\n";
+                                }
+                            }
+                            
+                            try {
+                                (void)slonana::consensus::GlobalProofOfHistory::get_current_entry();
+                            } catch (const std::exception& e) {
+                                // Expected during shutdown
+                                if (verbose_output && local_ops < 5) {
+                                    std::cout << "ℹ️  Thread " << thread_id << " get_current_entry error (expected): " << e.what() << "\n";
+                                }
+                            }
+                            
+                            try {
+                                (void)slonana::consensus::GlobalProofOfHistory::get_current_slot();
+                            } catch (const std::exception& e) {
+                                // Expected during shutdown
+                                if (verbose_output && local_ops < 5) {
+                                    std::cout << "ℹ️  Thread " << thread_id << " get_current_slot error (expected): " << e.what() << "\n";
+                                }
+                            }
                             
                             local_ops++;
                             
-                            // Short delay
+                            // Short delay with randomization to emulate real-world jitter
                             if (local_ops % 10 == 0) {
-                                std::this_thread::sleep_for(std::chrono::microseconds(1));
+                                // Add randomized jitter (0.5-2.0 microseconds)
+                                // Using pre-initialized PRNG for performance
+                                std::this_thread::sleep_for(std::chrono::nanoseconds(jitter_dist(gen)));
                             }
                             
                         } catch (const std::exception& e) {
                             // Expected during shutdown
+                            break;
+                        } catch (...) {
+                            // Handle any unexpected exceptions
+                            if (verbose_output) {
+                                std::cout << "⚠️  Thread " << thread_id << " unexpected error\n";
+                            }
                             break;
                         }
                     }
@@ -73,8 +117,9 @@ public:
                     threads.emplace_back(worker, i);
                 }
                 
-                // Let threads run briefly
-                std::this_thread::sleep_for(std::chrono::milliseconds(1 + (cycle % 5)));
+                // Let threads run briefly with randomized timing
+                // Using pre-initialized PRNG for performance
+                std::this_thread::sleep_for(std::chrono::milliseconds(delay_dist(gen)));
                 
                 // Signal stop and shutdown
                 stop_workers.store(true, std::memory_order_release);
@@ -91,7 +136,9 @@ public:
                 
             } catch (const std::exception& e) {
                 failed_cycles.fetch_add(1, std::memory_order_relaxed);
-                std::cout << "❌ Cycle " << cycle << " failed: " << e.what() << "\n";
+                if (verbose_output) {
+                    std::cout << "❌ Cycle " << cycle << " failed: " << e.what() << "\n";
+                }
                 
                 // Try to cleanup in case of partial initialization
                 try {
@@ -121,6 +168,12 @@ public:
 };
 
 int main() {
+    // Check for verbosity control via environment variable
+    const char* quiet_env = std::getenv("SLONANA_TEST_QUIET");
+    if (quiet_env && std::string(quiet_env) == "1") {
+        verbose_output = false;
+    }
+    
     std::cout << "🧪 Shutdown Race Condition Test\n";
     std::cout << "================================\n";
     

@@ -185,6 +185,8 @@ public:
   using TransactionPtr = std::shared_ptr<ledger::Transaction>;
   using CompletionCallback =
       std::function<void(std::shared_ptr<TransactionBatch>)>;
+  using BlockNotificationCallback =
+      std::function<void(const ledger::Block&)>;
 
   BankingStage();
   ~BankingStage();
