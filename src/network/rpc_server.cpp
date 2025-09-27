@@ -2739,8 +2739,8 @@ std::string SolanaRpcServer::process_transaction_submission(
 
     // **ENHANCED BANKING STAGE INTEGRATION WITH CRASH PROTECTION**
     if (banking_stage_) {
-      std::cout << "RPC: [DEBUG] Submitting transaction to banking stage..."
-                << std::endl;
+      std::cout << "RPC: [DEBUG] Banking stage is available, submitting transaction..." << std::endl;
+      std::cerr << "RPC: [DEBUG] Banking stage is available, submitting transaction..." << std::endl;
 
       try {
         // **ENHANCED TRANSACTION OBJECT CREATION WITH SAFETY CHECKS**

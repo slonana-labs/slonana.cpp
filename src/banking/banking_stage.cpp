@@ -623,14 +623,22 @@ void BankingStage::submit_transaction(TransactionPtr transaction) {
   if (!running_) {
     std::cerr << "WARNING: Banking stage not running, rejecting transaction"
               << std::endl;
+    std::cout << "WARNING: Banking stage not running, rejecting transaction"
+              << std::endl;
     return;
   }
 
   if (!transaction) {
     std::cerr << "ERROR: Null transaction pointer submitted to banking stage"
               << std::endl;
+    std::cout << "ERROR: Null transaction pointer submitted to banking stage"
+              << std::endl;
     return;
   }
+
+  // **CRITICAL DEBUG** - Make sure we see if transactions are actually reaching here
+  std::cout << "BANKING STAGE: *** RECEIVED TRANSACTION FOR PROCESSING ***" << std::endl;
+  std::cerr << "BANKING STAGE: *** RECEIVED TRANSACTION FOR PROCESSING ***" << std::endl;
 
   try {
     // **ADDITIONAL TRANSACTION VALIDATION** - Ensure transaction is well-formed
