@@ -1282,20 +1282,14 @@ test_transaction_throughput() {
     local sender_pubkey_cli
     if command -v solana-keygen &> /dev/null; then
         if ! sender_pubkey_cli=$(solana-keygen pubkey "$sender_keypair" 2>/dev/null); then
-            log_error "Failed to extract sender pubkey from: $sender_keypair"
-            log_warning "Skipping transaction throughput test due to keypair issues"
-            echo "0" > "$RESULTS_DIR/effective_tps.txt"
-            echo "0" > "$RESULTS_DIR/successful_transactions.txt"
-            echo "0" > "$RESULTS_DIR/submitted_requests.txt"
-            return 0
+            log_warning "Failed to extract sender pubkey using solana-keygen, falling back to deterministic generation"
+            sender_pubkey_cli=$(generate_pubkey_from_string "$sender_keypair")
         fi
         log_verbose "Extracted sender pubkey: $sender_pubkey_cli"
     else
-        log_error "solana-keygen not available - cannot proceed with transaction test"
-        echo "0" > "$RESULTS_DIR/effective_tps.txt"
-        echo "0" > "$RESULTS_DIR/successful_transactions.txt"
-        echo "0" > "$RESULTS_DIR/submitted_requests.txt"
-        return 0
+        log_info "Using fallback pubkey generation (solana-keygen not available)"
+        sender_pubkey_cli=$(generate_pubkey_from_string "$sender_keypair")
+        log_verbose "Generated fallback sender pubkey: $sender_pubkey_cli"
     fi
     
     # **DISCIPLINED FUNDING LOGIC**: Improved logic with proper faucet readiness and retry mechanism
@@ -1547,12 +1541,8 @@ EOF
     # Extract recipient public key safely
     if command -v solana-keygen &> /dev/null; then
         if ! recipient_pubkey=$(solana-keygen pubkey "$recipient_keypair" 2>/dev/null); then
-            log_error "Failed to extract recipient pubkey from: $recipient_keypair"
-            log_warning "Skipping transaction throughput test due to keypair issues"
-            echo "0" > "$RESULTS_DIR/effective_tps.txt"
-            echo "0" > "$RESULTS_DIR/successful_transactions.txt"
-            echo "0" > "$RESULTS_DIR/submitted_requests.txt"
-            return 0
+            log_warning "Failed to extract recipient pubkey using solana-keygen, falling back to deterministic generation"
+            recipient_pubkey=$(generate_pubkey_from_string "$recipient_keypair")
         fi
         log_verbose "Extracted recipient pubkey: $recipient_pubkey"
         
