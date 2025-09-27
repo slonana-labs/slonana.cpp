@@ -512,6 +512,15 @@ common::Result<bool> ValidatorCore::start() {
     std::cerr << "WARNING: No ledger manager available for banking stage" << std::endl;
   }
 
+  // Connect banking stage block notifications to validator core block processing
+  banking_stage_->set_block_notification_callback(
+    [this](const ledger::Block &block) {
+      // Process the block through validator core to trigger statistics updates
+      this->process_block(block);
+    }
+  );
+  std::cout << "Banking stage block notification callback connected to validator core" << std::endl;
+
   // Initialize and start banking stage
   if (!banking_stage_->initialize()) {
     return common::Result<bool>("Failed to initialize banking stage");

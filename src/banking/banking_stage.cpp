@@ -1164,6 +1164,20 @@ bool BankingStage::commit_batch(std::shared_ptr<TransactionBatch> batch) {
             total_transactions_processed_.fetch_add(processed_transactions,
                                                     std::memory_order_relaxed);
             total_batches_processed_.fetch_add(1, std::memory_order_relaxed);
+
+            // **BLOCK NOTIFICATION CALLBACK** - Notify validator core about the new block
+            if (block_notification_callback_) {
+              try {
+                block_notification_callback_(new_block);
+                std::cout << "Banking: Notified validator core about block at slot "
+                          << new_block.slot << std::endl;
+              } catch (const std::exception &callback_error) {
+                std::cerr << "ERROR: Block notification callback failed: "
+                          << callback_error.what() << std::endl;
+              }
+            } else {
+              std::cout << "Banking: No block notification callback registered" << std::endl;
+            }
           }
         } catch (const std::exception &block_error) {
           std::cerr << "ERROR: Block processing failed: " << block_error.what()
