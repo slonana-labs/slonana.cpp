@@ -435,7 +435,8 @@ public:
 
 SolanaRpcServer::SolanaRpcServer(const ValidatorConfig &config)
     : impl_(std::make_unique<Impl>(config)), config_(config),
-      external_service_breaker_(CircuitBreakerConfig{5, std::chrono::milliseconds(10000), 2}),
+      external_service_breaker_(
+          CircuitBreakerConfig{5, std::chrono::milliseconds(10000), 2}),
       rpc_retry_policy_(FaultTolerance::create_rpc_retry_policy()) {
 
   // Initialize WebSocket server
@@ -453,8 +454,9 @@ SolanaRpcServer::SolanaRpcServer(const ValidatorConfig &config)
   register_token_methods();
   register_websocket_methods();
   register_network_management_methods();
-  
-  std::cout << "RPC Server initialized with fault tolerance mechanisms" << std::endl;
+
+  std::cout << "RPC Server initialized with fault tolerance mechanisms"
+            << std::endl;
 }
 
 SolanaRpcServer::~SolanaRpcServer() { stop(); }
@@ -993,25 +995,31 @@ RpcResponse SolanaRpcServer::get_account_info(const RpcRequest &request) {
         PublicKey pubkey(pubkey_bytes.begin(), pubkey_bytes.end());
 
         // Fast account lookup with fault tolerance
-        auto get_account_with_retry = [this, &pubkey]() -> Result<std::optional<svm::ProgramAccount>> {
+        auto get_account_with_retry =
+            [this, &pubkey]() -> Result<std::optional<svm::ProgramAccount>> {
           if (!account_manager_) {
-            return Result<std::optional<svm::ProgramAccount>>("Account manager not available");
+            return Result<std::optional<svm::ProgramAccount>>(
+                "Account manager not available");
           }
-          
+
           try {
             auto account_info = account_manager_->get_account(pubkey);
             return Result<std::optional<svm::ProgramAccount>>(account_info);
-          } catch (const std::exception& e) {
-            return Result<std::optional<svm::ProgramAccount>>("Account lookup failed: " + std::string(e.what()));
+          } catch (const std::exception &e) {
+            return Result<std::optional<svm::ProgramAccount>>(
+                "Account lookup failed: " + std::string(e.what()));
           }
         };
-        
-        auto account_result = execute_with_fault_tolerance(get_account_with_retry, "get_account");
+
+        auto account_result =
+            execute_with_fault_tolerance(get_account_with_retry, "get_account");
         if (account_result.is_err()) {
-          return create_error_response(request.id, -32603, "Account lookup error: " + account_result.error(),
-                                     request.id_is_number);
+          return create_error_response(request.id, -32603,
+                                       "Account lookup error: " +
+                                           account_result.error(),
+                                       request.id_is_number);
         }
-        
+
         auto account_info = account_result.value();
 
         std::string result_str;
