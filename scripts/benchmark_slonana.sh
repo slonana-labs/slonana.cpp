@@ -333,27 +333,32 @@ check_dependencies() {
     fi
 
     # Check for Solana CLI tools (needed for keypair generation and transactions)
-    # Check and setup Solana CLI
+    # Check and setup Solana CLI with enhanced PATH configuration
     if [[ -z "$VALIDATOR_BIN" ]] || [[ "$BOOTSTRAP_ONLY" == false ]]; then
-        # Check if Solana CLI is in PATH or standard installation location
+        # **ENHANCED PATH SETUP**: Always ensure Solana CLI is in PATH if installed
+        export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+        
+        # Check if Solana CLI is now available
         if ! command -v solana-keygen &> /dev/null; then
             if [[ -f "$HOME/.local/share/solana/install/active_release/bin/solana-keygen" ]]; then
-                log_info "Found Solana CLI in standard location, adding to PATH"
-                export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+                log_info "Found Solana CLI in standard location, added to PATH"
             else
                 log_warning "solana-keygen not found. Install Solana CLI tools for full functionality."
-                log_warning "Run: make install-solana-cli"
+                log_warning "Run: curl --proto '=https' --tlsv1.2 -sSfL https://solana-install.solana.workers.dev | bash"
             fi
+        else
+            log_info "✅ solana-keygen found: $(command -v solana-keygen)"
         fi
 
         if ! command -v solana &> /dev/null; then
             if [[ -f "$HOME/.local/share/solana/install/active_release/bin/solana" ]]; then
-                log_info "Found Solana CLI in standard location, adding to PATH"
-                export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+                log_info "Found Solana CLI in standard location, added to PATH"
             else
                 log_warning "solana CLI not found. Install Solana CLI tools for transaction tests."
-                log_warning "Run: make install-solana-cli"
+                log_warning "Run: curl --proto '=https' --tlsv1.2 -sSfL https://solana-install.solana.workers.dev | bash"
             fi
+        else
+            log_info "✅ solana CLI found: $(command -v solana)"
         fi
     fi
 
@@ -498,13 +503,17 @@ inject_enhanced_activity() {
     
     # Add debugging information
     log_info "DEBUG: Checking Solana CLI availability..."
+    
+    # **ENHANCED PATH SETUP**: Ensure Solana CLI is in PATH if installed
+    export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+    
     log_info "DEBUG: PATH = $PATH"
     log_info "DEBUG: which solana = $(which solana 2>/dev/null || echo 'NOT FOUND')"
     log_info "DEBUG: which solana-keygen = $(which solana-keygen 2>/dev/null || echo 'NOT FOUND')"
     
     # Check if Solana CLI tools are available, but continue with RPC-based approach if not
     if command -v solana &> /dev/null && command -v solana-keygen &> /dev/null; then
-        log_info "DEBUG: Solana CLI tools found, using CLI+RPC activity injection"
+        log_info "DEBUG: ✅ Solana CLI tools found, using CLI for real transaction transfers"
         CLI_AVAILABLE=true
     else
         log_info "DEBUG: Solana CLI tools not available, using RPC-only activity injection"
@@ -1129,11 +1138,15 @@ check_validator_health() {
 test_transaction_throughput() {
     log_info "Testing transaction throughput..."
 
+    # **ENHANCED PATH SETUP**: Ensure Solana CLI is in PATH if installed
+    export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+
     # Check if Solana CLI tools are available (but continue with RPC if not)
-    if ! command -v solana &> /dev/null; then
+    if ! command -v solana &> /dev/null || ! command -v solana-keygen &> /dev/null; then
         log_info "Solana CLI not available, will use direct RPC calls for transactions"
         CLI_AVAILABLE=false
     else
+        log_info "✅ Solana CLI available, will use real 'solana transfer' commands"
         CLI_AVAILABLE=true
     fi
     
@@ -1231,9 +1244,11 @@ test_transaction_throughput() {
     # **ENHANCED CLI CONFIGURATION**: Ensure PATH and configuration are correct
     export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
     
-    if command -v solana >/dev/null 2>&1; then
+    if command -v solana >/dev/null 2>&1 && command -v solana-keygen >/dev/null 2>&1; then
         log_info "✅ Solana CLI found at: $(which solana)"
+        log_info "✅ Solana keygen found at: $(which solana-keygen)" 
         log_info "🔧 Configuring and validating Solana CLI..."
+        CLI_AVAILABLE=true
         
         # Configure the RPC endpoint with enhanced validation
         local expected_url="http://localhost:$RPC_PORT"
@@ -1282,7 +1297,8 @@ test_transaction_throughput() {
             log_verbose "ℹ️  CLI validators command failed - normal for isolated development environments"
         fi
     else
-        log_info "Solana CLI available, using CLI for transactions"
+        log_warning "⚠️ Solana CLI not available, will use RPC fallback for transactions"
+        CLI_AVAILABLE=false
     fi
 
     # Generate keypairs (with validation and regeneration)
