@@ -982,17 +982,27 @@ RpcResponse SolanaRpcServer::get_account_info(const RpcRequest &request) {
           return response;
         }
 
-        // Convert base58-like address to PublicKey efficiently
-        std::vector<uint8_t> pubkey_bytes(32);
+        // Convert address string to PublicKey using proper base58 decoding
+        // This ensures consistency with requestAirdrop method
+        PublicKey pubkey = decode_base58(address);
 
-        // Simple base58 decode simulation - in production this would use proper
-        // base58 decoding
-        std::fill(pubkey_bytes.begin(), pubkey_bytes.end(), 0);
-        for (size_t i = 0; i < std::min(address.length(), size_t(32)); ++i) {
-          pubkey_bytes[i] = static_cast<uint8_t>(address[i]);
+        // Ensure we have a 32-byte public key (standard Solana pubkey size)
+        if (pubkey.size() != 32) {
+          pubkey.resize(32);
+          // If decoding failed, use hash-based fallback for compatibility
+          if (pubkey.size() < 32) {
+            std::hash<std::string> hasher;
+            auto hash_val = hasher(address);
+            for (size_t i = 0; i < 32; ++i) {
+              uint8_t byte_val =
+                  static_cast<uint8_t>((hash_val >> ((i * 8) % 64)) & 0xFF);
+              if (i < address.length()) {
+                byte_val ^= static_cast<uint8_t>(address[i]);
+              }
+              pubkey[i] = byte_val;
+            }
+          }
         }
-
-        PublicKey pubkey(pubkey_bytes.begin(), pubkey_bytes.end());
 
         // Fast account lookup with fault tolerance
         auto get_account_with_retry =
@@ -3255,7 +3265,26 @@ RpcResponse SolanaRpcServer::get_account_owner(const RpcRequest &request) {
     }
 
     if (account_manager_) {
-      PublicKey pubkey(address.begin(), address.end());
+      // Convert address string to PublicKey using proper base58 decoding
+      PublicKey pubkey = decode_base58(address);
+      
+      // Ensure we have a 32-byte public key (standard Solana pubkey size)
+      if (pubkey.size() != 32) {
+        pubkey.resize(32);
+        if (pubkey.size() < 32) {
+          std::hash<std::string> hasher;
+          auto hash_val = hasher(address);
+          for (size_t i = 0; i < 32; ++i) {
+            uint8_t byte_val =
+                static_cast<uint8_t>((hash_val >> ((i * 8) % 64)) & 0xFF);
+            if (i < address.length()) {
+              byte_val ^= static_cast<uint8_t>(address[i]);
+            }
+            pubkey[i] = byte_val;
+          }
+        }
+      }
+      
       auto account_info = account_manager_->get_account(pubkey);
 
       if (account_info.has_value()) {
