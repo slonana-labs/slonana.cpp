@@ -3867,6 +3867,12 @@ RpcResponse SolanaRpcServer::request_airdrop(const RpcRequest &request) {
   response.id_is_number = request.id_is_number;
 
   try {
+    // **ENHANCED FAUCET DEBUGGING** - Show configuration status
+    std::cout << "RPC: [DEBUG] Airdrop request received" << std::endl;
+    std::cout << "RPC: [DEBUG] Faucet enabled: " << (config_.enable_faucet ? "YES" : "NO") << std::endl;
+    std::cout << "RPC: [DEBUG] Faucet port: " << config_.faucet_port << std::endl;
+    std::cout << "RPC: [DEBUG] Faucet address: " << config_.rpc_faucet_address << std::endl;
+    
     // Check if faucet functionality is enabled
     if (!config_.enable_faucet) {
       std::cout
