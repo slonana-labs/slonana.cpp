@@ -1090,7 +1090,16 @@ bool BankingStage::commit_batch(std::shared_ptr<TransactionBatch> batch) {
           std::chrono::duration_cast<std::chrono::seconds>(
               std::chrono::system_clock::now().time_since_epoch())
               .count();
-      new_block.parent_hash = ledger_manager_->get_latest_block_hash();
+      
+      // **FIX: Handle genesis block case where parent hash might be empty**
+      common::Hash parent_hash = ledger_manager_->get_latest_block_hash();
+      if (parent_hash.empty()) {
+        // For genesis block, use a well-known genesis hash (all zeros with specific pattern)
+        parent_hash.resize(32, 0);
+        parent_hash[0] = 0x42; // Genesis marker
+        std::cout << "Banking: Creating genesis block (parent hash is empty)" << std::endl;
+      }
+      new_block.parent_hash = parent_hash;
 
       // Convert shared_ptr<Transaction> to Transaction objects for the block
       size_t processed_transactions = 0;
