@@ -1139,14 +1139,12 @@ test_transaction_throughput() {
     # **ENHANCED PATH SETUP**: Ensure Solana CLI is in PATH if installed
     export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
 
-    # Check if Solana CLI tools are available (but continue with RPC if not)
-    if ! command -v solana &> /dev/null || ! command -v solana-keygen &> /dev/null; then
-        log_info "Solana CLI not available, will use direct RPC calls for transactions"
-        CLI_AVAILABLE=false
-    else
-        log_info "✅ Solana CLI available, will use real 'solana transfer' commands"
-        CLI_AVAILABLE=true
-    fi
+    # **FIX: Force RPC mode due to CLI transaction construction issues**
+    # The CLI makes preparatory RPC calls but fails at transaction construction/signing
+    # Force RPC mode for reliable transaction submission
+    log_info "🔧 Using direct RPC mode for reliable transaction processing"
+    log_info "   (CLI transaction construction has compatibility issues)"
+    CLI_AVAILABLE=false
     
     # Check validator health before starting transaction test
     if ! check_validator_health; then
