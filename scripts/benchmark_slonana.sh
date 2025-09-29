@@ -1354,6 +1354,12 @@ test_transaction_throughput() {
         local account="$1"
         local required="$2"
         
+        # Use RPC-based balance check if CLI is not available
+        if [[ "$CLI_AVAILABLE" == "false" ]]; then
+            check_balance_sufficient_rpc "$account" "$required"
+            return $?
+        fi
+        
         # Get balance with enhanced error handling and URL targeting
         local balance_output balance_value
         balance_output=$(timeout 15s solana balance "$account" --url "http://localhost:$RPC_PORT" 2>&1) || return 1
@@ -1383,6 +1389,60 @@ test_transaction_throughput() {
                 log_verbose "Balance check FAILED: $balance_value SOL < $required SOL"
                 return 1
             fi
+        fi
+    }
+
+    # **RPC-BASED BALANCE CHECKING FUNCTION**: For when CLI is not available
+    check_balance_sufficient_rpc() {
+        local account="$1"
+        local required="$2"
+        
+        # Convert account to public key if it's a keypair file
+        local pubkey=""
+        if [[ -f "$account" ]]; then
+            # Generate pubkey from keypair file path 
+            pubkey=$(generate_pubkey_from_string "$account")
+        else
+            pubkey="$account"
+        fi
+        
+        # Get balance in lamports using RPC
+        local balance_lamports
+        balance_lamports=$(get_balance_rpc "$pubkey")
+        local rpc_result=$?
+        
+        if [[ $rpc_result -ne 0 ]] || [[ -z "$balance_lamports" ]]; then
+            log_verbose "RPC balance check FAILED: Could not get balance for $pubkey"
+            return 1
+        fi
+        
+        # Convert required SOL to lamports (1 SOL = 1,000,000,000 lamports)
+        local required_lamports
+        if command -v bc >/dev/null 2>&1; then
+            required_lamports=$(echo "$required * 1000000000" | bc | cut -d. -f1)
+        else
+            required_lamports=$(awk "BEGIN {printf \"%.0f\", $required * 1000000000}")
+        fi
+        
+        # Compare balances
+        if [[ $balance_lamports -ge $required_lamports ]]; then
+            local balance_sol
+            if command -v bc >/dev/null 2>&1; then
+                balance_sol=$(echo "scale=9; $balance_lamports / 1000000000" | bc)
+            else
+                balance_sol=$(awk "BEGIN {printf \"%.9f\", $balance_lamports / 1000000000}")
+            fi
+            log_verbose "RPC balance check PASSED: $balance_sol SOL >= $required SOL ($balance_lamports >= $required_lamports lamports)"
+            return 0
+        else
+            local balance_sol
+            if command -v bc >/dev/null 2>&1; then
+                balance_sol=$(echo "scale=9; $balance_lamports / 1000000000" | bc)
+            else
+                balance_sol=$(awk "BEGIN {printf \"%.9f\", $balance_lamports / 1000000000}")
+            fi
+            log_verbose "RPC balance check FAILED: $balance_sol SOL < $required SOL ($balance_lamports < $required_lamports lamports)"
+            return 1
         fi
     }
     
@@ -1511,11 +1571,44 @@ EOF
         for funding_attempt in $(seq 1 $MAX_FUNDING_TRIES); do
             log_info "🔄 Funding attempt $funding_attempt/$MAX_FUNDING_TRIES - requesting $FUNDING_AMOUNT_SOL SOL..."
             
-            # **AGGRESSIVE FUNDING**: Use faster 15s timeout with immediate retry
-            if timeout 15s solana airdrop "$FUNDING_AMOUNT_SOL" "$sender_pubkey_cli" --url "http://localhost:$RPC_PORT" 2>/dev/null; then
-                log_info "✅ CLI airdrop successful, validating balance..."
+            local funding_success=false
+            
+            # Use CLI or RPC based on availability
+            if [[ "$CLI_AVAILABLE" == "true" ]]; then
+                # **CLI FUNDING**: Use solana CLI when available
+                if timeout 15s solana airdrop "$FUNDING_AMOUNT_SOL" "$sender_pubkey_cli" --url "http://localhost:$RPC_PORT" 2>/dev/null; then
+                    log_info "✅ CLI airdrop successful, validating balance..."
+                    funding_success=true
+                else
+                    log_verbose "CLI airdrop attempt $funding_attempt failed, will retry..."
+                fi
+            else
+                # **RPC FUNDING**: Use direct RPC when CLI is not available
+                local sender_pubkey_for_rpc
+                if [[ -f "$sender_keypair" ]]; then
+                    sender_pubkey_for_rpc=$(generate_pubkey_from_string "$sender_keypair")
+                else
+                    sender_pubkey_for_rpc="$sender_pubkey_cli"
+                fi
                 
-                # **IMMEDIATE BALANCE VALIDATION**: Check balance immediately with retry logic
+                # Convert SOL to lamports for RPC call
+                local funding_lamports
+                if command -v bc >/dev/null 2>&1; then
+                    funding_lamports=$(echo "$FUNDING_AMOUNT_SOL * 1000000000" | bc | cut -d. -f1)
+                else
+                    funding_lamports=$(awk "BEGIN {printf \"%.0f\", $FUNDING_AMOUNT_SOL * 1000000000}")
+                fi
+                
+                if request_airdrop_rpc "$sender_pubkey_for_rpc" "$funding_lamports"; then
+                    log_info "✅ RPC airdrop successful, validating balance..."
+                    funding_success=true
+                else
+                    log_verbose "RPC airdrop attempt $funding_attempt failed, will retry..."
+                fi
+            fi
+            
+            # **IMMEDIATE BALANCE VALIDATION**: Check balance if funding was successful
+            if [[ "$funding_success" == "true" ]]; then
                 local balance_validated=false
                 local balance_check_attempts=0
                 local max_balance_checks=3  # Reduced checks for faster validation
@@ -1539,8 +1632,6 @@ EOF
                 else
                     log_verbose "Balance validation failed after all checks, retrying funding..."
                 fi
-            else
-                log_verbose "CLI airdrop attempt $funding_attempt failed, will retry..."
             fi
             
             # **EXPONENTIAL BACKOFF**: Progressive wait time between attempts
@@ -1670,21 +1761,27 @@ EOF
     
     log_verbose "Transaction test: start_time=$start_time, end_time=$end_time, duration=${TEST_DURATION}s"
     
-    # Test solana command availability before starting loop
-    if ! command -v solana &>/dev/null; then
-        log_error "solana command not found in PATH"
-        log_warning "⚠️  SOLANA CLI MISSING - allowing workflow to continue with zero results"
-        echo "0" > "$RESULTS_DIR/effective_tps.txt"
-        echo "0" > "$RESULTS_DIR/successful_transactions.txt"
-        echo "0" > "$RESULTS_DIR/submitted_requests.txt"
-        return 0
-    fi
-    
-    log_verbose "✅ solana command found: $(command -v solana)"
-    
-    # Test basic solana connectivity
-    if ! solana config get >/dev/null 2>&1; then
-        log_warning "solana config appears to have issues, but continuing anyway"
+    # Check if we need CLI for transactions or can use RPC
+    if [[ "$CLI_AVAILABLE" == "true" ]]; then
+        # Test solana command availability before starting loop when CLI is required
+        if ! command -v solana &>/dev/null; then
+            log_error "solana command not found in PATH but CLI_AVAILABLE=true"
+            log_warning "⚠️  SOLANA CLI MISSING but was expected - allowing workflow to continue with zero results"
+            echo "0" > "$RESULTS_DIR/effective_tps.txt"
+            echo "0" > "$RESULTS_DIR/successful_transactions.txt"
+            echo "0" > "$RESULTS_DIR/submitted_requests.txt"
+            return 0
+        fi
+        
+        log_verbose "✅ solana command found: $(command -v solana)"
+        
+        # Test basic solana connectivity
+        if ! solana config get >/dev/null 2>&1; then
+            log_warning "solana config appears to have issues, but continuing anyway"
+        fi
+    else
+        log_verbose "✅ Using RPC-only transaction mode (CLI not available)"
+        log_verbose "✅ Will use send_transaction_rpc for all transactions"
     fi
     
     # **PRE-TRANSACTION VALIDATION**: Check sender balance and keypair as suggested in code review

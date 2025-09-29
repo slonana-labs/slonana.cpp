@@ -156,3 +156,5 @@ packages/
 # Benchmark test files
 test_ledgers/
 benchmark_results/
+test_ledger/
+test_results/
