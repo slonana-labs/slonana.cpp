@@ -92,6 +92,19 @@ struct ValidatorConfig {
   bool enable_tls = false;                   ///< Use TLS for network communication
   uint64_t minimum_validator_stake = 0;      ///< Minimum stake required to validate
   uint64_t minimum_delegation_stake = 0;     ///< Minimum stake required for delegation
+  
+  // Secure inter-node messaging configuration
+  bool enable_secure_messaging = false;      ///< Enable secure communication channels
+  bool require_mutual_tls = false;          ///< Require mutual TLS authentication
+  std::string tls_certificate_path;         ///< Path to TLS certificate file
+  std::string tls_private_key_path;         ///< Path to TLS private key file  
+  std::string ca_certificate_path;          ///< Path to CA certificate for verification
+  std::string node_signing_key_path;        ///< Path to Ed25519 signing key for messages
+  std::string peer_keys_directory;          ///< Directory containing peer verification keys
+  bool enable_message_encryption = false;   ///< Enable message-level encryption
+  bool enable_replay_protection = true;     ///< Enable nonce-based replay protection
+  uint64_t message_ttl_seconds = 300;       ///< Message time-to-live (5 minutes)
+  uint32_t tls_handshake_timeout_ms = 10000; ///< TLS handshake timeout
 
   // Economic and staking parameters
   double inflation_rate = 0.08;              ///< Annual inflation rate (8% default)
