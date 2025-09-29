@@ -158,40 +158,51 @@ jobs:
         echo "✅ All dependencies validated successfully - ready for benchmarking!"
 
     - name: Run Slonana validator benchmark
-      timeout-minutes: 15
+      timeout-minutes: 20
       run: |
         echo "🔍 Running Slonana validator benchmark..."
         
-        # Ensure PATH includes Solana CLI (which includes Agave binaries)
+        # Ensure PATH includes Solana CLI (which includes Agave binaries)  
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
         
+        # Set environment variables for proper CI benchmarking
+        export SLONANA_CI_MODE=1
+        export CI=true
+        
         if [ -f "build/slonana_validator" ]; then
-          timeout 720s ./scripts/benchmark_slonana.sh \
+          timeout 900s ./scripts/benchmark_slonana.sh \
             --ledger test_ledgers/slonana \
             --results benchmark_results/slonana \
             --validator-bin build/slonana_validator \
+            --test-duration 60 \
             --verbose
         else
           echo "Slonana validator not found, using placeholder mode..."
-          timeout 720s ./scripts/benchmark_slonana.sh \
+          timeout 900s ./scripts/benchmark_slonana.sh \
             --ledger test_ledgers/slonana \
             --results benchmark_results/slonana \
+            --test-duration 60 \
             --use-placeholder \
             --verbose
         fi
 
     - name: Run Agave validator benchmark
-      timeout-minutes: 15
+      timeout-minutes: 20
       run: |
         echo "🔍 Running Agave validator benchmark..."
         
         # Ensure PATH includes Solana CLI (which includes Agave binaries)
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
         
-        timeout 720s ./scripts/benchmark_agave.sh \
+        # Set environment variables for proper CI benchmarking
+        export SLONANA_CI_MODE=1
+        export CI=true
+        
+        timeout 900s ./scripts/benchmark_agave.sh \
           --ledger test_ledgers/agave \
           --results benchmark_results/agave \
           --validator-bin solana-test-validator \
+          --test-duration 60 \
           --verbose
           
     - name: Generate comparison report
