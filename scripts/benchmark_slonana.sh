@@ -1887,8 +1887,8 @@ EOF
             fi
         fi
         
-        # Send transactions in larger batches with reduced overhead for better TPS
-        local batch_size=10  # Reduced from 20 to 10 for more reliable processing but still good throughput
+        # Send transactions continuously with proper timing for sustainable TPS
+        local batch_size=50  # Increased for continuous load generation
         local i
         for i in $(seq 1 $batch_size); do
             # **REDUCED DEBUG OUTPUT**: Only show progress for significant milestones
@@ -2079,8 +2079,8 @@ EOF
             txn_count=$(( txn_count + 1 ))
         done
         
-        # **OPTIMIZED BATCH SPACING**: Minimal delay between batches for higher throughput
-        if ! sleep 0.02; then  # Reduced from 0.05s to 0.02s for even faster batching
+        # **CONTINUOUS TRANSACTION PROCESSING**: Minimal delay for sustained load
+        if ! sleep 0.005; then  # Very fast batching for continuous load (5ms delay)
             loop_exit_reason="Sleep command failed"
             break
         fi
