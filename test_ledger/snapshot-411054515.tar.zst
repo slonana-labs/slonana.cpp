@@ -1,7 +1,0 @@
-# Slonana Bootstrap Marker - NOT A REAL SNAPSHOT
-# This file indicates that NO real snapshot was downloaded
-# Validator must create genesis from scratch (no snapshot data)
-network=devnet
-slot=411054515
-created=1759129833
-reason=no_accessible_devnet_snapshots

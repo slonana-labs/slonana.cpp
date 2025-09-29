@@ -1888,7 +1888,7 @@ EOF
         fi
         
         # Send transactions in larger batches with reduced overhead for better TPS
-        local batch_size=20  # Increased from 5 to 20 for better throughput
+        local batch_size=10  # Reduced from 20 to 10 for more reliable processing but still good throughput
         local i
         for i in $(seq 1 $batch_size); do
             # **REDUCED DEBUG OUTPUT**: Only show progress for significant milestones
@@ -1929,15 +1929,14 @@ EOF
             fi
             
             # **PERIODIC VALIDATOR CHECK**: Only check validator health every 10 transactions instead of every transaction
-            if [[ $((txn_count % 10)) -eq 0 ]]; then
-                if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
-                    local validator_pid
-                    validator_pid=$(cat "$RESULTS_DIR/validator.pid" 2>/dev/null) || validator_pid=""
-                    if [[ -n "$validator_pid" ]] && ! kill -0 "$validator_pid" 2>/dev/null; then
-                        log_warning "⚠️  Validator died before transaction batch (txn $txn_count)"
-                        loop_exit_reason="Validator process died"
-                        break 2  # Break out of both loops
-                    fi
+            # **FIX**: Skip validator PID check if file doesn't exist to avoid false positives
+            if [[ $((txn_count % 10)) -eq 0 ]] && [[ -f "$RESULTS_DIR/validator.pid" ]]; then
+                local validator_pid
+                validator_pid=$(cat "$RESULTS_DIR/validator.pid" 2>/dev/null) || validator_pid=""
+                if [[ -n "$validator_pid" ]] && ! kill -0 "$validator_pid" 2>/dev/null; then
+                    log_warning "⚠️  Validator died before transaction batch (txn $txn_count)"
+                    loop_exit_reason="Validator process died"
+                    break 2  # Break out of both loops
                 fi
             fi
             
@@ -2025,15 +2024,14 @@ EOF
             fi
             
             # **OPTIMIZED POST-TRANSACTION**: Only check validator health after significant failures
-            if [[ $transfer_result -ne 0 ]] && [[ $((txn_count % 5)) -eq 0 ]]; then
-                if [[ -f "$RESULTS_DIR/validator.pid" ]]; then
-                    local validator_pid
-                    validator_pid=$(cat "$RESULTS_DIR/validator.pid" 2>/dev/null) || validator_pid=""
-                    if [[ -n "$validator_pid" ]] && ! kill -0 "$validator_pid" 2>/dev/null; then
-                        log_warning "⚠️  Validator died during transaction processing (txn $txn_count)"
-                        loop_exit_reason="Validator process died during transaction"
-                        break 2  # Break out of both loops
-                    fi
+            # **FIX**: Skip validator PID check if file doesn't exist to avoid false positives
+            if [[ $transfer_result -ne 0 ]] && [[ $((txn_count % 5)) -eq 0 ]] && [[ -f "$RESULTS_DIR/validator.pid" ]]; then
+                local validator_pid
+                validator_pid=$(cat "$RESULTS_DIR/validator.pid" 2>/dev/null) || validator_pid=""
+                if [[ -n "$validator_pid" ]] && ! kill -0 "$validator_pid" 2>/dev/null; then
+                    log_warning "⚠️  Validator died during transaction processing (txn $txn_count)"
+                    loop_exit_reason="Validator process died during transaction"
+                    break 2  # Break out of both loops
                 fi
             fi
             
@@ -2082,7 +2080,7 @@ EOF
         done
         
         # **OPTIMIZED BATCH SPACING**: Minimal delay between batches for higher throughput
-        if ! sleep 0.05; then  # Reduced from 0.2s to 0.05s for 4x faster batching
+        if ! sleep 0.02; then  # Reduced from 0.05s to 0.02s for even faster batching
             loop_exit_reason="Sleep command failed"
             break
         fi
