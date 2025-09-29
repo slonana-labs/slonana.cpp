@@ -192,6 +192,41 @@ public:
    */
   bool is_running() const noexcept;
 
+  // === HIGH-PERFORMANCE CONFIGURATION ===
+  
+  /**
+   * @brief Enable ultra-high-throughput mode for 1k+ TPS scenarios
+   * 
+   * Optimizes the server for maximum transaction throughput by:
+   * - Using larger thread pools (16+ threads)
+   * - Enabling batch request processing
+   * - Optimizing socket and buffer configurations
+   * - Reducing logging overhead for performance-critical paths
+   * 
+   * @param enabled Whether to enable ultra-high-throughput optimizations
+   * @note Must be called before start() to take effect
+   * @note Increases memory usage and CPU utilization
+   */
+  void enable_ultra_high_throughput_mode(bool enabled = true);
+  
+  /**
+   * @brief Configure thread pool size for concurrent request processing
+   * 
+   * @param thread_count Number of worker threads (default: hardware_concurrency * 2)
+   * @note Higher values increase concurrency but also memory usage
+   * @note Optimal values depend on workload characteristics
+   */
+  void set_thread_pool_size(size_t thread_count);
+  
+  /**
+   * @brief Set maximum concurrent connections
+   * 
+   * @param max_connections Maximum number of simultaneous client connections
+   * @note Default is 2000 for high-throughput scenarios
+   * @note Higher values require more system resources
+   */
+  void set_max_connections(size_t max_connections);
+
   // === Component Dependencies ===
   
   /**
