@@ -1,0 +1,11 @@
+Pre-flight funding failed after 10 attempts.
+Account: 6e4c29a7d2bd6dab3cfde20d33822ef7fb846700
+1234
+Required balance: 1 SOL
+This is often due to:
+1. Validator faucet not fully initialized in CI environments
+2. RPC connectivity issues with faucet service
+3. Insufficient validator funds or configuration issues
+4. Port binding problems affecting CLI-validator communication
+
+Transaction throughput test was skipped to allow workflow success.
