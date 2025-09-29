@@ -564,7 +564,24 @@ PROFILE_DUMP("profile_report.json");
    - Use SIMD intrinsics for vectorizable operations
    - Profile before optimizing
 
-### Code Quality
+4. **Modern C++ Standards:**
+   - Follow [CODE_STYLE.md](CODE_STYLE.md) for modern C++ patterns
+   - Use smart pointers instead of raw pointers
+   - Apply `noexcept` for non-throwing functions
+   - Use `constexpr` for compile-time computation
+   - Prefer `auto` for complex template types, explicit types for clarity
+   - Use `override` and `final` specifiers for virtual functions
+   - Use standard algorithms over manual loops where appropriate
+
+### Code Quality and Style
+
+**📖 Documentation Standards:**
+All code must follow the comprehensive documentation standards defined in [CODE_STYLE.md](CODE_STYLE.md), including:
+- Doxygen-compatible comments for all public APIs
+- Detailed function documentation with parameters, return values, and examples  
+- Class-level documentation explaining purpose and usage patterns
+- Thread safety and exception safety guarantees
+- Performance implications and complexity notes
 
 1. **Error Handling:**
    - Use Result<T> type for recoverable errors
@@ -579,10 +596,14 @@ PROFILE_DUMP("profile_report.json");
    - Use property-based testing for complex algorithms
 
 3. **Documentation:**
-   - Document public APIs with detailed examples
+   - Follow Doxygen standards as defined in [CODE_STYLE.md](CODE_STYLE.md)
+   - Document all public APIs with comprehensive comments
+   - Include parameter descriptions, return values, and usage examples
    - Explain complex algorithms and data structures
-   - Keep documentation in sync with code
-   - Use inline comments sparingly but effectively
+   - Keep documentation in sync with code changes
+   - Use inline comments sparingly but effectively to explain "why" not "what"
+   - Document thread safety guarantees and exception safety levels
+   - Provide performance notes for critical methods
 
 ### Security Considerations
 

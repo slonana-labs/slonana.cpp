@@ -30,31 +30,29 @@ public:
 // Test initialization helper for snapshot/genesis fallback
 class TestLedgerInitializer {
 public:
-  enum class InitMode {
-    AUTO_DETECT,
-    FORCE_GENESIS,
-    FORCE_SNAPSHOT
-  };
+  enum class InitMode { AUTO_DETECT, FORCE_GENESIS, FORCE_SNAPSHOT };
 
-  static bool initialize_test_ledger(const std::string& test_name, 
-                                   const std::string& ledger_path = "/tmp/test_ledger",
-                                   InitMode mode = InitMode::AUTO_DETECT) {
+  static bool
+  initialize_test_ledger(const std::string &test_name,
+                         const std::string &ledger_path = "/tmp/test_ledger",
+                         InitMode mode = InitMode::AUTO_DETECT) {
     namespace fs = std::filesystem;
-    
-    std::cout << "[" << test_name << "] Initializing test ledger at " << ledger_path << "... ";
-    
+
+    std::cout << "[" << test_name << "] Initializing test ledger at "
+              << ledger_path << "... ";
+
     // Clean up existing ledger
     if (fs::exists(ledger_path)) {
       fs::remove_all(ledger_path);
     }
-    
+
     // Create ledger directory structure
     fs::create_directories(ledger_path);
     fs::create_directories(ledger_path + "/blocks");
     fs::create_directories(ledger_path + "/accounts");
-    
+
     bool use_snapshot = false;
-    
+
     if (mode == InitMode::AUTO_DETECT || mode == InitMode::FORCE_SNAPSHOT) {
       // Check if snapshot is available and valid
       std::string snapshot_path = "build/snapshots/latest.tar.zst";
@@ -64,20 +62,21 @@ public:
           use_snapshot = true;
           std::cout << "using valid snapshot (" << file_size << " bytes)";
         } else {
-          std::cout << "snapshot too small (" << file_size << " bytes), falling back to genesis";
+          std::cout << "snapshot too small (" << file_size
+                    << " bytes), falling back to genesis";
         }
       } else {
         std::cout << "no snapshot found, using genesis";
       }
     }
-    
+
     if (mode == InitMode::FORCE_GENESIS || !use_snapshot) {
       // Initialize from genesis
       std::string genesis_path = "config/mainnet/genesis.json";
       if (!fs::exists(genesis_path)) {
         genesis_path = "config/testnet/genesis.json";
       }
-      
+
       if (fs::exists(genesis_path)) {
         // Copy genesis file to ledger
         fs::copy_file(genesis_path, ledger_path + "/genesis.json");
@@ -86,7 +85,7 @@ public:
         std::cout << " (warning: no genesis file found, using empty ledger)";
       }
     }
-    
+
     std::cout << std::endl;
     return true;
   }

@@ -54,7 +54,8 @@ private:
 
     // Wait for server to start and be ready to receive connections
     std::cout << "🔄 Waiting for server to start..." << std::endl;
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000)); // Increased to 1 second
+    std::this_thread::sleep_for(
+        std::chrono::milliseconds(1000)); // Increased to 1 second
     std::cout << "✅ Server should be ready" << std::endl;
 
     // Initialize QUIC client

@@ -1,4 +1,5 @@
 #include "validator/core.h"
+#include "common/logging.h"
 #include "consensus/proof_of_history.h"
 #include "monitoring/consensus_metrics.h"
 #include <algorithm>
@@ -25,7 +26,7 @@ std::vector<uint8_t> Vote::serialize() const {
   return result;
 }
 
-bool Vote::verify() const {
+bool Vote::verify() const noexcept {
   return slot > 0 && !block_hash.empty() && !validator_identity.empty();
 }
 
@@ -89,9 +90,8 @@ void ForkChoice::add_block(const ledger::Block &block) {
   monitoring::GlobalConsensusMetrics::instance().set_active_forks_count(
       impl_->blocks_.size());
 
-  std::cout << "Added block to fork choice, slot: " << block.slot
-            << " (fork choice time: " << timer.stop() * 1000 << "ms)"
-            << std::endl;
+  LOG_DEBUG("Added block to fork choice, slot: ", block.slot,
+            " (fork choice time: ", timer.stop() * 1000, "ms)");
 }
 
 void ForkChoice::add_vote(const Vote &vote) {
@@ -104,14 +104,13 @@ void ForkChoice::add_vote(const Vote &vote) {
   // Update metrics
   monitoring::GlobalConsensusMetrics::instance().increment_votes_processed();
 
-  std::cout << "Added vote to fork choice, slot: " << vote.slot
-            << " (processing time: " << timer.stop() * 1000 << "ms)"
-            << std::endl;
+  LOG_DEBUG("Added vote to fork choice, slot: ", vote.slot,
+            " (processing time: ", timer.stop() * 1000, "ms)");
 }
 
 Hash ForkChoice::get_head() const { return impl_->head_hash_; }
 
-common::Slot ForkChoice::get_head_slot() const { return impl_->head_slot_; }
+Slot ForkChoice::get_head_slot() const noexcept { return impl_->head_slot_; }
 
 std::vector<Hash> ForkChoice::get_forks() const {
   std::vector<Hash> forks;
@@ -206,7 +205,7 @@ BlockValidator::BlockValidator(std::shared_ptr<ledger::LedgerManager> ledger)
 BlockValidator::~BlockValidator() = default;
 
 bool BlockValidator::validate_block_structure(
-    const ledger::Block &block) const {
+    const ledger::Block &block) const noexcept {
   return block.verify();
 }
 
@@ -505,6 +504,23 @@ common::Result<bool> ValidatorCore::start() {
                                 "Initialize it before starting ValidatorCore.");
   }
 
+  // Connect banking stage to ledger manager for block creation
+  if (ledger_) {
+    banking_stage_->set_ledger_manager(ledger_);
+    std::cout << "Banking stage connected to ledger manager" << std::endl;
+  } else {
+    std::cerr << "WARNING: No ledger manager available for banking stage" << std::endl;
+  }
+
+  // Connect banking stage block notifications to validator core block processing
+  banking_stage_->set_block_notification_callback(
+    [this](const ledger::Block &block) {
+      // Process the block through validator core to trigger statistics updates
+      this->process_block(block);
+    }
+  );
+  std::cout << "Banking stage block notification callback connected to validator core" << std::endl;
+
   // Initialize and start banking stage
   if (!banking_stage_->initialize()) {
     return common::Result<bool>("Failed to initialize banking stage");
@@ -535,16 +551,17 @@ common::Result<bool> ValidatorCore::start() {
         std::cout << "PoH completed slot " << slot << " with " << entries.size()
                   << " entries" << std::endl;
       });
-      
+
   if (!tick_callback_set || !slot_callback_set) {
-    return common::Result<bool>("Failed to set up PoH callbacks - PoH may not be properly initialized");
+    return common::Result<bool>(
+        "Failed to set up PoH callbacks - PoH may not be properly initialized");
   }
 
   impl_->running_ = true;
   return common::Result<bool>(true);
 }
 
-void ValidatorCore::stop() {
+void ValidatorCore::stop() noexcept {
   if (impl_->running_) {
     std::cout << "Stopping validator core" << std::endl;
 
@@ -575,7 +592,8 @@ void ValidatorCore::process_block(const ledger::Block &block) {
   auto validation_result = block_validator_->validate_block(block);
   if (validation_result.is_ok()) {
     // Mix block hash into PoH for timestamping using thread-safe method
-    uint64_t poh_sequence = consensus::GlobalProofOfHistory::mix_transaction(block.block_hash);
+    uint64_t poh_sequence =
+        consensus::GlobalProofOfHistory::mix_transaction(block.block_hash);
     if (poh_sequence > 0) {
       std::cout << "Mixed block hash into PoH at sequence " << poh_sequence
                 << std::endl;
@@ -659,16 +677,16 @@ void ValidatorCore::set_block_callback(BlockCallback callback) {
   impl_->block_callback_ = std::move(callback);
 }
 
-bool ValidatorCore::is_running() const { return impl_->running_; }
+bool ValidatorCore::is_running() const noexcept { return impl_->running_; }
 
-common::Slot ValidatorCore::get_current_slot() const {
+Slot ValidatorCore::get_current_slot() const noexcept {
   // Return the PoH-driven current slot for RPC queries with safe checking
   // This represents the current time-based slot progression, not the blockchain
   // state
   return consensus::GlobalProofOfHistory::get_current_slot();
 }
 
-common::Slot ValidatorCore::get_blockchain_head_slot() const {
+Slot ValidatorCore::get_blockchain_head_slot() const noexcept {
   // Return the highest processed block slot (blockchain state)
   return fork_choice_->get_head_slot();
 }
@@ -790,7 +808,7 @@ bool ValidatorCore::enable_quic_networking(uint16_t port) {
   return true;
 }
 
-bool ValidatorCore::disable_quic_networking() {
+bool ValidatorCore::disable_quic_networking() noexcept {
   if (!quic_enabled_) {
     return true;
   }
@@ -883,7 +901,7 @@ Hash ForkChoice::select_best_fork_head() const {
 }
 
 bool ForkChoice::is_ancestor(const Hash &potential_ancestor,
-                             const Hash &descendant) const {
+                             const Hash &descendant) const noexcept {
   // Check if potential_ancestor is an ancestor of descendant by traversing the
   // chain
   for (const auto &block : impl_->blocks_) {

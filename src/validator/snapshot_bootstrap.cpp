@@ -68,7 +68,8 @@ common::Result<bool> SnapshotBootstrapManager::bootstrap_from_snapshot() {
 
   // **FAST MODE FOR CI/BENCHMARKING**: Check for CI environment variable
   if (std::getenv("SLONANA_CI_MODE") || std::getenv("CI")) {
-    std::cout << "CI mode detected - using fast bootstrap with timeouts" << std::endl;
+    std::cout << "CI mode detected - using fast bootstrap with timeouts"
+              << std::endl;
     return bootstrap_fast_mode();
   }
 
@@ -82,9 +83,12 @@ common::Result<bool> SnapshotBootstrapManager::bootstrap_from_snapshot() {
   try {
     // Step 1: Discover latest snapshot with timeout
     report_progress("Discovering latest snapshot");
-    auto snapshot_result = discover_latest_snapshot_with_timeout(30); // 30 second timeout
+    auto snapshot_result =
+        discover_latest_snapshot_with_timeout(30); // 30 second timeout
     if (!snapshot_result.is_ok()) {
-      std::cout << "Warning: Snapshot discovery failed, falling back to genesis mode" << std::endl;
+      std::cout
+          << "Warning: Snapshot discovery failed, falling back to genesis mode"
+          << std::endl;
       return common::Result<bool>(true); // Continue without snapshot
     }
 
@@ -95,9 +99,12 @@ common::Result<bool> SnapshotBootstrapManager::bootstrap_from_snapshot() {
     // Step 2: Download snapshot with timeout
     report_progress("Downloading snapshot", 0, 100);
     std::string local_path;
-    auto download_result = download_snapshot_with_timeout(snapshot_info, local_path, 60); // 60 second timeout
+    auto download_result = download_snapshot_with_timeout(
+        snapshot_info, local_path, 60); // 60 second timeout
     if (!download_result.is_ok()) {
-      std::cout << "Warning: Snapshot download failed, falling back to genesis mode" << std::endl;
+      std::cout
+          << "Warning: Snapshot download failed, falling back to genesis mode"
+          << std::endl;
       return common::Result<bool>(true); // Continue without snapshot
     }
 
@@ -107,7 +114,9 @@ common::Result<bool> SnapshotBootstrapManager::bootstrap_from_snapshot() {
     report_progress("Verifying snapshot integrity");
     auto verify_result = verify_snapshot(local_path);
     if (!verify_result.is_ok()) {
-      std::cout << "Warning: Snapshot verification failed, falling back to genesis mode" << std::endl;
+      std::cout << "Warning: Snapshot verification failed, falling back to "
+                   "genesis mode"
+                << std::endl;
       return common::Result<bool>(true); // Continue without snapshot
     }
 
@@ -115,7 +124,9 @@ common::Result<bool> SnapshotBootstrapManager::bootstrap_from_snapshot() {
     report_progress("Applying snapshot to ledger");
     auto apply_result = apply_snapshot(local_path);
     if (!apply_result.is_ok()) {
-      std::cout << "Warning: Snapshot application failed, falling back to genesis mode" << std::endl;
+      std::cout << "Warning: Snapshot application failed, falling back to "
+                   "genesis mode"
+                << std::endl;
       return common::Result<bool>(true); // Continue without snapshot
     }
 
@@ -125,7 +136,7 @@ common::Result<bool> SnapshotBootstrapManager::bootstrap_from_snapshot() {
 
     return common::Result<bool>(true);
 
-  } catch (const std::exception& e) {
+  } catch (const std::exception &e) {
     std::cout << "Error during snapshot bootstrap: " << e.what() << std::endl;
     std::cout << "Falling back to genesis mode for safety" << std::endl;
     return common::Result<bool>(true); // Continue without snapshot
@@ -143,61 +154,79 @@ common::Result<bool> SnapshotBootstrapManager::bootstrap_from_snapshot() {
 
 // **FAST MODE IMPLEMENTATION**: Simplified bootstrap for CI/benchmarking
 common::Result<bool> SnapshotBootstrapManager::bootstrap_fast_mode() {
-  std::cout << "🚀 Fast bootstrap mode enabled for CI/benchmarking" << std::endl;
-  
+  std::cout << "🚀 Fast bootstrap mode enabled for CI/benchmarking"
+            << std::endl;
+
   // Skip snapshot entirely in fast mode - just ensure directories exist
   if (!fs::exists(config_.ledger_path)) {
     fs::create_directories(config_.ledger_path);
-    std::cout << "Created ledger directory: " << config_.ledger_path << std::endl;
+    std::cout << "Created ledger directory: " << config_.ledger_path
+              << std::endl;
   }
-  
+
   if (!fs::exists(snapshot_dir_)) {
     fs::create_directories(snapshot_dir_);
     std::cout << "Created snapshot directory: " << snapshot_dir_ << std::endl;
   }
-  
-  std::cout << "✅ Fast bootstrap completed - proceeding without snapshot" << std::endl;
+
+  std::cout << "✅ Fast bootstrap completed - proceeding without snapshot"
+            << std::endl;
   return common::Result<bool>(true);
 }
 
 // **TIMEOUT-ENHANCED DISCOVERY**: Wrapper with timeout
-common::Result<SnapshotInfo> SnapshotBootstrapManager::discover_latest_snapshot_with_timeout(int timeout_seconds) {
-  std::cout << "🔍 Discovering snapshot with " << timeout_seconds << "s timeout..." << std::endl;
-  
-  // **SEGFAULT FIX**: Use safe, single-threaded discovery for CI to avoid crashes
+common::Result<SnapshotInfo>
+SnapshotBootstrapManager::discover_latest_snapshot_with_timeout(
+    int timeout_seconds) {
+  std::cout << "🔍 Discovering snapshot with " << timeout_seconds
+            << "s timeout..." << std::endl;
+
+  // **SEGFAULT FIX**: Use safe, single-threaded discovery for CI to avoid
+  // crashes
   if (std::getenv("SLONANA_CI_MODE") || std::getenv("CI")) {
-    std::cout << "🚀 CI mode: Using safe single-threaded snapshot discovery" << std::endl;
+    std::cout << "🚀 CI mode: Using safe single-threaded snapshot discovery"
+              << std::endl;
     return discover_latest_snapshot_safe_ci();
   }
-  
+
   try {
     return discover_latest_snapshot();
-  } catch (const std::exception& e) {
-    return common::Result<SnapshotInfo>("Discovery timeout or error: " + std::string(e.what()));
+  } catch (const std::exception &e) {
+    return common::Result<SnapshotInfo>("Discovery timeout or error: " +
+                                        std::string(e.what()));
   }
 }
 
 // **SAFE CI DISCOVERY**: Single-threaded, timeout-protected discovery for CI
-common::Result<SnapshotInfo> SnapshotBootstrapManager::discover_latest_snapshot_safe_ci() {
-  std::cout << "🔧 Safe CI snapshot discovery (single-threaded, no complex operations)" << std::endl;
-  
+common::Result<SnapshotInfo>
+SnapshotBootstrapManager::discover_latest_snapshot_safe_ci() {
+  std::cout << "🔧 Safe CI snapshot discovery (single-threaded, no complex "
+               "operations)"
+            << std::endl;
+
   // For CI, just return a failure to trigger fallback to genesis mode
   // This completely avoids the problematic multi-threaded snapshot discovery
-  std::cout << "⚠️  CI mode: Skipping snapshot discovery to prevent segfaults" << std::endl;
-  std::cout << "   Will proceed with genesis mode for stable CI operation" << std::endl;
-  
-  return common::Result<SnapshotInfo>("CI mode: Snapshot discovery disabled for stability");
+  std::cout << "⚠️  CI mode: Skipping snapshot discovery to prevent segfaults"
+            << std::endl;
+  std::cout << "   Will proceed with genesis mode for stable CI operation"
+            << std::endl;
+
+  return common::Result<SnapshotInfo>(
+      "CI mode: Snapshot discovery disabled for stability");
 }
 
-// **TIMEOUT-ENHANCED DOWNLOAD**: Wrapper with timeout  
+// **TIMEOUT-ENHANCED DOWNLOAD**: Wrapper with timeout
 common::Result<bool> SnapshotBootstrapManager::download_snapshot_with_timeout(
-    const SnapshotInfo &info, std::string &local_path_out, int timeout_seconds) {
-  std::cout << "📥 Downloading snapshot with " << timeout_seconds << "s timeout..." << std::endl;
-  
+    const SnapshotInfo &info, std::string &local_path_out,
+    int timeout_seconds) {
+  std::cout << "📥 Downloading snapshot with " << timeout_seconds
+            << "s timeout..." << std::endl;
+
   try {
     return download_snapshot(info, local_path_out);
-  } catch (const std::exception& e) {
-    return common::Result<bool>("Download timeout or error: " + std::string(e.what()));
+  } catch (const std::exception &e) {
+    return common::Result<bool>("Download timeout or error: " +
+                                std::string(e.what()));
   }
 }
 
@@ -640,55 +669,59 @@ std::string SnapshotBootstrapManager::generate_snapshot_filename(
 
 bool SnapshotBootstrapManager::extract_snapshot_archive(
     const std::string &archive_path, const std::string &extract_dir) {
-  
+
   // Step 1: Validate archive type and existence
   if (!fs::exists(archive_path)) {
-    std::cerr << "Error: Archive file does not exist: " << archive_path << std::endl;
+    std::cerr << "Error: Archive file does not exist: " << archive_path
+              << std::endl;
     return false;
   }
-  
+
   // Only accept known archive formats for security
   std::string extension = fs::path(archive_path).extension().string();
   std::string filename = fs::path(archive_path).filename().string();
-  
+
   bool is_valid_format = false;
-  if (extension == ".zst" || filename.ends_with(".tar.zst") || 
-      filename.ends_with(".tgz") || extension == ".tar" || 
-      extension == ".gz" || extension == ".zip") {
+  if (extension == ".zst" || filename.ends_with(".tar.zst") ||
+      filename.ends_with(".tgz") || extension == ".tar" || extension == ".gz" ||
+      extension == ".zip") {
     is_valid_format = true;
   }
-  
+
   if (!is_valid_format) {
-    std::cerr << "Error: Unsupported archive format: " << extension << std::endl;
+    std::cerr << "Error: Unsupported archive format: " << extension
+              << std::endl;
     return false;
   }
-  
+
   // Step 2: Validate and secure extraction directory
   fs::path extract_path = fs::absolute(extract_dir);
   fs::path snapshot_base = fs::absolute(snapshot_dir_);
-  
+
   // Ensure extraction is within snapshot directory to prevent path traversal
   auto extract_canonical = extract_path.lexically_normal();
   auto snapshot_canonical = snapshot_base.lexically_normal();
-  
+
   if (!std::equal(snapshot_canonical.begin(), snapshot_canonical.end(),
                   extract_canonical.begin())) {
-    std::cerr << "Error: Extraction path outside snapshot directory" << std::endl;
+    std::cerr << "Error: Extraction path outside snapshot directory"
+              << std::endl;
     std::cerr << "  Attempted: " << extract_canonical << std::endl;
     std::cerr << "  Allowed base: " << snapshot_canonical << std::endl;
     return false;
   }
-  
+
   // Create extraction directory securely
   std::error_code ec;
   if (!fs::exists(extract_path)) {
     fs::create_directories(extract_path, ec);
     if (ec) {
-      std::cerr << "Error creating extraction directory: " << ec.message() << std::endl;
+      std::cerr << "Error creating extraction directory: " << ec.message()
+                << std::endl;
       return false;
     }
   }
-  
+
   std::cout << "Extracting snapshot archive: " << archive_path << std::endl;
   std::cout << "Extraction directory (secured): " << extract_path << std::endl;
 
@@ -697,92 +730,110 @@ bool SnapshotBootstrapManager::extract_snapshot_archive(
     // The tar command uses --restrict to prevent extraction outside target
     std::string safe_archive = archive_path;
     std::string safe_extract = extract_path.string();
-    
+
     // Escape paths for shell safety
     std::regex unsafe_chars(R"([;&|`$<>(){}*?[\]!])");
-    if (std::regex_search(safe_archive, unsafe_chars) || 
+    if (std::regex_search(safe_archive, unsafe_chars) ||
         std::regex_search(safe_extract, unsafe_chars)) {
-      std::cerr << "Error: Archive or extraction path contains unsafe characters" << std::endl;
+      std::cerr
+          << "Error: Archive or extraction path contains unsafe characters"
+          << std::endl;
       return false;
     }
-    
+
     // Build secure extraction command with safety flags
     std::string extract_cmd;
     if (filename.ends_with(".tar.zst") || extension == ".zst") {
       // Use tar with zstd and security restrictions
-      extract_cmd = "tar --zstd --extract --file \"" + safe_archive + 
-                   "\" --directory \"" + safe_extract + 
-                   "\" --no-absolute-filenames --no-overwrite-dir --restrict";
-    } else if (extension == ".tar" || filename.ends_with(".tgz") || extension == ".gz") {
-      // Use tar with gzip and security restrictions  
+      extract_cmd = "tar --zstd --extract --file \"" + safe_archive +
+                    "\" --directory \"" + safe_extract +
+                    "\" --no-absolute-filenames --no-overwrite-dir --restrict";
+    } else if (extension == ".tar" || filename.ends_with(".tgz") ||
+               extension == ".gz") {
+      // Use tar with gzip and security restrictions
       extract_cmd = "tar --extract --file \"" + safe_archive +
-                   "\" --directory \"" + safe_extract +
-                   "\" --no-absolute-filenames --no-overwrite-dir --restrict";
+                    "\" --directory \"" + safe_extract +
+                    "\" --no-absolute-filenames --no-overwrite-dir --restrict";
     } else if (extension == ".zip") {
       // Use unzip with security restrictions (junk paths to prevent traversal)
-      extract_cmd = "unzip -j \"" + safe_archive + "\" -d \"" + safe_extract + "\"";
+      extract_cmd =
+          "unzip -j \"" + safe_archive + "\" -d \"" + safe_extract + "\"";
     } else {
-      std::cerr << "Error: Unsupported archive format after validation" << std::endl;
+      std::cerr << "Error: Unsupported archive format after validation"
+                << std::endl;
       return false;
     }
 
-    std::cout << "Running secure extraction command: " << extract_cmd << std::endl;
+    std::cout << "Running secure extraction command: " << extract_cmd
+              << std::endl;
     int result = std::system(extract_cmd.c_str());
 
     if (result == 0) {
-      std::cout << "Snapshot successfully extracted to: " << extract_path << std::endl;
+      std::cout << "Snapshot successfully extracted to: " << extract_path
+                << std::endl;
 
       // Step 4: Verify extraction results and validate contents
       bool extraction_valid = false;
-      
+
       // Check for expected Solana snapshot structure
       if (fs::exists(extract_path / "snapshots") ||
           fs::exists(extract_path / "accounts") ||
           fs::exists(extract_path / "rocksdb")) {
         extraction_valid = true;
-        std::cout << "Extraction verification passed - found expected directory structure" << std::endl;
+        std::cout << "Extraction verification passed - found expected "
+                     "directory structure"
+                  << std::endl;
       } else {
         // List contents for debugging but still mark as successful
-        std::cout << "Warning: Extracted files don't match expected Solana snapshot structure" << std::endl;
+        std::cout << "Warning: Extracted files don't match expected Solana "
+                     "snapshot structure"
+                  << std::endl;
         std::string list_cmd = "ls -la \"" + safe_extract + "\"";
         if (std::system(list_cmd.c_str()) == 0) {
           extraction_valid = true; // Allow non-standard but valid extractions
         }
       }
-      
-      // Additional security check: ensure no extracted files contain path traversal
+
+      // Additional security check: ensure no extracted files contain path
+      // traversal
       try {
-        for (const auto& entry : fs::recursive_directory_iterator(extract_path)) {
+        for (const auto &entry :
+             fs::recursive_directory_iterator(extract_path)) {
           fs::path entry_path = entry.path().lexically_normal();
           if (!std::equal(extract_canonical.begin(), extract_canonical.end(),
-                         entry_path.begin())) {
-            std::cerr << "Error: Extracted file outside allowed directory: " 
-                     << entry_path << std::endl;
+                          entry_path.begin())) {
+            std::cerr << "Error: Extracted file outside allowed directory: "
+                      << entry_path << std::endl;
             fs::remove_all(extract_path); // Clean up on security violation
             return false;
           }
         }
-      } catch (const fs::filesystem_error& e) {
-        std::cerr << "Warning: Could not verify extracted file paths: " << e.what() << std::endl;
+      } catch (const fs::filesystem_error &e) {
+        std::cerr << "Warning: Could not verify extracted file paths: "
+                  << e.what() << std::endl;
         // Continue anyway as this might be due to permissions
       }
-      
+
       return extraction_valid;
     } else {
-      std::cerr << "Extraction command failed with code: " << result << std::endl;
+      std::cerr << "Extraction command failed with code: " << result
+                << std::endl;
 
       // Step 5: Fallback extraction methods with same security constraints
-      std::cout << "Attempting secure fallback extraction methods..." << std::endl;
+      std::cout << "Attempting secure fallback extraction methods..."
+                << std::endl;
 
       if (filename.ends_with(".tar.zst") || extension == ".zst") {
         // Try explicit zstd decompression first
         std::string temp_tar = extract_path.string() + "/temp_snapshot.tar";
-        std::string decompress_cmd = "zstd -d \"" + safe_archive + "\" -o \"" + temp_tar + "\"";
-        
+        std::string decompress_cmd =
+            "zstd -d \"" + safe_archive + "\" -o \"" + temp_tar + "\"";
+
         if (std::system(decompress_cmd.c_str()) == 0) {
-          std::string tar_cmd = "tar --extract --file \"" + temp_tar +
-                               "\" --directory \"" + safe_extract +
-                               "\" --no-absolute-filenames --no-overwrite-dir --restrict";
+          std::string tar_cmd =
+              "tar --extract --file \"" + temp_tar + "\" --directory \"" +
+              safe_extract +
+              "\" --no-absolute-filenames --no-overwrite-dir --restrict";
           if (std::system(tar_cmd.c_str()) == 0) {
             std::cout << "Secure fallback extraction successful" << std::endl;
             fs::remove(temp_tar); // Clean up temporary file
@@ -794,7 +845,8 @@ bool SnapshotBootstrapManager::extract_snapshot_archive(
       return false;
     }
   } catch (const std::exception &e) {
-    std::cerr << "Failed to extract snapshot securely: " << e.what() << std::endl;
+    std::cerr << "Failed to extract snapshot securely: " << e.what()
+              << std::endl;
     return false;
   }
 }

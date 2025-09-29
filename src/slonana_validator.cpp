@@ -125,9 +125,11 @@ common::Result<bool> SolanaValidator::start() {
   // Initialize and start Proof of History with genesis hash
   Hash genesis_hash(32, 0x42); // Simple genesis hash
   if (!consensus::GlobalProofOfHistory::initialize(poh_config, genesis_hash)) {
-    return common::Result<bool>("Failed to initialize and start Proof of History");
+    return common::Result<bool>(
+        "Failed to initialize and start Proof of History");
   }
-  std::cout << "  ✅ Proof of History initialized and started successfully" << std::endl;
+  std::cout << "  ✅ Proof of History initialized and started successfully"
+            << std::endl;
 
   // Start core validator
   std::cout << "  🎯 Starting validator core..." << std::endl;
@@ -163,6 +165,31 @@ common::Result<bool> SolanaValidator::start() {
     return common::Result<bool>("Failed to start banking stage");
   }
   std::cout << "  ✅ Banking stage started successfully" << std::endl;
+
+  // **FIX: Ensure block notification callback is properly connected**
+  // This ensures that when banking stage commits transactions to blocks,
+  // the validator statistics are updated correctly
+  std::cout << "  🔗 Setting up block notification callback..." << std::endl;
+  if (banking_stage_ && validator_core_) {
+    banking_stage_->set_block_notification_callback(
+      [this](const ledger::Block &block) {
+        // Update validator statistics when blocks are committed
+        this->on_block_received(block);
+        // Also ensure validator core processes the block
+        if (validator_core_) {
+          try {
+            // This will trigger validator core's block processing and statistics
+            validator_core_->process_block(block);
+          } catch (const std::exception &e) {
+            std::cerr << "WARNING: Failed to process block in validator core: " << e.what() << std::endl;
+          }
+        }
+      }
+    );
+    std::cout << "  ✅ Block notification callback connected successfully" << std::endl;
+  } else {
+    std::cerr << "WARNING: Could not set up block notification callback (missing components)" << std::endl;
+  }
 
   running_.store(true);
 

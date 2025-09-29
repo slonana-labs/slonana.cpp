@@ -178,6 +178,18 @@ add_executable(slonana_concurrency_stress_test
 )
 target_link_libraries(slonana_concurrency_stress_test slonana_core)
 
+# Timing race condition fix validation test
+add_executable(slonana_timing_race_test 
+    "${CMAKE_SOURCE_DIR}/tests/test_timing_race_fix.cpp"
+)
+target_link_libraries(slonana_timing_race_test slonana_core)
+
+# Shutdown race condition test
+add_executable(slonana_shutdown_race_test 
+    "${CMAKE_SOURCE_DIR}/tests/test_shutdown_race.cpp"
+)
+target_link_libraries(slonana_shutdown_race_test slonana_core)
+
 # Find OpenSSL for PoH cryptographic operations
 find_package(OpenSSL REQUIRED)
 target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto sodium)
@@ -371,6 +383,53 @@ target_link_libraries(slonana_key_management_tests slonana_core OpenSSL::SSL Ope
 target_include_directories(slonana_key_management_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 target_compile_definitions(slonana_key_management_tests PRIVATE STANDALONE_KEY_MANAGEMENT_TESTS)
 add_test(NAME key_management_tests COMMAND slonana_key_management_tests)
+
+# Fault tolerance test suite
+add_executable(slonana_fault_tolerance_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_fault_tolerance.cpp"
+)
+target_link_libraries(slonana_fault_tolerance_tests slonana_core)
+target_include_directories(slonana_fault_tolerance_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_fault_tolerance_tests PRIVATE STANDALONE_FAULT_TOLERANCE_TESTS)
+add_test(NAME fault_tolerance_tests COMMAND slonana_fault_tolerance_tests)
+
+# Fault tolerance integration test suite
+add_executable(slonana_fault_tolerance_integration_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_fault_tolerance_integration.cpp"
+)
+target_link_libraries(slonana_fault_tolerance_integration_tests slonana_core)
+target_include_directories(slonana_fault_tolerance_integration_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_fault_tolerance_integration_tests PRIVATE STANDALONE_FAULT_TOLERANCE_INTEGRATION_TESTS)
+add_test(NAME fault_tolerance_integration_tests COMMAND slonana_fault_tolerance_integration_tests)
+
+# Bug fix validation test suite
+add_executable(slonana_bug_fix_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_bug_fixes.cpp"
+)
+target_link_libraries(slonana_bug_fix_tests slonana_core)
+target_include_directories(slonana_bug_fix_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_bug_fix_tests PRIVATE STANDALONE_BUG_FIX_TESTS)
+add_test(NAME bug_fix_validation_tests COMMAND slonana_bug_fix_tests)
+
+# Secure messaging tests
+add_executable(slonana_secure_messaging_tests 
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_secure_messaging.cpp"
+)
+target_link_libraries(slonana_secure_messaging_tests slonana_core OpenSSL::SSL OpenSSL::Crypto)
+target_include_directories(slonana_secure_messaging_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_secure_messaging_tests PRIVATE STANDALONE_SECURE_MESSAGING_TESTS)
+add_test(NAME secure_messaging_tests COMMAND slonana_secure_messaging_tests)
+
+# Secure networking integration tests
+add_executable(slonana_secure_networking_integration_tests 
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_secure_networking_integration.cpp"
+)
+target_link_libraries(slonana_secure_networking_integration_tests slonana_core OpenSSL::SSL OpenSSL::Crypto)
+target_include_directories(slonana_secure_networking_integration_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_secure_networking_integration_tests PRIVATE STANDALONE_SECURE_NETWORKING_TESTS)
+add_test(NAME secure_networking_integration_tests COMMAND slonana_secure_networking_integration_tests)
 
 
 
