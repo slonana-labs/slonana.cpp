@@ -22,186 +22,6 @@
 #include <sys/socket.h>
 #include <thread>
 #include <unistd.h>
-#include <queue>
-#include <condition_variable>
-#include <future>
-
-namespace slonana {
-namespace network {
-
-// **HIGH-PERFORMANCE THREAD POOL** for concurrent RPC request processing
-class ThreadPool {
-private:
-    std::vector<std::thread> workers_;
-    std::queue<std::function<void()>> tasks_;
-    std::mutex queue_mutex_;
-    std::condition_variable condition_;
-    bool stop_;
-    
-public:
-    ThreadPool(size_t threads = std::thread::hardware_concurrency()) : stop_(false) {
-        // Create worker threads for high concurrency
-        for(size_t i = 0; i < threads; ++i) {
-            workers_.emplace_back([this] {
-                for(;;) {
-                    std::function<void()> task;
-                    {
-                        std::unique_lock<std::mutex> lock(queue_mutex_);
-                        condition_.wait(lock, [this]{ return stop_ || !tasks_.empty(); });
-                        if(stop_ && tasks_.empty()) return;
-                        task = std::move(tasks_.front());
-                        tasks_.pop();
-                    }
-                    task();
-                }
-            });
-        }
-    }
-    
-    ~ThreadPool() {
-        {
-            std::unique_lock<std::mutex> lock(queue_mutex_);
-            stop_ = true;
-        }
-        condition_.notify_all();
-        for(std::thread &worker: workers_) {
-            worker.join();
-        }
-    }
-    
-    template<class F, class... Args>
-    auto enqueue(F&& f, Args&&... args) 
-        -> std::future<typename std::result_of<F(Args...)>::type> {
-        using return_type = typename std::result_of<F(Args...)>::type;
-        
-        auto task = std::make_shared<std::packaged_task<return_type()>>(
-            std::bind(std::forward<F>(f), std::forward<Args>(args)...)
-        );
-        
-        std::future<return_type> res = task->get_future();
-        {
-            std::unique_lock<std::mutex> lock(queue_mutex_);
-            if(stop_) throw std::runtime_error("enqueue on stopped ThreadPool");
-            tasks_.emplace([task](){ (*task)(); });
-        }
-        condition_.notify_one();
-        return res;
-    }
-};
-
-// **OPTIMIZED CONNECTION POOL** for managing client connections efficiently
-class ConnectionPool {
-private:
-    std::queue<int> available_sockets_;
-    std::mutex pool_mutex_;
-    std::atomic<size_t> active_connections_{0};
-    const size_t max_connections_;
-    
-public:
-    ConnectionPool(size_t max_conn = 1000) : max_connections_(max_conn) {}
-    
-    bool can_accept_connection() const {
-        return active_connections_.load() < max_connections_;
-    }
-    
-    void connection_started() {
-        active_connections_++;
-    }
-    
-    void connection_ended() {
-        active_connections_--;
-    }
-    
-    size_t get_active_count() const {
-        return active_connections_.load();
-    }
-};
-
-// **BATCH REQUEST PROCESSOR** for handling multiple RPC requests efficiently
-class BatchProcessor {
-private:
-    std::queue<std::pair<std::string, std::promise<std::string>>> batch_queue_;
-    std::mutex batch_mutex_;
-    std::condition_variable batch_cv_;
-    std::thread batch_thread_;
-    bool stop_batch_;
-    SolanaRpcServer* rpc_server_;
-    
-public:
-    BatchProcessor(SolanaRpcServer* server) : stop_batch_(false), rpc_server_(server) {
-        batch_thread_ = std::thread([this]() { process_batches(); });
-    }
-    
-    ~BatchProcessor() {
-        stop_batch_ = true;
-        batch_cv_.notify_all();
-        if(batch_thread_.joinable()) {
-            batch_thread_.join();
-        }
-    }
-    
-    std::future<std::string> submit_request(const std::string& request) {
-        auto promise = std::make_shared<std::promise<std::string>>();
-        auto future = promise->get_future();
-        
-        {
-            std::lock_guard<std::mutex> lock(batch_mutex_);
-            batch_queue_.emplace(request, std::move(*promise));
-        }
-        batch_cv_.notify_one();
-        
-        return future;
-    }
-    
-private:
-    void process_batches() {
-        std::vector<std::pair<std::string, std::promise<std::string>>> current_batch;
-        current_batch.reserve(100); // Process up to 100 requests per batch
-        
-        while (!stop_batch_) {
-            {
-                std::unique_lock<std::mutex> lock(batch_mutex_);
-                batch_cv_.wait(lock, [this] { return stop_batch_ || !batch_queue_.empty(); });
-                
-                if (stop_batch_) break;
-                
-                // Collect batch of requests for parallel processing
-                while (!batch_queue_.empty() && current_batch.size() < 100) {
-                    current_batch.push_back(std::move(batch_queue_.front()));
-                    batch_queue_.pop();
-                }
-            }
-            
-            // Process batch in parallel
-            if (!current_batch.empty()) {
-                process_request_batch(current_batch);
-                current_batch.clear();
-            }
-        }
-    }
-    
-    void process_request_batch(std::vector<std::pair<std::string, std::promise<std::string>>>& batch) {
-        // **PARALLEL BATCH PROCESSING** - process multiple requests simultaneously
-        std::vector<std::thread> workers;
-        workers.reserve(batch.size());
-        
-        for (auto& [request, promise] : batch) {
-            workers.emplace_back([this, &request, &promise]() {
-                try {
-                    std::string response = rpc_server_->handle_request(request);
-                    promise.set_value(response);
-                } catch (const std::exception& e) {
-                    promise.set_exception(std::current_exception());
-                }
-            });
-        }
-        
-        // Wait for all batch processing to complete
-        for (auto& worker : workers) {
-            worker.join();
-        }
-    }
-};
 
 namespace slonana {
 namespace network {
@@ -333,52 +153,40 @@ std::string RpcResponse::to_json() const {
 class SolanaRpcServer::Impl {
 public:
   explicit Impl(const ValidatorConfig &config)
-      : config_(config), running_(false), server_socket_(-1),
-        thread_pool_(std::max(16u, std::thread::hardware_concurrency() * 2)),
-        connection_pool_(2000) {} // Support up to 2000 concurrent connections
+      : config_(config), running_(false), server_socket_(-1) {}
 
   ValidatorConfig config_;
   std::atomic<bool> running_;
   std::thread server_thread_;
   int server_socket_;
-  
-  // **HIGH-PERFORMANCE COMPONENTS**
-  ThreadPool thread_pool_;                    // Concurrent request processing
-  ConnectionPool connection_pool_;            // Connection management  
-  std::unique_ptr<BatchProcessor> batch_processor_; // Batch request processing
 
   void run_http_server(SolanaRpcServer *rpc_server) {
-    // Initialize batch processor for high-throughput scenarios
-    batch_processor_ = std::make_unique<BatchProcessor>(rpc_server);
-    
     server_socket_ = socket(AF_INET, SOCK_STREAM, 0);
     if (server_socket_ < 0) {
       std::cerr << "Failed to create socket: " << strerror(errno) << std::endl;
       return;
     }
 
-    // **OPTIMIZED SOCKET OPTIONS** for high-performance networking
+    // Allow socket reuse
     int opt = 1;
-    setsockopt(server_socket_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-    setsockopt(server_socket_, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt)); // Enable port reuse
-    
-    // Set larger socket buffers for high throughput
-    int buffer_size = 2 * 1024 * 1024; // 2MB buffers
-    setsockopt(server_socket_, SOL_SOCKET, SO_RCVBUF, &buffer_size, sizeof(buffer_size));
-    setsockopt(server_socket_, SOL_SOCKET, SO_SNDBUF, &buffer_size, sizeof(buffer_size));
-    
-    // Disable Nagle's algorithm for lower latency
-    setsockopt(server_socket_, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
+    if (setsockopt(server_socket_, SOL_SOCKET, SO_REUSEADDR, &opt,
+                   sizeof(opt)) < 0) {
+      std::cerr << "Failed to set socket options: " << strerror(errno)
+                << std::endl;
+      close(server_socket_);
+      return;
+    }
 
     struct sockaddr_in address;
     address.sin_family = AF_INET;
 
-    // Parse IP address and port from rpc_bind_address
+    // Parse IP address and port from rpc_bind_address (format:
+    // "127.0.0.1:8899")
     std::string bind_addr = config_.rpc_bind_address;
     size_t colon_pos = bind_addr.find(':');
 
-    std::string ip_address = "0.0.0.0"; // Bind to all interfaces for performance
-    int port = 8899;
+    std::string ip_address = "127.0.0.1"; // default to localhost
+    int port = 8899;                      // default port
 
     if (colon_pos != std::string::npos) {
       ip_address = bind_addr.substr(0, colon_pos);
@@ -389,146 +197,27 @@ public:
       }
     }
 
-    inet_pton(AF_INET, ip_address.c_str(), &address.sin_addr);
+    // Convert IP address string to binary format
+    if (inet_pton(AF_INET, ip_address.c_str(), &address.sin_addr) <= 0) {
+      std::cerr << "Invalid IP address: " << ip_address
+                << ", falling back to 127.0.0.1" << std::endl;
+      inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
+    }
+
     address.sin_port = htons(port);
 
-    if (bind(server_socket_, (struct sockaddr *)&address, sizeof(address)) < 0) {
-      std::cerr << "Failed to bind to port " << port << ": " << strerror(errno) << std::endl;
-      close(server_socket_);
-      return;
-    }
-
-    // **LARGE LISTEN BACKLOG** for handling high connection rates
-    if (listen(server_socket_, 1000) < 0) { // Increased from default to 1000
-      std::cerr << "Failed to listen on socket: " << strerror(errno) << std::endl;
-      close(server_socket_);
-      return;
-    }
-
-    std::cout << "🚀 HIGH-PERFORMANCE RPC server listening on " << ip_address << ":" << port 
-              << " with " << thread_pool_.workers_.size() << " worker threads" << std::endl;
-
-    // **HIGH-THROUGHPUT CONNECTION HANDLING LOOP**
-    while (running_.load()) {
-      struct sockaddr_in client_addr;
-      socklen_t client_len = sizeof(client_addr);
-
-      // **PERFORMANCE MONITORING**
-      if (connection_pool_.get_active_count() % 100 == 0 && connection_pool_.get_active_count() > 0) {
-        std::cout << "⚡ Active connections: " << connection_pool_.get_active_count() << std::endl;
-      }
-
-      int client_socket = accept(server_socket_, (struct sockaddr *)&client_addr, &client_len);
-      
-      if (client_socket < 0) {
-        if (errno != EAGAIN && errno != EWOULDBLOCK && running_.load()) {
-          std::cerr << "Accept failed: " << strerror(errno) << std::endl;
-        }
-        continue;
-      }
-
-      // **CONNECTION RATE LIMITING** - prevent overload
-      if (!connection_pool_.can_accept_connection()) {
-        close(client_socket);
-        continue; 
-      }
-
-      connection_pool_.connection_started();
-
-      // **ASYNCHRONOUS HIGH-PERFORMANCE REQUEST HANDLING**
-      thread_pool_.enqueue([this, rpc_server, client_socket]() {
-        handle_client_request_optimized(rpc_server, client_socket);
-        connection_pool_.connection_ended();
-      });
-    }
-
-    close(server_socket_);
-    server_socket_ = -1;
-  }
-
-  // **OPTIMIZED HIGH-PERFORMANCE CLIENT REQUEST HANDLER**
-  void handle_client_request_optimized(SolanaRpcServer *rpc_server, int client_socket) {
-    // **PERFORMANCE-OPTIMIZED REQUEST PROCESSING**
-    
-    // Use large buffer for high-throughput scenarios  
-    constexpr size_t BUFFER_SIZE = 65536; // 64KB buffer
-    std::vector<char> buffer(BUFFER_SIZE);
-    
-    // Set socket options for optimal performance
-    int opt = 1;
-    setsockopt(client_socket, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
-    
-    // **OPTIMIZED I/O WITH TIMEOUTS**
-    struct timeval timeout;
-    timeout.tv_sec = 5;  // 5 second timeout
-    timeout.tv_usec = 0;
-    setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-    setsockopt(client_socket, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
-    
-    ssize_t bytes_received = recv(client_socket, buffer.data(), buffer.size() - 1, 0);
-    if (bytes_received <= 0) {
-      close(client_socket);
-      return;
-    }
-
-    buffer[bytes_received] = '\0';
-    std::string request_data(buffer.data(), bytes_received);
-
-    // **FAST JSON EXTRACTION** - minimal string operations
-    std::string json_body = extract_json_body_from_http(request_data);
-    if (json_body.empty()) {
-      send_error_response(client_socket, "Invalid HTTP request");
-      close(client_socket);
-      return;
-    }
-
-    // **HIGH-SPEED RPC PROCESSING** using batch processor for efficiency
-    try {
-      std::string json_response;
-      
-      // For very high TPS scenarios, use batch processing
-      if (json_body.find("sendTransaction") != std::string::npos) {
-        // Use batch processor for transaction-heavy workloads
-        auto future = batch_processor_->submit_request(json_body);
-        json_response = future.get(); // This will be processed in batch
-      } else {
-        // Direct processing for other requests
-        json_response = rpc_server->handle_request(json_body);
-      }
-
-      // **OPTIMIZED RESPONSE TRANSMISSION**
-      send_optimized_response(client_socket, json_response);
-      
-    } catch (const std::exception &e) {
-      send_error_response(client_socket, "Request processing failed");
-    }
-
-    close(client_socket);
-  }
-
-  // **OPTIMIZED RESPONSE SENDING** with pre-allocated buffers and minimal copying
-  void send_optimized_response(int client_socket, const std::string& json_response) {
-    // Pre-calculate response size to avoid string reallocations
-    const size_t content_length = json_response.length();
-    const size_t header_size = 200; // Approximate header size
-    
-    // Pre-allocate response buffer
-    std::string http_response;
-    http_response.reserve(header_size + content_length);
-    
-    // Build HTTP response with minimal string operations
-    http_response = "HTTP/1.1 200 OK\r\n"
-                   "Content-Type: application/json\r\n"
-                   "Content-Length: " + std::to_string(content_length) + "\r\n"
-                   "Access-Control-Allow-Origin: *\r\n"
-                   "Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n"
-                   "Access-Control-Allow-Headers: Content-Type\r\n"
-                   "Connection: close\r\n"
-                   "\r\n" + json_response;
-
-    // **OPTIMIZED SEND** - single system call when possible
-    send(client_socket, http_response.c_str(), http_response.length(), MSG_NOSIGNAL);
-  }
+    if (bind(server_socket_, (struct sockaddr *)&address, sizeof(address)) <
+        0) {
+      std::cerr << "Failed to bind to port " << port << ": " << strerror(errno)
+                << std::endl;
+      if (errno == EADDRINUSE) {
+        std::cerr << "Port " << port
+                  << " is already in use. Please ensure no other service is "
+                     "using this port."
+                  << std::endl;
+      } else if (errno == EACCES) {
+        std::cerr
+            << "Permission denied binding to port " << port
             << ". Try using a port > 1024 or run with elevated privileges."
             << std::endl;
       }
@@ -3138,34 +2827,6 @@ std::string SolanaRpcServer::process_transaction_submission(
                 << "RPC: [ERROR] Banking stage became null during processing"
                 << std::endl;
             return "error_banking_stage_unavailable";
-          }
-
-          // **COMPUTE TRANSACTION HASH** - Required for validation
-          try {
-            // Use the same hash computation as the ledger manager
-            if (!transaction->message.empty()) {
-              // Call the same function that verify() uses for comparison
-              std::vector<uint8_t> hash(32, 0);
-              std::hash<std::string> hasher;
-              std::string message_str(transaction->message.begin(), transaction->message.end());
-              auto hash_value = hasher(message_str);
-
-              // Convert hash to 32-byte array using the same algorithm as compute_transaction_hash
-              for (int i = 0; i < 4; ++i) {
-                uint64_t word = hash_value ^ (hash_value >> (i * 8));
-                for (int j = 0; j < 8; ++j) {
-                  hash[i * 8 + j] = static_cast<uint8_t>((word >> (j * 8)) & 0xFF);
-                }
-              }
-              transaction->hash = hash;
-              std::cout << "RPC: [DEBUG] Computed transaction hash using ledger algorithm (32 bytes)" << std::endl;
-            } else {
-              transaction->hash.resize(32, 0);
-              std::cout << "RPC: [DEBUG] Empty message, using zero hash" << std::endl;
-            }
-          } catch (const std::exception &hash_error) {
-            std::cout << "RPC: [ERROR] Failed to compute transaction hash: " << hash_error.what() << std::endl;
-            return "error_hash_computation_failed";
           }
 
           // Submit transaction with additional safety checks
