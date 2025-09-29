@@ -30,7 +30,7 @@
    • Discovered 4 RPC endpoints from cluster
    • Testing 4 endpoints
    • Using 4 threads
-   • Progress: 4/4 (100.0%) 
+   • Progress: 2/4 (50.0%)    • Progress: 4/4 (100.0%) 
 ✅ Discovery completed. Found 2 healthy nodes
 🧪 Testing snapshot quality from 2 nodes...
 🔍 Testing node: https://devnet.rpcpool.com (snapshot_slot: 411054515)
@@ -50,7 +50,7 @@
       "rpc_url": "https://devnet.rpcpool.com",
       "download_url": "https://snapshots.rpcpool.com/devnet/snapshot-411054515.tar.zst",
       "download_speed_mbps": 0.0,
-      "latency_ms": 25.5,
+      "latency_ms": 21.7,
       "age_slots": 0,
       "quality_score": 0.5
     },
@@ -58,7 +58,7 @@
       "rpc_url": "https://api.devnet.solana.com",
       "download_url": "https://api.devnet.solana.com/download/snapshot-411054515.tar.zst",
       "download_speed_mbps": 0.0,
-      "latency_ms": 311.1,
+      "latency_ms": 312.5,
       "age_slots": 0,
       "quality_score": 0.4
     }

@@ -2829,6 +2829,34 @@ std::string SolanaRpcServer::process_transaction_submission(
             return "error_banking_stage_unavailable";
           }
 
+          // **COMPUTE TRANSACTION HASH** - Required for validation
+          try {
+            // Use the same hash computation as the ledger manager
+            if (!transaction->message.empty()) {
+              // Call the same function that verify() uses for comparison
+              std::vector<uint8_t> hash(32, 0);
+              std::hash<std::string> hasher;
+              std::string message_str(transaction->message.begin(), transaction->message.end());
+              auto hash_value = hasher(message_str);
+
+              // Convert hash to 32-byte array using the same algorithm as compute_transaction_hash
+              for (int i = 0; i < 4; ++i) {
+                uint64_t word = hash_value ^ (hash_value >> (i * 8));
+                for (int j = 0; j < 8; ++j) {
+                  hash[i * 8 + j] = static_cast<uint8_t>((word >> (j * 8)) & 0xFF);
+                }
+              }
+              transaction->hash = hash;
+              std::cout << "RPC: [DEBUG] Computed transaction hash using ledger algorithm (32 bytes)" << std::endl;
+            } else {
+              transaction->hash.resize(32, 0);
+              std::cout << "RPC: [DEBUG] Empty message, using zero hash" << std::endl;
+            }
+          } catch (const std::exception &hash_error) {
+            std::cout << "RPC: [ERROR] Failed to compute transaction hash: " << hash_error.what() << std::endl;
+            return "error_hash_computation_failed";
+          }
+
           // Submit transaction with additional safety checks
           banking_stage_->submit_transaction(transaction);
           std::cout << "RPC: [SUCCESS] Transaction submitted to banking stage "
