@@ -562,7 +562,7 @@ void ProofOfHistory::check_slot_completion() {
       if (it != slot_entries_.end()) {
         slot_entries = it->second;
       }
-      
+
       // Memory management: Remove old slots to prevent unbounded growth
       if (slot_entries_.size() > MAX_SLOT_HISTORY) {
         auto oldest_slot_it = slot_entries_.begin();
@@ -580,24 +580,27 @@ void ProofOfHistory::check_slot_completion() {
   }
 }
 
-void ProofOfHistory::update_stats_locked(std::chrono::microseconds tick_duration,
-                                        std::chrono::system_clock::time_point tick_end,
-                                        bool is_batch_processing,
-                                        size_t pending_mixes_count) {
+void ProofOfHistory::update_stats_locked(
+    std::chrono::microseconds tick_duration,
+    std::chrono::system_clock::time_point tick_end, bool is_batch_processing,
+    size_t pending_mixes_count) {
   // Use appropriate lock based on tracking configuration
   if (config_.enable_lock_contention_tracking) {
-    InstrumentedLockGuard lock(stats_mutex_, lock_attempts_, lock_contention_count_);
-    update_stats_impl(tick_duration, tick_end, is_batch_processing, pending_mixes_count);
+    InstrumentedLockGuard lock(stats_mutex_, lock_attempts_,
+                               lock_contention_count_);
+    update_stats_impl(tick_duration, tick_end, is_batch_processing,
+                      pending_mixes_count);
   } else {
     std::lock_guard<std::mutex> lock(stats_mutex_);
-    update_stats_impl(tick_duration, tick_end, is_batch_processing, pending_mixes_count);
+    update_stats_impl(tick_duration, tick_end, is_batch_processing,
+                      pending_mixes_count);
   }
 }
 
-void ProofOfHistory::update_stats_impl(std::chrono::microseconds tick_duration,
-                                      std::chrono::system_clock::time_point tick_end,
-                                      bool is_batch_processing,
-                                      size_t pending_mixes_count) {
+void ProofOfHistory::update_stats_impl(
+    std::chrono::microseconds tick_duration,
+    std::chrono::system_clock::time_point tick_end, bool is_batch_processing,
+    size_t pending_mixes_count) {
   stats_.total_ticks++;
   // **ACCURATE HASH COUNTING**: Count actual hashes processed, not just ticks
   if (is_batch_processing) {
@@ -625,9 +628,9 @@ void ProofOfHistory::update_stats_impl(std::chrono::microseconds tick_duration,
     stats_.avg_tick_duration = total_duration / stats_.total_ticks;
     stats_.ticks_per_second =
         (double)stats_.total_ticks / (total_duration.count() / 1000000.0);
-    stats_.effective_tps = is_batch_processing 
-        ? stats_.ticks_per_second * config_.batch_size
-        : stats_.ticks_per_second;
+    stats_.effective_tps = is_batch_processing
+                               ? stats_.ticks_per_second * config_.batch_size
+                               : stats_.ticks_per_second;
   }
 
   // Calculate batch efficiency for batch processing
@@ -639,13 +642,15 @@ void ProofOfHistory::update_stats_impl(std::chrono::microseconds tick_duration,
   // Calculate lock contention ratio only if tracking is enabled
   if (config_.enable_lock_contention_tracking) {
     uint64_t attempts = lock_attempts_.load(std::memory_order_relaxed);
-    uint64_t contentions = lock_contention_count_.load(std::memory_order_relaxed);
+    uint64_t contentions =
+        lock_contention_count_.load(std::memory_order_relaxed);
     if (attempts > 0) {
       stats_.lock_contention_ratio = (double)contentions / attempts;
     }
   } else {
-    // **SENTINEL VALUE**: -1.0 indicates "not tracked" state (consumers should check >= 0)
-    // This disambiguates from 0.0 which could mean "no contention detected"
+    // **SENTINEL VALUE**: -1.0 indicates "not tracked" state (consumers should
+    // check >= 0) This disambiguates from 0.0 which could mean "no contention
+    // detected"
     stats_.lock_contention_ratio = -1.0;
   }
 
@@ -655,7 +660,7 @@ void ProofOfHistory::update_stats_impl(std::chrono::microseconds tick_duration,
   } else {
     stats_.pending_data_mixes = 0; // Reset since mixed data is processed
   }
-  
+
   // Update last tick time under mutex protection to prevent race conditions
   last_tick_time_ = tick_end;
 }

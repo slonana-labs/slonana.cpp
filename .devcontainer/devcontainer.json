@@ -1,0 +1,62 @@
+{
+    "name": "Slonana C++ Development",
+    "image": "mcr.microsoft.com/devcontainers/cpp:1-ubuntu-22.04",
+    "features": {
+        "ghcr.io/devcontainers/features/common-utils:2": {
+            "installZsh": true,
+            "configureZshAsDefaultShell": true,
+            "installOhMyZsh": true,
+            "upgradePackages": true,
+            "username": "vscode",
+            "userUid": "automatic",
+            "userGid": "automatic"
+        },
+        "ghcr.io/devcontainers/features/git:1": {
+            "ppa": true,
+            "version": "latest"
+        },
+        "ghcr.io/devcontainers/features/github-cli:1": {
+            "installDirectlyFromGitHubRelease": true,
+            "version": "latest"
+        }
+    },
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "C_Cpp.default.cppStandard": "c++17",
+                "C_Cpp.default.cStandard": "c11",
+                "C_Cpp.default.intelliSenseMode": "linux-gcc-x64",
+                "cmake.configureOnOpen": true
+            },
+            "extensions": [
+                "ms-vscode.cpptools",
+                "ms-vscode.cpptools-extension-pack",
+                "ms-vscode.cmake-tools",
+                "ms-vscode.makefile-tools",
+                "GitHub.copilot",
+                "GitHub.copilot-chat"
+            ]
+        }
+    },
+    "postCreateCommand": [
+        "bash",
+        "-c",
+        "sudo apt-get update && sudo apt-get install -y build-essential cmake git curl pkg-config libssl-dev libudev-dev llvm-dev libclang-dev clang && curl --proto '=https' --tlsv1.2 -sSfL https://solana-install.solana.workers.dev | bash && echo 'export PATH=\"$HOME/.local/share/solana/install/active_release/bin:$PATH\"' >> ~/.bashrc && echo 'export PATH=\"$HOME/.local/share/solana/install/active_release/bin:$PATH\"' >> ~/.zshrc && source ~/.bashrc"
+    ],
+    "remoteUser": "vscode",
+    "forwardPorts": [8899, 8001, 9900],
+    "portsAttributes": {
+        "8899": {
+            "label": "Slonana RPC",
+            "onAutoForward": "notify"
+        },
+        "8001": {
+            "label": "Slonana Gossip",
+            "onAutoForward": "silent"
+        },
+        "9900": {
+            "label": "Slonana Faucet",
+            "onAutoForward": "silent"
+        }
+    }
+}
