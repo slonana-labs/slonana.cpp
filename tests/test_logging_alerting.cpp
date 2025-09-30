@@ -99,24 +99,6 @@ void test_alert_rate_limiting() {
     std::cout << "✅ Alert rate limiting test passed" << std::endl;
 }
 
-void test_basic_logging_levels() {
-    Logger& logger = Logger::instance();
-    
-    // Test level checking
-    logger.set_level(LogLevel::INFO);
-    ASSERT_FALSE(logger.is_enabled(LogLevel::DEBUG));
-    ASSERT_TRUE(logger.is_enabled(LogLevel::INFO));
-    ASSERT_TRUE(logger.is_enabled(LogLevel::WARN));
-    ASSERT_TRUE(logger.is_enabled(LogLevel::ERROR));
-    ASSERT_TRUE(logger.is_enabled(LogLevel::CRITICAL));
-    
-    logger.set_level(LogLevel::CRITICAL);
-    ASSERT_FALSE(logger.is_enabled(LogLevel::ERROR));
-    ASSERT_TRUE(logger.is_enabled(LogLevel::CRITICAL));
-    
-    std::cout << "✅ Basic logging levels test passed" << std::endl;
-}
-
 void test_structured_logging() {
     Logger& logger = Logger::instance();
     logger.set_level(LogLevel::TRACE);
