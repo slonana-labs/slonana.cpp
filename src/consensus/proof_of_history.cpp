@@ -130,6 +130,7 @@ ProofOfHistory::ProofOfHistory(const PohConfig &config) : config_(config) {
   stats_.pending_data_mixes = 0;
   stats_.batches_processed = 0;
   stats_.batch_efficiency = 0.0;
+  stats_.dropped_mixes = 0;
   stats_.simd_acceleration_active =
       config_.enable_simd_acceleration && SLONANA_HAS_SIMD;
   stats_.lock_contention_ratio = 0.0;
@@ -248,7 +249,8 @@ uint64_t ProofOfHistory::mix_data(const Hash &data) {
   }
 #endif
 
-  // Traditional mutex-based approach (fallback or when lock-free disabled)
+  // Mutex-based approach (fallback - not lock-free!)
+  // This uses traditional mutex locking, not a lock-free queue.
   // Apply backpressure to prevent OOM under flood conditions
   std::lock_guard<std::mutex> lock(mix_queue_mutex_);
 
@@ -256,10 +258,8 @@ uint64_t ProofOfHistory::mix_data(const Hash &data) {
   if (pending_mix_data_.size() >= config_.max_entries_buffer) {
     // Drop oldest entries when at capacity (FIFO dropping policy)
     pending_mix_data_.pop_front();
-    if (config_.enable_lock_contention_tracking) {
-      lock_contention_count_.fetch_add(
-          1, std::memory_order_relaxed); // Track dropped entries
-    }
+    // **METRICS**: Track dropped mixes for backpressure monitoring
+    dropped_mixes_.fetch_add(1, std::memory_order_relaxed);
   }
 
   pending_mix_data_.push_back(data);
@@ -298,7 +298,10 @@ void ProofOfHistory::set_slot_callback(SlotCallback callback) {
 
 ProofOfHistory::PohStats ProofOfHistory::get_stats() const {
   std::lock_guard<std::mutex> lock(stats_mutex_);
-  return stats_;
+  PohStats current_stats = stats_;
+  // **ATOMIC METRICS**: Include dropped mixes from atomic counter
+  current_stats.dropped_mixes = dropped_mixes_.load(std::memory_order_relaxed);
+  return current_stats;
 }
 
 void ProofOfHistory::hashing_thread_func() {
@@ -402,7 +405,7 @@ void ProofOfHistory::process_tick_batch() {
   } else
 #endif
   {
-    // Fallback to traditional queue
+    // Use mutex-protected queue (not lock-free)
     std::lock_guard<std::mutex> lock(mix_queue_mutex_);
     size_t batch_size = std::min(
         config_.batch_size, static_cast<uint32_t>(pending_mix_data_.size()));
@@ -459,52 +462,8 @@ void ProofOfHistory::process_tick_batch() {
       tick_end - tick_start);
 
   {
-    std::lock_guard<std::mutex> lock(stats_mutex_);
-    stats_.total_ticks++;
-    stats_.total_hashes++;
-    stats_.batches_processed++;
-    stats_.last_tick_duration = tick_duration;
-
-    // Update min/max durations
-    if (tick_duration < stats_.min_tick_duration) {
-      stats_.min_tick_duration = tick_duration;
-    }
-    if (tick_duration > stats_.max_tick_duration) {
-      stats_.max_tick_duration = tick_duration;
-    }
-
-    // Calculate performance metrics
-    auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(
-        tick_end - start_time_);
-    if (stats_.total_ticks > 0) {
-      stats_.avg_tick_duration = total_duration / stats_.total_ticks;
-      stats_.ticks_per_second =
-          (double)stats_.total_ticks / (total_duration.count() / 1000000.0);
-      stats_.effective_tps = stats_.ticks_per_second * config_.batch_size;
-    }
-
-    // Calculate batch efficiency
-    if (stats_.batches_processed > 0) {
-      stats_.batch_efficiency = (double)stats_.total_hashes /
-                                (stats_.batches_processed * config_.batch_size);
-    }
-
-    // Calculate lock contention ratio only if tracking is enabled
-    if (config_.enable_lock_contention_tracking) {
-      uint64_t attempts = lock_attempts_.load(std::memory_order_relaxed);
-      uint64_t contentions =
-          lock_contention_count_.load(std::memory_order_relaxed);
-      if (attempts > 0) {
-        stats_.lock_contention_ratio = (double)contentions / attempts;
-      }
-    } else {
-      stats_.lock_contention_ratio = 0.0; // Not tracked
-    }
-
-    stats_.pending_data_mixes = mixed_data_batch.size();
-    
-    // Update last tick time under mutex protection to prevent race conditions
-    last_tick_time_ = tick_end;
+    // Use common stats update method to eliminate code duplication
+    update_stats_locked(tick_duration, tick_end, true, mixed_data_batch.size());
   }
 }
 
@@ -575,33 +534,8 @@ void ProofOfHistory::process_tick() {
       tick_end - tick_start);
 
   {
-    std::lock_guard<std::mutex> lock(stats_mutex_);
-    stats_.total_ticks++;
-    stats_.total_hashes++;
-    stats_.last_tick_duration = tick_duration;
-
-    // Update min/max durations for legacy process_tick
-    if (tick_duration < stats_.min_tick_duration) {
-      stats_.min_tick_duration = tick_duration;
-    }
-    if (tick_duration > stats_.max_tick_duration) {
-      stats_.max_tick_duration = tick_duration;
-    }
-
-    // Calculate average tick duration
-    auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(
-        tick_end - start_time_);
-    if (stats_.total_ticks > 0) {
-      stats_.avg_tick_duration = total_duration / stats_.total_ticks;
-      stats_.ticks_per_second =
-          (double)stats_.total_ticks / (total_duration.count() / 1000000.0);
-      stats_.effective_tps = stats_.ticks_per_second; // Single tick processing
-    }
-
-    stats_.pending_data_mixes = 0; // Reset since we processed pending data
-    
-    // Update last tick time under mutex protection to prevent race conditions
-    last_tick_time_ = tick_end;
+    // Use common stats update method to eliminate code duplication
+    update_stats_locked(tick_duration, tick_end, false);
   }
 }
 
@@ -620,13 +554,19 @@ void ProofOfHistory::check_slot_completion() {
               << config_.ticks_per_slot << " ticks, advancing to slot "
               << new_slot << " (sequence: " << sequence << ")" << std::endl;
 
-    // Get slot entries
+    // Get slot entries and manage slot memory for long-running validators
     std::vector<PohEntry> slot_entries;
     {
       std::lock_guard<std::mutex> lock(history_mutex_);
       auto it = slot_entries_.find(completed_slot);
       if (it != slot_entries_.end()) {
         slot_entries = it->second;
+      }
+
+      // Memory management: Remove old slots to prevent unbounded growth
+      if (slot_entries_.size() > MAX_SLOT_HISTORY) {
+        auto oldest_slot_it = slot_entries_.begin();
+        slot_entries_.erase(oldest_slot_it);
       }
     }
 
@@ -638,6 +578,91 @@ void ProofOfHistory::check_slot_completion() {
       }
     }
   }
+}
+
+void ProofOfHistory::update_stats_locked(
+    std::chrono::microseconds tick_duration,
+    std::chrono::system_clock::time_point tick_end, bool is_batch_processing,
+    size_t pending_mixes_count) {
+  // Use appropriate lock based on tracking configuration
+  if (config_.enable_lock_contention_tracking) {
+    InstrumentedLockGuard lock(stats_mutex_, lock_attempts_,
+                               lock_contention_count_);
+    update_stats_impl(tick_duration, tick_end, is_batch_processing,
+                      pending_mixes_count);
+  } else {
+    std::lock_guard<std::mutex> lock(stats_mutex_);
+    update_stats_impl(tick_duration, tick_end, is_batch_processing,
+                      pending_mixes_count);
+  }
+}
+
+void ProofOfHistory::update_stats_impl(
+    std::chrono::microseconds tick_duration,
+    std::chrono::system_clock::time_point tick_end, bool is_batch_processing,
+    size_t pending_mixes_count) {
+  stats_.total_ticks++;
+  // **ACCURATE HASH COUNTING**: Count actual hashes processed, not just ticks
+  if (is_batch_processing) {
+    stats_.batches_processed++;
+    // Count the actual number of hashes processed in this batch
+    stats_.total_hashes += pending_mixes_count > 0 ? pending_mixes_count : 1;
+  } else {
+    // Single tick processing - count all pending mixes plus the tick itself
+    stats_.total_hashes += pending_mixes_count + 1;
+  }
+  stats_.last_tick_duration = tick_duration;
+
+  // Update min/max durations
+  if (tick_duration < stats_.min_tick_duration) {
+    stats_.min_tick_duration = tick_duration;
+  }
+  if (tick_duration > stats_.max_tick_duration) {
+    stats_.max_tick_duration = tick_duration;
+  }
+
+  // Calculate performance metrics
+  auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(
+      tick_end - start_time_);
+  if (stats_.total_ticks > 0) {
+    stats_.avg_tick_duration = total_duration / stats_.total_ticks;
+    stats_.ticks_per_second =
+        (double)stats_.total_ticks / (total_duration.count() / 1000000.0);
+    stats_.effective_tps = is_batch_processing
+                               ? stats_.ticks_per_second * config_.batch_size
+                               : stats_.ticks_per_second;
+  }
+
+  // Calculate batch efficiency for batch processing
+  if (is_batch_processing && stats_.batches_processed > 0) {
+    stats_.batch_efficiency = (double)stats_.total_hashes /
+                              (stats_.batches_processed * config_.batch_size);
+  }
+
+  // Calculate lock contention ratio only if tracking is enabled
+  if (config_.enable_lock_contention_tracking) {
+    uint64_t attempts = lock_attempts_.load(std::memory_order_relaxed);
+    uint64_t contentions =
+        lock_contention_count_.load(std::memory_order_relaxed);
+    if (attempts > 0) {
+      stats_.lock_contention_ratio = (double)contentions / attempts;
+    }
+  } else {
+    // **SENTINEL VALUE**: -1.0 indicates "not tracked" state (consumers should
+    // check >= 0) This disambiguates from 0.0 which could mean "no contention
+    // detected"
+    stats_.lock_contention_ratio = -1.0;
+  }
+
+  // Handle pending data mixes consistently
+  if (is_batch_processing) {
+    stats_.pending_data_mixes = pending_mixes_count;
+  } else {
+    stats_.pending_data_mixes = 0; // Reset since mixed data is processed
+  }
+
+  // Update last tick time under mutex protection to prevent race conditions
+  last_tick_time_ = tick_end;
 }
 
 // PohVerifier implementation

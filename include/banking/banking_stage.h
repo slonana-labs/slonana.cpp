@@ -185,6 +185,8 @@ public:
   using TransactionPtr = std::shared_ptr<ledger::Transaction>;
   using CompletionCallback =
       std::function<void(std::shared_ptr<TransactionBatch>)>;
+  using BlockNotificationCallback =
+      std::function<void(const ledger::Block&)>;
 
   BankingStage();
   ~BankingStage();
@@ -201,6 +203,15 @@ public:
   void submit_transactions(std::vector<TransactionPtr> transactions);
   std::future<bool> process_transaction_async(TransactionPtr transaction);
 
+  // **HIGH-PERFORMANCE BATCH PROCESSING** - New methods for 1k+ TPS
+  void submit_transaction_batch(std::vector<TransactionPtr> transactions);
+  void enable_ultra_high_throughput_mode(bool enabled) { 
+    ultra_high_throughput_mode_ = enabled; 
+  }
+  void set_batch_processing_size(size_t size) { 
+    batch_processing_size_ = std::min(size, size_t(1000)); // Cap at 1000 per batch
+  }
+
   // Batch processing
   void submit_batch(std::shared_ptr<TransactionBatch> batch);
   void set_batch_size(size_t batch_size) { batch_size_ = batch_size; }
@@ -211,6 +222,9 @@ public:
   // Callback registration
   void set_completion_callback(CompletionCallback callback) {
     completion_callback_ = callback;
+  }
+  void set_block_notification_callback(BlockNotificationCallback callback) {
+    block_notification_callback_ = callback;
   }
 
   // Pipeline configuration
@@ -280,6 +294,10 @@ private:
   bool adaptive_batching_enabled_;
   bool resource_monitoring_enabled_;
   bool priority_processing_enabled_;
+  
+  // **HIGH-PERFORMANCE CONFIGURATION**
+  bool ultra_high_throughput_mode_ = false;
+  size_t batch_processing_size_ = 100;
 
   // Ledger integration
   std::shared_ptr<ledger::LedgerManager> ledger_manager_;
@@ -297,6 +315,7 @@ private:
 
   // Callbacks
   CompletionCallback completion_callback_;
+  BlockNotificationCallback block_notification_callback_;
 
   // Resource monitoring
   std::unique_ptr<ResourceMonitor> resource_monitor_;

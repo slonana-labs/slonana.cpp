@@ -435,7 +435,8 @@ public:
 
 SolanaRpcServer::SolanaRpcServer(const ValidatorConfig &config)
     : impl_(std::make_unique<Impl>(config)), config_(config),
-      external_service_breaker_(CircuitBreakerConfig{5, std::chrono::milliseconds(10000), 2}),
+      external_service_breaker_(
+          CircuitBreakerConfig{5, std::chrono::milliseconds(10000), 2}),
       rpc_retry_policy_(FaultTolerance::create_rpc_retry_policy()) {
 
   // Initialize WebSocket server
@@ -453,8 +454,9 @@ SolanaRpcServer::SolanaRpcServer(const ValidatorConfig &config)
   register_token_methods();
   register_websocket_methods();
   register_network_management_methods();
-  
-  std::cout << "RPC Server initialized with fault tolerance mechanisms" << std::endl;
+
+  std::cout << "RPC Server initialized with fault tolerance mechanisms"
+            << std::endl;
 }
 
 SolanaRpcServer::~SolanaRpcServer() { stop(); }
@@ -980,38 +982,54 @@ RpcResponse SolanaRpcServer::get_account_info(const RpcRequest &request) {
           return response;
         }
 
-        // Convert base58-like address to PublicKey efficiently
-        std::vector<uint8_t> pubkey_bytes(32);
+        // Convert address string to PublicKey using proper base58 decoding
+        // This ensures consistency with requestAirdrop method
+        PublicKey pubkey = decode_base58(address);
 
-        // Simple base58 decode simulation - in production this would use proper
-        // base58 decoding
-        std::fill(pubkey_bytes.begin(), pubkey_bytes.end(), 0);
-        for (size_t i = 0; i < std::min(address.length(), size_t(32)); ++i) {
-          pubkey_bytes[i] = static_cast<uint8_t>(address[i]);
+        // Ensure we have a 32-byte public key (standard Solana pubkey size)
+        if (pubkey.size() != 32) {
+          pubkey.resize(32);
+          // If decoding failed, use hash-based fallback for compatibility
+          if (pubkey.size() < 32) {
+            std::hash<std::string> hasher;
+            auto hash_val = hasher(address);
+            for (size_t i = 0; i < 32; ++i) {
+              uint8_t byte_val =
+                  static_cast<uint8_t>((hash_val >> ((i * 8) % 64)) & 0xFF);
+              if (i < address.length()) {
+                byte_val ^= static_cast<uint8_t>(address[i]);
+              }
+              pubkey[i] = byte_val;
+            }
+          }
         }
 
-        PublicKey pubkey(pubkey_bytes.begin(), pubkey_bytes.end());
-
         // Fast account lookup with fault tolerance
-        auto get_account_with_retry = [this, &pubkey]() -> Result<std::optional<svm::ProgramAccount>> {
+        auto get_account_with_retry =
+            [this, &pubkey]() -> Result<std::optional<svm::ProgramAccount>> {
           if (!account_manager_) {
-            return Result<std::optional<svm::ProgramAccount>>("Account manager not available");
+            return Result<std::optional<svm::ProgramAccount>>(
+                "Account manager not available");
           }
-          
+
           try {
             auto account_info = account_manager_->get_account(pubkey);
             return Result<std::optional<svm::ProgramAccount>>(account_info);
-          } catch (const std::exception& e) {
-            return Result<std::optional<svm::ProgramAccount>>("Account lookup failed: " + std::string(e.what()));
+          } catch (const std::exception &e) {
+            return Result<std::optional<svm::ProgramAccount>>(
+                "Account lookup failed: " + std::string(e.what()));
           }
         };
-        
-        auto account_result = execute_with_fault_tolerance(get_account_with_retry, "get_account");
+
+        auto account_result =
+            execute_with_fault_tolerance(get_account_with_retry, "get_account");
         if (account_result.is_err()) {
-          return create_error_response(request.id, -32603, "Account lookup error: " + account_result.error(),
-                                     request.id_is_number);
+          return create_error_response(request.id, -32603,
+                                       "Account lookup error: " +
+                                           account_result.error(),
+                                       request.id_is_number);
         }
-        
+
         auto account_info = account_result.value();
 
         std::string result_str;
@@ -2731,8 +2749,8 @@ std::string SolanaRpcServer::process_transaction_submission(
 
     // **ENHANCED BANKING STAGE INTEGRATION WITH CRASH PROTECTION**
     if (banking_stage_) {
-      std::cout << "RPC: [DEBUG] Submitting transaction to banking stage..."
-                << std::endl;
+      std::cout << "RPC: [DEBUG] Banking stage is available, submitting transaction..." << std::endl;
+      std::cerr << "RPC: [DEBUG] Banking stage is available, submitting transaction..." << std::endl;
 
       try {
         // **ENHANCED TRANSACTION OBJECT CREATION WITH SAFETY CHECKS**
@@ -3247,7 +3265,26 @@ RpcResponse SolanaRpcServer::get_account_owner(const RpcRequest &request) {
     }
 
     if (account_manager_) {
-      PublicKey pubkey(address.begin(), address.end());
+      // Convert address string to PublicKey using proper base58 decoding
+      PublicKey pubkey = decode_base58(address);
+      
+      // Ensure we have a 32-byte public key (standard Solana pubkey size)
+      if (pubkey.size() != 32) {
+        pubkey.resize(32);
+        if (pubkey.size() < 32) {
+          std::hash<std::string> hasher;
+          auto hash_val = hasher(address);
+          for (size_t i = 0; i < 32; ++i) {
+            uint8_t byte_val =
+                static_cast<uint8_t>((hash_val >> ((i * 8) % 64)) & 0xFF);
+            if (i < address.length()) {
+              byte_val ^= static_cast<uint8_t>(address[i]);
+            }
+            pubkey[i] = byte_val;
+          }
+        }
+      }
+      
       auto account_info = account_manager_->get_account(pubkey);
 
       if (account_info.has_value()) {
@@ -3859,6 +3896,12 @@ RpcResponse SolanaRpcServer::request_airdrop(const RpcRequest &request) {
   response.id_is_number = request.id_is_number;
 
   try {
+    // **ENHANCED FAUCET DEBUGGING** - Show configuration status
+    std::cout << "RPC: [DEBUG] Airdrop request received" << std::endl;
+    std::cout << "RPC: [DEBUG] Faucet enabled: " << (config_.enable_faucet ? "YES" : "NO") << std::endl;
+    std::cout << "RPC: [DEBUG] Faucet port: " << config_.faucet_port << std::endl;
+    std::cout << "RPC: [DEBUG] Faucet address: " << config_.rpc_faucet_address << std::endl;
+    
     // Check if faucet functionality is enabled
     if (!config_.enable_faucet) {
       std::cout

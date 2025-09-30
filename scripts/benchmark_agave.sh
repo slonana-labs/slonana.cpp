@@ -52,8 +52,8 @@ log_verbose() {
 
 # CI optimization (after functions are defined)
 if [[ "${CI:-}" == "true" || "${SLONANA_CI_MODE:-}" == "1" ]]; then
-    TEST_DURATION=30  # Reduced for CI
-    log_info "🔧 CI environment detected - reducing test duration to ${TEST_DURATION}s to prevent timeouts"
+    TEST_DURATION=60  # Optimal duration for CI benchmarking  
+    log_info "🔧 CI environment detected - using test duration of ${TEST_DURATION}s for optimal CI performance"
 fi
 
 show_help() {

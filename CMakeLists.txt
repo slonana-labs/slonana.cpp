@@ -42,6 +42,7 @@ file(GLOB_RECURSE CORE_SOURCES
     "${SRC_DIR}/banking/*.cpp"
     "${SRC_DIR}/storage/*.cpp"
     "${SRC_DIR}/slonana_validator.cpp"
+    "${SRC_DIR}/enhanced_validator_identity.cpp"
 )
 
 # Create core library
@@ -191,7 +192,7 @@ target_link_libraries(slonana_shutdown_race_test slonana_core)
 
 # Find OpenSSL for PoH cryptographic operations
 find_package(OpenSSL REQUIRED)
-target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto)
+target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto sodium)
 target_link_libraries(slonana_proof_of_history_tests OpenSSL::SSL OpenSSL::Crypto)
 
 # Add individual test targets
@@ -373,6 +374,16 @@ target_include_directories(slonana_hardware_wallet_tests PRIVATE "${CMAKE_SOURCE
 target_compile_definitions(slonana_hardware_wallet_tests PRIVATE STANDALONE_HARDWARE_WALLET_TESTS)
 add_test(NAME hardware_wallet_tests COMMAND slonana_hardware_wallet_tests)
 
+# Key management test suite
+add_executable(slonana_key_management_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_key_management.cpp"
+)
+target_link_libraries(slonana_key_management_tests slonana_core OpenSSL::SSL OpenSSL::Crypto)
+target_include_directories(slonana_key_management_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_key_management_tests PRIVATE STANDALONE_KEY_MANAGEMENT_TESTS)
+add_test(NAME key_management_tests COMMAND slonana_key_management_tests)
+
 # Fault tolerance test suite
 add_executable(slonana_fault_tolerance_tests
     "${CMAKE_SOURCE_DIR}/tests/test_fault_tolerance.cpp"
@@ -409,13 +420,38 @@ target_include_directories(slonana_logging_alerting_tests PRIVATE "${CMAKE_SOURC
 target_compile_definitions(slonana_logging_alerting_tests PRIVATE STANDALONE_LOGGING_ALERTING_TESTS)
 add_test(NAME logging_alerting_tests COMMAND slonana_logging_alerting_tests)
 
+# Secure messaging tests
+add_executable(slonana_secure_messaging_tests 
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_secure_messaging.cpp"
+)
+target_link_libraries(slonana_secure_messaging_tests slonana_core OpenSSL::SSL OpenSSL::Crypto)
+target_include_directories(slonana_secure_messaging_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_secure_messaging_tests PRIVATE STANDALONE_SECURE_MESSAGING_TESTS)
+add_test(NAME secure_messaging_tests COMMAND slonana_secure_messaging_tests)
+
+# Secure networking integration tests
+add_executable(slonana_secure_networking_integration_tests 
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_secure_networking_integration.cpp"
+)
+target_link_libraries(slonana_secure_networking_integration_tests slonana_core OpenSSL::SSL OpenSSL::Crypto)
+target_include_directories(slonana_secure_networking_integration_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_secure_networking_integration_tests PRIVATE STANDALONE_SECURE_NETWORKING_TESTS)
+add_test(NAME secure_networking_integration_tests COMMAND slonana_secure_networking_integration_tests)
+
 
 
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")
 target_link_libraries(slonana-genesis slonana_core OpenSSL::SSL OpenSSL::Crypto)
 
+# Key management CLI tool
+add_executable(slonana-keygen "${SRC_DIR}/tools/slonana_keygen.cpp")
+target_link_libraries(slonana-keygen slonana_core OpenSSL::SSL OpenSSL::Crypto)
+
 # Install targets
 install(TARGETS slonana_validator DESTINATION bin)
 install(TARGETS slonana_benchmarks DESTINATION bin)
 install(TARGETS slonana-genesis DESTINATION bin)
+install(TARGETS slonana-keygen DESTINATION bin)

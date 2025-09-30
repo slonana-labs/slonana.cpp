@@ -88,12 +88,54 @@ jobs:
         echo "Test execution completed"
 
     - name: Run performance benchmarks
-      timeout-minutes: 10
+      timeout-minutes: 15
       run: |
         cd build
-        timeout 480s ./slonana_benchmarks > benchmark_results.txt || echo "Benchmarks completed with warnings"
-        echo "Benchmark results:"
-        tail -20 benchmark_results.txt
+        echo "🔍 Running integrated performance benchmarks..."
+        
+        # Run built-in C++ benchmarks
+        if [ -f "./slonana_benchmarks" ]; then
+          timeout 600s ./slonana_benchmarks > benchmark_results.txt || echo "C++ benchmarks completed with warnings"
+          echo "📊 C++ Benchmark results:"
+          tail -20 benchmark_results.txt
+        fi
+        
+        # Run comprehensive validator benchmarks if validator binary exists
+        if [ -f "./slonana_validator" ]; then
+          echo "🚀 Running comprehensive validator benchmarks..."
+          
+          # Set up benchmark environment
+          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH" 2>/dev/null || true
+          export SLONANA_CI_MODE=1
+          export CI=true
+          
+          mkdir -p ../benchmark_results_ci ../test_ledger_ci
+          
+          # Install Solana CLI for comprehensive benchmarks (if not already installed)
+          if ! command -v solana &> /dev/null; then
+            echo "📦 Installing Solana CLI for comprehensive benchmarks..."
+            sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)" || echo "Solana CLI install failed, using basic benchmarks only"
+            export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          fi
+          
+          # Run comprehensive validator benchmark with timeout protection
+          if command -v solana &> /dev/null; then
+            timeout 500s ../scripts/benchmark_slonana.sh \
+              --ledger ../test_ledger_ci \
+              --results ../benchmark_results_ci \
+              --validator-bin ./slonana_validator \
+              --test-duration 45 \
+              --verbose || echo "Comprehensive benchmark completed with warnings"
+              
+            echo "📊 Comprehensive benchmark results:"
+            if [ -f "../benchmark_results_ci/benchmark_results.json" ]; then
+              cat ../benchmark_results_ci/benchmark_results.json | jq -r '.effective_tps, .rpc_latency_ms, .memory_usage_mb' | \
+                xargs -I {} echo "TPS/Latency/Memory: {}"
+            fi
+          else
+            echo "⚠️  Solana CLI not available, using C++ benchmarks only"
+          fi
+        fi
 
     - name: Upload benchmark results
       uses: actions/upload-artifact@v4
@@ -102,6 +144,8 @@ jobs:
         path: |
           build/benchmark_results.txt
           build/benchmark_results.json
+          benchmark_results_ci/
+        if-no-files-found: ignore
 
     - name: Code quality checks
       run: |
