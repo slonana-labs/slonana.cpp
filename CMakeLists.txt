@@ -49,6 +49,16 @@ file(GLOB_RECURSE CORE_SOURCES
 add_library(slonana_core STATIC ${CORE_SOURCES})
 target_include_directories(slonana_core PUBLIC ${INCLUDE_DIR})
 
+# Check for nlohmann_json early and add system includes if needed
+find_package(nlohmann_json QUIET)
+if(NOT nlohmann_json_FOUND)
+    # Check if system headers are available
+    if(EXISTS "/usr/include/nlohmann/json.hpp")
+        message(STATUS "Using system nlohmann_json headers from /usr/include")
+        target_include_directories(slonana_core SYSTEM PUBLIC /usr/include)
+    endif()
+endif()
+
 # Sanitizer configuration
 if(ENABLE_TSAN)
     target_compile_options(slonana_core PUBLIC -fsanitize=thread -fno-omit-frame-pointer -g)
@@ -193,6 +203,13 @@ target_link_libraries(slonana_shutdown_race_test slonana_core)
 # Find OpenSSL for PoH cryptographic operations
 find_package(OpenSSL REQUIRED)
 target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto sodium)
+
+# Link nlohmann_json if found as package
+find_package(nlohmann_json 3.2.0 QUIET)
+if(nlohmann_json_FOUND)
+    target_link_libraries(slonana_core nlohmann_json::nlohmann_json)
+endif()
+
 target_link_libraries(slonana_proof_of_history_tests OpenSSL::SSL OpenSSL::Crypto)
 
 # Add individual test targets

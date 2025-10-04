@@ -9,12 +9,11 @@
 using namespace slonana::security;
 using namespace slonana;
 
-class KeyManagementTest : public TestFramework {
+class KeyManagementTest {
 protected:
     std::string test_storage_path_;
     
-    void SetUp() override {
-        TestFramework::SetUp();
+    void SetUp() {
         test_storage_path_ = "/tmp/slonana_key_test_" + std::to_string(std::time(nullptr));
         
         // Clean up any existing test directory
@@ -25,13 +24,11 @@ protected:
         std::filesystem::create_directories(test_storage_path_);
     }
     
-    void TearDown() override {
+    void TearDown() {
         // Clean up test directory
         if (std::filesystem::exists(test_storage_path_)) {
             std::filesystem::remove_all(test_storage_path_);
         }
-        
-        TestFramework::TearDown();
     }
 };
 
@@ -88,7 +85,9 @@ void test_key_utilities() {
         auto random_result = key_utils::generate_secure_random(32);
         ASSERT_TRUE(random_result.is_ok());
         
-        auto random_data = random_result.value();
+        // Use move semantics - SecureBuffer has deleted copy constructor
+        // Move the Result to get rvalue overload of value()
+        auto random_data = std::move(random_result).value();
         ASSERT_EQ(random_data.size(), 32);
         
         // Check that it's not all zeros
@@ -115,7 +114,9 @@ void test_key_utilities() {
         auto key_result = key_utils::derive_key_from_passphrase(passphrase, salt);
         ASSERT_TRUE(key_result.is_ok());
         
-        auto derived_key = key_result.value();
+        // Use move semantics - SecureBuffer has deleted copy constructor
+        // Move the Result to get rvalue overload of value()
+        auto derived_key = std::move(key_result).value();
         ASSERT_EQ(derived_key.size(), 32);
         
         // Same inputs should produce same output

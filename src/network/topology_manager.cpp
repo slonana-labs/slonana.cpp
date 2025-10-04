@@ -523,7 +523,11 @@ std::string NetworkTopologyManager::select_node_for_service(
     }
 
     if (total_weight > 0) {
-      uint32_t random_value = rand() % total_weight;
+      // Use thread-local RNG for thread safety
+      thread_local std::random_device rd;
+      thread_local std::mt19937 gen(rd());
+      std::uniform_int_distribution<uint32_t> dis(0, total_weight - 1);
+      uint32_t random_value = dis(gen);
       uint32_t current_weight = 0;
       for (const auto &wc : weighted_candidates) {
         current_weight += wc.second;
@@ -741,8 +745,11 @@ bool NetworkTopologyManager::measure_latency(const std::string &source_node,
     return false;
   }
 
-  // Simulate latency measurement
-  uint32_t latency_ms = 10 + (rand() % 100); // 10-110ms
+  // Simulate latency measurement with thread-local RNG
+  thread_local std::random_device rd;
+  thread_local std::mt19937 gen(rd());
+  std::uniform_int_distribution<uint32_t> dis(10, 110);
+  uint32_t latency_ms = dis(gen); // 10-110ms
 
   std::pair<std::string, std::string> key = {source_node, target_node};
   latency_cache_[key] = latency_ms;
@@ -909,7 +916,8 @@ void NetworkTopologyManager::health_checker_loop() {
       perform_health_check(node.node_id);
     }
 
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+    // Reduced sleep time for better responsiveness
+    std::this_thread::sleep_for(std::chrono::seconds(2));
   }
 }
 
@@ -917,7 +925,8 @@ void NetworkTopologyManager::metrics_collector_loop() {
   while (running_.load()) {
     update_network_metrics();
 
-    std::this_thread::sleep_for(std::chrono::seconds(10));
+    // Reduced sleep time for more frequent metric updates
+    std::this_thread::sleep_for(std::chrono::seconds(5));
   }
 }
 
@@ -926,7 +935,8 @@ void NetworkTopologyManager::partition_manager_loop() {
     check_partition_health();
     detect_network_partition();
 
-    std::this_thread::sleep_for(std::chrono::seconds(15));
+    // Reduced sleep time for faster partition management
+    std::this_thread::sleep_for(std::chrono::seconds(10));
   }
 }
 

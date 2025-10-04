@@ -5,6 +5,7 @@
 #include <fstream>
 #include <random>
 #include <sstream>
+#include <iostream>
 #include <iomanip>
 #include <filesystem>
 #include <cmath>

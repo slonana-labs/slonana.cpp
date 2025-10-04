@@ -8,11 +8,25 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <condition_variable>
 #include <queue>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include <shared_mutex>
+
+// Lock-free data structures (boost::lockfree)
+#ifdef __has_include
+#if __has_include(<boost/lockfree/queue.hpp>)
+#include <boost/lockfree/queue.hpp>
+#define HAS_LOCKFREE_QUEUE 1
+#endif
+#endif
+
+#ifndef HAS_LOCKFREE_QUEUE
+#define HAS_LOCKFREE_QUEUE 0
+#endif
 
 namespace slonana {
 namespace network {
@@ -194,17 +208,31 @@ private:
   std::unordered_map<std::string, std::chrono::system_clock::time_point>
       circuit_breaker_timestamps_;
 
-  // Round robin counters
-  mutable std::mutex round_robin_mutex_;
-  std::unordered_map<std::string, uint32_t> round_robin_counters_;
+  // Round robin counters - using atomic with shared_mutex for concurrent reads
+  mutable std::shared_mutex round_robin_mutex_;
+  std::unordered_map<std::string, std::atomic<uint32_t>> round_robin_counters_;
 
-  // Statistics
+  // Statistics - using atomics to reduce lock contention
   mutable std::mutex stats_mutex_;
   LoadBalancerStats current_stats_;
+  std::atomic<uint64_t> atomic_total_requests_{0};
+  std::atomic<uint64_t> atomic_failed_requests_{0};
 
-  // Request queue for async processing
+  // Request queue for async processing - lock-free when available
+  // OWNERSHIP MODEL (lock-free queue):
+  // - Producer: Allocates ConnectionRequest* on heap, pushes to queue, increments queue_allocated_count_
+  // - Consumer: Pops from queue, wraps in unique_ptr (RAII), decrements queue_allocated_count_
+  // - Shutdown: stop() drains remaining items and verifies no leaks via queue_allocated_count_
+  // - Memory Order: relaxed for counter (protected by happens-before relationship of queue operations)
+  // - Leak Safety: If push fails, producer must delete and not increment counter
+#if HAS_LOCKFREE_QUEUE
+  std::unique_ptr<boost::lockfree::queue<ConnectionRequest*>> lock_free_request_queue_;
+  std::atomic<size_t> queue_allocated_count_{0};  // Track allocations for leak detection
+#endif
+  // Fallback mutex-protected queue with condition variable
   mutable std::mutex request_queue_mutex_;
   std::queue<ConnectionRequest> request_queue_;
+  std::condition_variable request_queue_cv_;  // Event-driven wakeup
 
   // Background threads
   std::thread health_monitor_thread_;
