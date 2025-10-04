@@ -8,11 +8,13 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <condition_variable>
 #include <queue>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include <shared_mutex>
 
 // Lock-free data structures (boost::lockfree)
 #ifdef __has_include
@@ -206,8 +208,8 @@ private:
   std::unordered_map<std::string, std::chrono::system_clock::time_point>
       circuit_breaker_timestamps_;
 
-  // Round robin counters - using atomic for lock-free access
-  mutable std::mutex round_robin_mutex_;
+  // Round robin counters - using atomic with shared_mutex for concurrent reads
+  mutable std::shared_mutex round_robin_mutex_;
   std::unordered_map<std::string, std::atomic<uint32_t>> round_robin_counters_;
 
   // Statistics - using atomics to reduce lock contention
@@ -217,12 +219,16 @@ private:
   std::atomic<uint64_t> atomic_failed_requests_{0};
 
   // Request queue for async processing - lock-free when available
+  // Note: Using raw pointers with careful ownership management for lock-free queue
+  // The queue producer allocates, consumer deallocates
 #if HAS_LOCKFREE_QUEUE
   std::unique_ptr<boost::lockfree::queue<ConnectionRequest*>> lock_free_request_queue_;
+  std::atomic<size_t> queue_allocated_count_{0};  // Track allocations for safety
 #endif
-  // Fallback mutex-protected queue
+  // Fallback mutex-protected queue with condition variable
   mutable std::mutex request_queue_mutex_;
   std::queue<ConnectionRequest> request_queue_;
+  std::condition_variable request_queue_cv_;  // Event-driven wakeup
 
   // Background threads
   std::thread health_monitor_thread_;

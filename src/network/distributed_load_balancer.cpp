@@ -23,9 +23,9 @@ DistributedLoadBalancer::DistributedLoadBalancer(const std::string &balancer_id,
   // Initialize lock-free request queue if available
 #if HAS_LOCKFREE_QUEUE
   lock_free_request_queue_ = std::make_unique<boost::lockfree::queue<ConnectionRequest*>>(1024);
-  std::cout << "Lock-free request queue enabled for load balancer" << std::endl;
+  std::cout << "Lock-free request queue enabled with ownership tracking" << std::endl;
 #else
-  std::cout << "Using mutex-protected request queue (fallback)" << std::endl;
+  std::cout << "Using mutex-protected request queue with condition variable" << std::endl;
 #endif
 
   // Create default load balancing rule
@@ -732,26 +732,42 @@ void DistributedLoadBalancer::request_processor_loop() {
     std::vector<ConnectionRequest> requests_to_process;
 
 #if HAS_LOCKFREE_QUEUE
-    // Lock-free path - no mutex needed!
+    // Lock-free path with RAII-style ownership management
     ConnectionRequest* req_ptr = nullptr;
     for (int i = 0; i < 10; ++i) {
       if (lock_free_request_queue_->pop(req_ptr)) {
-        requests_to_process.push_back(*req_ptr);
-        delete req_ptr; // Clean up heap-allocated request
+        // Use unique_ptr for automatic cleanup (RAII)
+        std::unique_ptr<ConnectionRequest> req_guard(req_ptr);
+        requests_to_process.push_back(*req_guard);
+        queue_allocated_count_.fetch_sub(1, std::memory_order_relaxed);
+        // unique_ptr automatically deletes when going out of scope
       } else {
         break; // Queue is empty
       }
     }
+    
+    // If no requests, sleep briefly (still using minimal sleep for lock-free)
+    if (requests_to_process.empty()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
 #else
-    // Fallback mutex-protected path
+    // Fallback mutex-protected path with event-driven wakeup
     {
-      std::lock_guard<std::mutex> lock(request_queue_mutex_);
-      if (!request_queue_.empty()) {
-        // Process up to 10 requests at a time
-        for (int i = 0; i < 10 && !request_queue_.empty(); ++i) {
-          requests_to_process.push_back(request_queue_.front());
-          request_queue_.pop();
-        }
+      std::unique_lock<std::mutex> lock(request_queue_mutex_);
+      
+      // Wait for requests with condition variable (event-driven)
+      request_queue_cv_.wait_for(lock, std::chrono::milliseconds(10), [this] {
+        return !request_queue_.empty() || !running_.load();
+      });
+      
+      if (!running_.load()) {
+        break;
+      }
+      
+      // Process up to 10 requests at a time
+      for (int i = 0; i < 10 && !request_queue_.empty(); ++i) {
+        requests_to_process.push_back(request_queue_.front());
+        request_queue_.pop();
       }
     }
 #endif
@@ -761,9 +777,6 @@ void DistributedLoadBalancer::request_processor_loop() {
       auto response = route_request(request);
       // Response would be sent back to client in real implementation
     }
-
-    // Reduced sleep time for better responsiveness with lock-free queue
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 }
 
@@ -772,21 +785,30 @@ std::string DistributedLoadBalancer::select_server_round_robin(
   if (servers.empty())
     return "";
 
-  // Lock-free atomic increment for round-robin
-  std::lock_guard<std::mutex> lock(round_robin_mutex_);
-  
-  // Ensure counter exists for this service
-  auto it = round_robin_counters_.find(service_name);
-  if (it == round_robin_counters_.end()) {
-    round_robin_counters_.emplace(service_name, 0);
-    it = round_robin_counters_.find(service_name);
+  // Try shared lock first for read-only access (concurrent reads allowed)
+  {
+    std::shared_lock<std::shared_mutex> lock(round_robin_mutex_);
+    auto it = round_robin_counters_.find(service_name);
+    if (it != round_robin_counters_.end()) {
+      // Counter exists, use atomic fetch_add (lock-free)
+      uint32_t counter = it->second.fetch_add(1, std::memory_order_relaxed);
+      return servers[counter % servers.size()];
+    }
   }
   
-  // Use atomic fetch_add for lock-free increment
-  uint32_t counter = it->second.fetch_add(1, std::memory_order_relaxed);
-  std::string selected = servers[counter % servers.size()];
-
-  return selected;
+  // Counter doesn't exist, need exclusive lock to insert
+  {
+    std::unique_lock<std::shared_mutex> lock(round_robin_mutex_);
+    // Double-check after acquiring exclusive lock
+    auto it = round_robin_counters_.find(service_name);
+    if (it == round_robin_counters_.end()) {
+      round_robin_counters_.emplace(service_name, 0);
+      it = round_robin_counters_.find(service_name);
+    }
+    // Use atomic fetch_add for the increment
+    uint32_t counter = it->second.fetch_add(1, std::memory_order_relaxed);
+    return servers[counter % servers.size()];
+  }
 }
 
 std::string DistributedLoadBalancer::select_server_least_connections(
