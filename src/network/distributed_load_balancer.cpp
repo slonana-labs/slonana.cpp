@@ -86,6 +86,22 @@ void DistributedLoadBalancer::stop() {
   if (request_processor_thread_.joinable())
     request_processor_thread_.join();
 
+#if HAS_LOCKFREE_QUEUE
+  // Clean up any remaining items in lock-free queue to prevent memory leaks
+  // This is safe because all producer/consumer threads have been stopped
+  ConnectionRequest* req_ptr = nullptr;
+  while (lock_free_request_queue_->pop(req_ptr)) {
+    delete req_ptr;
+    queue_allocated_count_.fetch_sub(1, std::memory_order_relaxed);
+  }
+  
+  // Verify no leaks - all allocations should be cleaned up
+  size_t remaining = queue_allocated_count_.load(std::memory_order_acquire);
+  if (remaining > 0) {
+    std::cerr << "WARNING: " << remaining << " queue items may have leaked during shutdown" << std::endl;
+  }
+#endif
+
   std::cout << "Distributed load balancer stopped: " << balancer_id_
             << std::endl;
 }
@@ -738,15 +754,19 @@ void DistributedLoadBalancer::request_processor_loop() {
 
 #if HAS_LOCKFREE_QUEUE
     // Lock-free path with RAII-style ownership management
-    // NOTE: Producer must allocate ConnectionRequest on heap and increment queue_allocated_count_
-    // Consumer (this loop) takes ownership and decrements counter on dequeue
+    // OWNERSHIP PROTOCOL:
+    // - Producer allocates ConnectionRequest* and increments queue_allocated_count_ AFTER successful push
+    // - Consumer (this loop) takes ownership via pop and decrements counter
+    // - RAII: unique_ptr ensures cleanup even if exception thrown during processing
+    // - Memory Order: relaxed on counter is safe - queue operations provide happens-before
     ConnectionRequest* req_ptr = nullptr;
     for (int i = 0; i < 10; ++i) {
       if (lock_free_request_queue_->pop(req_ptr)) {
-        // Use unique_ptr for automatic cleanup (RAII)
+        // Use unique_ptr for automatic cleanup (RAII) - prevents leaks on exception
         std::unique_ptr<ConnectionRequest> req_guard(req_ptr);
         requests_to_process.push_back(*req_guard);
         // Decrement allocation counter - balances producer's increment
+        // Using relaxed ordering: queue's happens-before ensures no race
         queue_allocated_count_.fetch_sub(1, std::memory_order_relaxed);
         // unique_ptr automatically deletes when going out of scope
       } else {
@@ -755,6 +775,9 @@ void DistributedLoadBalancer::request_processor_loop() {
     }
     
     // If no requests, sleep briefly (still using minimal sleep for lock-free)
+    // SHUTDOWN NOTE: Relies on running_ flag check with 1ms sleep
+    // Trade-off: Max 1ms delay on shutdown vs zero CPU waste during operation
+    // This is acceptable given the performance benefits of lock-free operation
     if (requests_to_process.empty()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -793,6 +816,15 @@ std::string DistributedLoadBalancer::select_server_round_robin(
   if (servers.empty())
     return "";
 
+  // CONCURRENCY PATTERN: Double-checked locking with shared_mutex
+  // Fast path: shared_lock for concurrent reads (most common case)
+  // Slow path: unique_lock only when new service needs to be added (rare)
+  // CONTENTION NOTE: If many new services are added concurrently, unique_lock
+  // may cause brief contention. This is acceptable because:
+  // 1. New service additions are rare in production (happens during startup)
+  // 2. Once added, all subsequent calls use fast lock-free atomic path
+  // 3. shared_mutex allows unlimited concurrent reads without contention
+  
   // Try shared lock first for read-only access (concurrent reads allowed)
   {
     std::shared_lock<std::shared_mutex> lock(round_robin_mutex_);
@@ -805,9 +837,12 @@ std::string DistributedLoadBalancer::select_server_round_robin(
   }
   
   // Counter doesn't exist, need exclusive lock to insert
+  // RACE SAFETY: Double-check pattern prevents duplicate insertions
+  // Even if multiple threads race to insert same service_name, emplace is idempotent
   {
     std::unique_lock<std::shared_mutex> lock(round_robin_mutex_);
-    // Double-check after acquiring exclusive lock and use emplace return value
+    // Use emplace return value to avoid duplicate find() call
+    // Returns pair<iterator, bool> where bool indicates if insertion occurred
     auto [it, inserted] = round_robin_counters_.emplace(service_name, 0);
     // Use atomic fetch_add for the increment
     uint32_t counter = it->second.fetch_add(1, std::memory_order_relaxed);

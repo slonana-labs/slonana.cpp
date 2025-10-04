@@ -219,11 +219,15 @@ private:
   std::atomic<uint64_t> atomic_failed_requests_{0};
 
   // Request queue for async processing - lock-free when available
-  // Note: Using raw pointers with careful ownership management for lock-free queue
-  // The queue producer allocates, consumer deallocates
+  // OWNERSHIP MODEL (lock-free queue):
+  // - Producer: Allocates ConnectionRequest* on heap, pushes to queue, increments queue_allocated_count_
+  // - Consumer: Pops from queue, wraps in unique_ptr (RAII), decrements queue_allocated_count_
+  // - Shutdown: stop() drains remaining items and verifies no leaks via queue_allocated_count_
+  // - Memory Order: relaxed for counter (protected by happens-before relationship of queue operations)
+  // - Leak Safety: If push fails, producer must delete and not increment counter
 #if HAS_LOCKFREE_QUEUE
   std::unique_ptr<boost::lockfree::queue<ConnectionRequest*>> lock_free_request_queue_;
-  std::atomic<size_t> queue_allocated_count_{0};  // Track allocations for safety
+  std::atomic<size_t> queue_allocated_count_{0};  // Track allocations for leak detection
 #endif
   // Fallback mutex-protected queue with condition variable
   mutable std::mutex request_queue_mutex_;
