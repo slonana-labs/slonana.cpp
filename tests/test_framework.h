@@ -191,6 +191,7 @@ public:
 
   int get_tests_run() const { return tests_run_; }
   int get_tests_passed() const { return tests_passed_; }
+  int get_failed_count() const { return tests_run_ - tests_passed_; }
 };
 
 // Enhanced test helper macros
