@@ -192,7 +192,18 @@ target_link_libraries(slonana_shutdown_race_test slonana_core)
 
 # Find OpenSSL for PoH cryptographic operations
 find_package(OpenSSL REQUIRED)
-target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto sodium)
+
+# Find nlohmann_json for JSON serialization in security module
+# Try to find it as a package first, if not available, it will use system headers
+find_package(nlohmann_json 3.2.0 QUIET)
+if(nlohmann_json_FOUND)
+    message(STATUS "Found nlohmann_json package")
+    target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto sodium nlohmann_json::nlohmann_json)
+else()
+    message(STATUS "Using system nlohmann_json headers")
+    target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto sodium)
+endif()
+
 target_link_libraries(slonana_proof_of_history_tests OpenSSL::SSL OpenSSL::Crypto)
 
 # Add individual test targets
