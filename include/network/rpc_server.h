@@ -1,3 +1,12 @@
+/**
+ * @file rpc_server.h
+ * @brief Defines the Solana-compatible JSON-RPC 2.0 server.
+ *
+ * This file contains the primary class `SolanaRpcServer`, which implements the
+ * complete Solana JSON-RPC API. It handles HTTP and WebSocket connections,
+ * processes requests, and interacts with other validator components to provide
+ * blockchain data.
+ */
 #pragma once
 
 #include "common/types.h"
@@ -10,304 +19,80 @@
 
 namespace slonana {
 
-// Forward declarations
-namespace ledger {
-class LedgerManager;
-}
-namespace validator {
-class ValidatorCore;
-}
-namespace staking {
-class StakingManager;
-}
-namespace banking {
-class BankingStage;
-}
+// Forward declarations for dependency injection
+namespace ledger { class LedgerManager; }
+namespace validator { class ValidatorCore; }
+namespace staking { class StakingManager; }
+namespace banking { class BankingStage; }
 namespace svm {
 class ExecutionEngine;
 class AccountManager;
 struct ProgramAccount;
-} // namespace svm
+}
 
 namespace network {
 
 using namespace slonana::common;
 
 /**
- * @file rpc_server.h
- * @brief Comprehensive Solana-compatible JSON-RPC 2.0 server implementation
- * 
- * This module provides a production-ready RPC server that implements the complete
- * Solana JSON-RPC API with 35+ methods for account queries, transaction handling,
- * blockchain data access, and real-time subscriptions via WebSocket.
- */
-
-/**
- * @brief JSON-RPC 2.0 request structure for standardized communication
- * 
- * Represents an incoming JSON-RPC request with all required and optional fields.
- * Follows the JSON-RPC 2.0 specification exactly.
- * 
- * @note Thread safety: This struct is not thread-safe
- * @note All string fields use UTF-8 encoding
+ * @brief Represents a parsed JSON-RPC 2.0 request.
+ * @details This struct strictly follows the JSON-RPC 2.0 specification.
  */
 struct RpcRequest {
-  std::string jsonrpc = "2.0";  ///< JSON-RPC version (always "2.0")
-  std::string method;           ///< RPC method name (e.g., "getAccountInfo")
-  std::string params;           ///< JSON string containing method parameters
-  std::string id;               ///< Request identifier for correlation
-  bool id_is_number = false;    ///< True if ID was originally numeric
+  std::string jsonrpc = "2.0";
+  std::string method;
+  std::string params;
+  std::string id;
+  bool id_is_number = false;
 };
 
 /**
- * @brief JSON-RPC 2.0 response structure for standardized replies
- * 
- * Represents a JSON-RPC response containing either successful result data
- * or error information. Maintains correlation with requests via ID field.
- * 
- * @note Thread safety: This struct is not thread-safe
- * @note Either result or error should be set, never both
+ * @brief Represents a JSON-RPC 2.0 response.
+ * @details This struct is used to construct valid JSON-RPC responses,
+ * containing either a result or an error object.
  */
 struct RpcResponse {
-  std::string jsonrpc = "2.0";   ///< JSON-RPC version (always "2.0")
-  std::string result;            ///< JSON string containing successful response data
-  std::string error;             ///< JSON string containing error information (only if error occurred)
-  std::string id;                ///< Request ID for correlation (copied from request)
-  bool id_is_number = false;     ///< True if ID should be rendered as number in JSON
+  std::string jsonrpc = "2.0";
+  std::string result;
+  std::string error;
+  std::string id;
+  bool id_is_number = false;
 
-  /**
-   * @brief Convert response to JSON string for transmission
-   * @return Properly formatted JSON-RPC 2.0 response string
-   * @note Automatically includes result or error based on which field is populated
-   */
   std::string to_json() const;
 };
 
 /**
- * @brief Production-ready Solana-compatible JSON-RPC 2.0 server
- * 
- * Implements the complete Solana RPC API with 35+ methods covering:
- * - Account information and balance queries  
- * - Block and transaction data access
- * - Network and validator status information
- * - Staking and economic parameter queries
- * - Real-time WebSocket subscriptions
- * - Transaction simulation and submission
- * 
- * Key features:
- * - Full JSON-RPC 2.0 compliance with proper error handling
- * - High-performance HTTP server with connection pooling
- * - WebSocket support for real-time subscriptions
- * - Configurable binding address and port
- * - Comprehensive request/response validation
- * - Built-in rate limiting and security features
- * 
- * @note Thread safety: All public methods are thread-safe and can be called
- *       concurrently from multiple threads
- * @note Performance: Optimized for high throughput with connection reuse
- * @note Compatibility: Maintains compatibility with official Solana RPC API
- * 
- * Lifecycle:
- * 1. Construct with ValidatorConfig containing bind address and settings
- * 2. Set component dependencies (ledger, validator, banking, etc.)
- * 3. Call start() to begin serving requests
- * 4. Handle incoming requests via HTTP or WebSocket
- * 5. Call stop() for graceful shutdown
- * 
- * Example usage:
- * @code
- * ValidatorConfig config;
- * config.rpc_bind_address = "0.0.0.0:8899";
- * 
- * SolanaRpcServer rpc_server(config);
- * rpc_server.set_ledger_manager(ledger);
- * rpc_server.set_validator_core(validator);
- * 
- * auto result = rpc_server.start();
- * if (!result.is_ok()) {
- *     std::cerr << "Failed to start RPC: " << result.error() << std::endl;
- *     return;
- * }
- * 
- * // Server is now accepting requests on the configured address
- * // ... application logic ...
- * 
- * rpc_server.stop();  // Graceful shutdown
- * @endcode
+ * @brief A production-ready, Solana-compatible JSON-RPC 2.0 server.
+ *
+ * This class implements the full Solana JSON-RPC API, providing endpoints for
+ * querying the blockchain, submitting transactions, and subscribing to real-time
+ * events via WebSockets. It is designed for high performance and thread safety.
+ *
+ * @see https://docs.solana.com/api/http
  */
 class SolanaRpcServer {
 public:
-  /// Function type for custom RPC method handlers
   using RpcHandler = std::function<RpcResponse(const RpcRequest &)>;
 
-  /**
-   * @brief Construct RPC server with configuration
-   * 
-   * @param config Validator configuration containing RPC settings
-   * @note Server starts in stopped state - call start() to begin serving
-   * @note Configuration is copied and cannot be changed after construction
-   */
   explicit SolanaRpcServer(const ValidatorConfig &config);
-  
-  /**
-   * @brief Destructor with automatic cleanup
-   * 
-   * Automatically stops the server if running and cleans up all resources.
-   * Waits for active connections to complete gracefully.
-   */
   ~SolanaRpcServer();
 
-  // === Server Lifecycle Management ===
-  
-  /**
-   * @brief Start the RPC server and begin accepting requests
-   * 
-   * Initializes the HTTP server on the configured bind address and port.
-   * Sets up all RPC method handlers and starts background threads for
-   * request processing.
-   * 
-   * @return Result indicating success or detailed error information
-   * @note Must be called before the server can handle any requests
-   * @note Safe to call multiple times (subsequent calls are no-ops)
-   * @note Blocks briefly during initialization but returns quickly
-   */
   common::Result<bool> start();
-  
-  /**
-   * @brief Stop the RPC server gracefully
-   * 
-   * Stops accepting new connections and waits for active requests to complete.
-   * Cleans up all server resources and background threads.
-   * 
-   * @note Safe to call multiple times
-   * @note Blocks until all active connections are closed
-   * @note Does not interrupt requests in progress
-   */
   void stop() noexcept;
-  
-  /**
-   * @brief Check if the RPC server is currently running
-   * @return true if server is accepting requests, false otherwise
-   * @note Thread-safe query of server state
-   */
   bool is_running() const noexcept;
 
-  // === Component Dependencies ===
-  
-  /**
-   * @brief Set ledger manager for blockchain data access
-   * 
-   * @param ledger Shared pointer to ledger manager
-   * @note Required for block/account/transaction queries
-   * @note Can be called before or after start(), takes effect immediately
-   */
   void set_ledger_manager(std::shared_ptr<ledger::LedgerManager> ledger);
-  
-  /**
-   * @brief Set validator core for consensus information
-   * 
-   * @param validator Shared pointer to validator core
-   * @note Required for slot/epoch/leader schedule queries
-   * @note Enables validator-specific RPC methods
-   */
   void set_validator_core(std::shared_ptr<validator::ValidatorCore> validator);
-  
-  /**
-   * @brief Set staking manager for delegation and rewards data
-   * 
-   * @param staking Shared pointer to staking manager
-   * @note Required for stake account and inflation queries
-   * @note Enables staking-related RPC methods
-   */
   void set_staking_manager(std::shared_ptr<staking::StakingManager> staking);
-  
-  /**
-   * @brief Set banking stage for transaction processing
-   * 
-   * @param banking Shared pointer to banking stage
-   * @note Required for transaction submission and simulation
-   * @note Enables sendTransaction and related methods
-   */
   void set_banking_stage(std::shared_ptr<banking::BankingStage> banking);
-  
-  /**
-   * @brief Set SVM execution engine for program interaction
-   * 
-   * @param engine Shared pointer to execution engine
-   * @note Required for transaction simulation
-   * @note Enables advanced transaction analysis features
-   */
   void set_execution_engine(std::shared_ptr<svm::ExecutionEngine> engine);
-  
-  /**
-   * @brief Set account manager for account state queries
-   * 
-   * @param accounts Shared pointer to account manager
-   * @note Required for account information and program account queries
-   * @note Critical for most account-related RPC methods
-   */
   void set_account_manager(std::shared_ptr<svm::AccountManager> accounts);
 
-  // === Custom Method Registration ===
-  
-  /**
-   * @brief Register a custom RPC method handler
-   * 
-   * Allows registration of application-specific RPC methods beyond the
-   * standard Solana API. Useful for debugging, monitoring, or custom features.
-   * 
-   * @param method RPC method name (e.g., "customGetInfo")
-   * @param handler Function to handle requests for this method
-   * @note Method names should follow camelCase convention
-   * @note Custom methods can override built-in methods (use with caution)
-   * @warning Handler function must be thread-safe
-   */
   void register_method(const std::string &method, RpcHandler handler);
-
-  // === Request Processing ===
-  
-  /**
-   * @brief Process a JSON-RPC request and return response
-   * 
-   * Main entry point for processing RPC requests. Handles JSON parsing,
-   * method dispatch, error handling, and response formatting.
-   * 
-   * @param request_json JSON-RPC 2.0 request as string
-   * @return JSON-RPC 2.0 response as formatted string
-   * @note Thread-safe and can handle concurrent requests
-   * @note Invalid JSON returns proper JSON-RPC error response
-   * @note All processing errors are caught and returned as RPC errors
-   */
   std::string handle_request(const std::string &request_json);
 
-  // === WebSocket Support ===
-  
-  /**
-   * @brief Get access to WebSocket server for subscriptions
-   * 
-   * @return Shared pointer to WebSocket server or nullptr if not started
-   * @note WebSocket server enables real-time subscriptions
-   * @note Required for accountSubscribe, blockSubscribe, etc.
-   */
-  std::shared_ptr<WebSocketServer> get_websocket_server() noexcept {
-    return websocket_server_;
-  }
-  
-  /**
-   * @brief Start WebSocket server for real-time subscriptions
-   * 
-   * @return true if WebSocket server started successfully
-   * @note Starts on a port adjacent to main RPC port
-   * @note Required for subscription-based RPC methods
-   */
+  std::shared_ptr<WebSocketServer> get_websocket_server() noexcept { return websocket_server_; }
   bool start_websocket_server();
-  
-  /**
-   * @brief Stop WebSocket server and close all subscription connections
-   * 
-   * @note Gracefully closes all active subscription connections
-   * @note Safe to call multiple times
-   */
   void stop_websocket_server() noexcept;
 
 private:
