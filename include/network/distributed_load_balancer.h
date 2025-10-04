@@ -14,6 +14,18 @@
 #include <unordered_map>
 #include <vector>
 
+// Lock-free data structures (boost::lockfree)
+#ifdef __has_include
+#if __has_include(<boost/lockfree/queue.hpp>)
+#include <boost/lockfree/queue.hpp>
+#define HAS_LOCKFREE_QUEUE 1
+#endif
+#endif
+
+#ifndef HAS_LOCKFREE_QUEUE
+#define HAS_LOCKFREE_QUEUE 0
+#endif
+
 namespace slonana {
 namespace network {
 
@@ -194,15 +206,21 @@ private:
   std::unordered_map<std::string, std::chrono::system_clock::time_point>
       circuit_breaker_timestamps_;
 
-  // Round robin counters
+  // Round robin counters - using atomic for lock-free access
   mutable std::mutex round_robin_mutex_;
-  std::unordered_map<std::string, uint32_t> round_robin_counters_;
+  std::unordered_map<std::string, std::atomic<uint32_t>> round_robin_counters_;
 
-  // Statistics
+  // Statistics - using atomics to reduce lock contention
   mutable std::mutex stats_mutex_;
   LoadBalancerStats current_stats_;
+  std::atomic<uint64_t> atomic_total_requests_{0};
+  std::atomic<uint64_t> atomic_failed_requests_{0};
 
-  // Request queue for async processing
+  // Request queue for async processing - lock-free when available
+#if HAS_LOCKFREE_QUEUE
+  std::unique_ptr<boost::lockfree::queue<ConnectionRequest*>> lock_free_request_queue_;
+#endif
+  // Fallback mutex-protected queue
   mutable std::mutex request_queue_mutex_;
   std::queue<ConnectionRequest> request_queue_;
 

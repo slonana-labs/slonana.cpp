@@ -909,7 +909,8 @@ void NetworkTopologyManager::health_checker_loop() {
       perform_health_check(node.node_id);
     }
 
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+    // Reduced sleep time for better responsiveness
+    std::this_thread::sleep_for(std::chrono::seconds(2));
   }
 }
 
@@ -917,7 +918,8 @@ void NetworkTopologyManager::metrics_collector_loop() {
   while (running_.load()) {
     update_network_metrics();
 
-    std::this_thread::sleep_for(std::chrono::seconds(10));
+    // Reduced sleep time for more frequent metric updates
+    std::this_thread::sleep_for(std::chrono::seconds(5));
   }
 }
 
@@ -926,7 +928,8 @@ void NetworkTopologyManager::partition_manager_loop() {
     check_partition_health();
     detect_network_partition();
 
-    std::this_thread::sleep_for(std::chrono::seconds(15));
+    // Reduced sleep time for faster partition management
+    std::this_thread::sleep_for(std::chrono::seconds(10));
   }
 }
 

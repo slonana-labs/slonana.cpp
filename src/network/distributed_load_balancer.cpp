@@ -20,6 +20,14 @@ DistributedLoadBalancer::DistributedLoadBalancer(const std::string &balancer_id,
   // Initialize default statistics
   std::memset(&current_stats_, 0, sizeof(current_stats_));
 
+  // Initialize lock-free request queue if available
+#if HAS_LOCKFREE_QUEUE
+  lock_free_request_queue_ = std::make_unique<boost::lockfree::queue<ConnectionRequest*>>(1024);
+  std::cout << "Lock-free request queue enabled for load balancer" << std::endl;
+#else
+  std::cout << "Using mutex-protected request queue (fallback)" << std::endl;
+#endif
+
   // Create default load balancing rule
   LoadBalancingRule default_rule;
   default_rule.rule_name = "default";
@@ -635,7 +643,8 @@ void DistributedLoadBalancer::health_monitor_loop() {
 
     cleanup_expired_affinities();
 
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+    // Reduced sleep time for faster health detection
+    std::this_thread::sleep_for(std::chrono::seconds(2));
   }
 }
 
@@ -682,7 +691,8 @@ void DistributedLoadBalancer::stats_collector_loop() {
       last_requests = current_stats_.total_requests;
     }
 
-    std::this_thread::sleep_for(std::chrono::seconds(10));
+    // Reduced sleep time for more frequent stat updates
+    std::this_thread::sleep_for(std::chrono::seconds(5));
   }
 }
 
@@ -721,6 +731,19 @@ void DistributedLoadBalancer::request_processor_loop() {
   while (running_.load()) {
     std::vector<ConnectionRequest> requests_to_process;
 
+#if HAS_LOCKFREE_QUEUE
+    // Lock-free path - no mutex needed!
+    ConnectionRequest* req_ptr = nullptr;
+    for (int i = 0; i < 10; ++i) {
+      if (lock_free_request_queue_->pop(req_ptr)) {
+        requests_to_process.push_back(*req_ptr);
+        delete req_ptr; // Clean up heap-allocated request
+      } else {
+        break; // Queue is empty
+      }
+    }
+#else
+    // Fallback mutex-protected path
     {
       std::lock_guard<std::mutex> lock(request_queue_mutex_);
       if (!request_queue_.empty()) {
@@ -731,6 +754,7 @@ void DistributedLoadBalancer::request_processor_loop() {
         }
       }
     }
+#endif
 
     // Process requests asynchronously
     for (const auto &request : requests_to_process) {
@@ -738,7 +762,8 @@ void DistributedLoadBalancer::request_processor_loop() {
       // Response would be sent back to client in real implementation
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    // Reduced sleep time for better responsiveness with lock-free queue
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 }
 
@@ -747,11 +772,19 @@ std::string DistributedLoadBalancer::select_server_round_robin(
   if (servers.empty())
     return "";
 
+  // Lock-free atomic increment for round-robin
   std::lock_guard<std::mutex> lock(round_robin_mutex_);
-
-  uint32_t &counter = round_robin_counters_[service_name];
+  
+  // Ensure counter exists for this service
+  auto it = round_robin_counters_.find(service_name);
+  if (it == round_robin_counters_.end()) {
+    round_robin_counters_.emplace(service_name, 0);
+    it = round_robin_counters_.find(service_name);
+  }
+  
+  // Use atomic fetch_add for lock-free increment
+  uint32_t counter = it->second.fetch_add(1, std::memory_order_relaxed);
   std::string selected = servers[counter % servers.size()];
-  counter++;
 
   return selected;
 }
