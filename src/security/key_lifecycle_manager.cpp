@@ -82,7 +82,10 @@ void KeyRotationScheduler::rotation_worker_thread() {
             std::mt19937 gen(rd());
             std::uniform_int_distribution<> dis(0, static_cast<int>(ROTATION_CHECK_JITTER_MAX.count()));
             auto jitter = std::chrono::minutes(dis(gen));
-            wait_time += std::chrono::duration_cast<std::chrono::hours>(jitter);
+            // Convert both to common duration type before adding
+            wait_time = std::chrono::duration_cast<std::chrono::hours>(
+                std::chrono::duration_cast<std::chrono::minutes>(wait_time) + jitter
+            );
         }
         
         // Wait for calculated time or until stopped

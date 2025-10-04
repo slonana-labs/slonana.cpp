@@ -523,7 +523,11 @@ std::string NetworkTopologyManager::select_node_for_service(
     }
 
     if (total_weight > 0) {
-      uint32_t random_value = rand() % total_weight;
+      // Use thread-local RNG for thread safety
+      thread_local std::random_device rd;
+      thread_local std::mt19937 gen(rd());
+      std::uniform_int_distribution<uint32_t> dis(0, total_weight - 1);
+      uint32_t random_value = dis(gen);
       uint32_t current_weight = 0;
       for (const auto &wc : weighted_candidates) {
         current_weight += wc.second;
@@ -741,8 +745,11 @@ bool NetworkTopologyManager::measure_latency(const std::string &source_node,
     return false;
   }
 
-  // Simulate latency measurement
-  uint32_t latency_ms = 10 + (rand() % 100); // 10-110ms
+  // Simulate latency measurement with thread-local RNG
+  thread_local std::random_device rd;
+  thread_local std::mt19937 gen(rd());
+  std::uniform_int_distribution<uint32_t> dis(10, 110);
+  uint32_t latency_ms = dis(gen); // 10-110ms
 
   std::pair<std::string, std::string> key = {source_node, target_node};
   latency_cache_[key] = latency_ms;

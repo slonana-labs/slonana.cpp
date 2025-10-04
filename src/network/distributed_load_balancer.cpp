@@ -71,6 +71,11 @@ void DistributedLoadBalancer::stop() {
 
   running_.store(false);
 
+  // Wake up any threads waiting on condition variable
+#ifndef HAS_LOCKFREE_QUEUE
+  request_queue_cv_.notify_all();
+#endif
+
   // Stop all threads
   if (health_monitor_thread_.joinable())
     health_monitor_thread_.join();
@@ -733,12 +738,15 @@ void DistributedLoadBalancer::request_processor_loop() {
 
 #if HAS_LOCKFREE_QUEUE
     // Lock-free path with RAII-style ownership management
+    // NOTE: Producer must allocate ConnectionRequest on heap and increment queue_allocated_count_
+    // Consumer (this loop) takes ownership and decrements counter on dequeue
     ConnectionRequest* req_ptr = nullptr;
     for (int i = 0; i < 10; ++i) {
       if (lock_free_request_queue_->pop(req_ptr)) {
         // Use unique_ptr for automatic cleanup (RAII)
         std::unique_ptr<ConnectionRequest> req_guard(req_ptr);
         requests_to_process.push_back(*req_guard);
+        // Decrement allocation counter - balances producer's increment
         queue_allocated_count_.fetch_sub(1, std::memory_order_relaxed);
         // unique_ptr automatically deletes when going out of scope
       } else {
@@ -799,12 +807,8 @@ std::string DistributedLoadBalancer::select_server_round_robin(
   // Counter doesn't exist, need exclusive lock to insert
   {
     std::unique_lock<std::shared_mutex> lock(round_robin_mutex_);
-    // Double-check after acquiring exclusive lock
-    auto it = round_robin_counters_.find(service_name);
-    if (it == round_robin_counters_.end()) {
-      round_robin_counters_.emplace(service_name, 0);
-      it = round_robin_counters_.find(service_name);
-    }
+    // Double-check after acquiring exclusive lock and use emplace return value
+    auto [it, inserted] = round_robin_counters_.emplace(service_name, 0);
     // Use atomic fetch_add for the increment
     uint32_t counter = it->second.fetch_add(1, std::memory_order_relaxed);
     return servers[counter % servers.size()];
@@ -877,7 +881,11 @@ std::string DistributedLoadBalancer::select_server_weighted(
   if (total_weight == 0)
     return servers[0];
 
-  uint32_t random_value = rand() % total_weight;
+  // Use thread-local RNG for better performance and thread safety
+  thread_local std::random_device rd;
+  thread_local std::mt19937 gen(rd());
+  std::uniform_int_distribution<uint32_t> dis(0, total_weight - 1);
+  uint32_t random_value = dis(gen);
   uint32_t current_weight = 0;
 
   for (const auto &weighted_server : weighted_servers) {
