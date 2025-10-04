@@ -1,3 +1,13 @@
+/**
+ * @file alerting.cpp
+ * @brief Implements various alert channels for system notifications.
+ *
+ * This file provides the concrete implementations for the alert channels
+ * defined in `alerting.h`. This includes channels for console output,
+ * Slack messages, email notifications, file logging, and Prometheus metrics.
+ * It also contains the implementation of the alert channel factory.
+ */
+
 #include "common/alerting.h"
 #include <fstream>
 #include <iostream>
@@ -8,18 +18,19 @@ namespace common {
 
 // ConsoleAlertChannel implementation
 void ConsoleAlertChannel::send_alert(const LogEntry& entry) {
+    if (!enabled_) return;
     std::cerr << "🚨 CRITICAL ALERT 🚨" << std::endl;
     std::cerr << "Module: " << entry.module << std::endl;
     std::cerr << "Message: " << entry.message << std::endl;
     std::cerr << "Time: ";
-    
+
     auto time_t = std::chrono::system_clock::to_time_t(entry.timestamp);
     std::cerr << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S") << std::endl;
-    
+
     if (!entry.error_code.empty()) {
         std::cerr << "Error Code: " << entry.error_code << std::endl;
     }
-    
+
     if (!entry.context.empty()) {
         std::cerr << "Context:" << std::endl;
         for (const auto& [key, value] : entry.context) {
@@ -34,33 +45,39 @@ SlackAlertChannel::SlackAlertChannel(const std::string& webhook_url, bool enable
     : webhook_url_(webhook_url), enabled_(enabled) {}
 
 void SlackAlertChannel::send_alert(const LogEntry& entry) {
-    // Note: This is a simplified implementation
-    // In production, you'd use libcurl or similar HTTP client library
-    // For now, we'll just log the alert that would be sent
-    std::cout << "SLACK ALERT (webhook: " << webhook_url_ << "): " 
+    if (!is_enabled()) return;
+    // Note: This is a simplified implementation for demonstration.
+    // In a production environment, this would use a library like libcurl to send
+    // an HTTP POST request to the Slack webhook URL.
+    std::cout << "SLACK ALERT (webhook: " << webhook_url_ << "): "
               << format_slack_message(entry) << std::endl;
 }
 
 std::string SlackAlertChannel::format_slack_message(const LogEntry& entry) const {
     std::ostringstream msg;
-    msg << ":warning: *CRITICAL FAILURE DETECTED* :warning:\n"
-        << "*Module:* " << entry.module << "\n"
-        << "*Message:* " << entry.message << "\n";
-    
+    msg << "{\"text\":\":warning: *CRITICAL FAILURE DETECTED* :warning:\","
+        << "\"attachments\":[{\"color\":\"#ff0000\",\"fields\":["
+        << "{\"title\":\"Module\",\"value\":\"" << entry.module << "\",\"short\":true},"
+        << "{\"title\":\"Message\",\"value\":\"" << entry.message << "\",\"short\":false},";
+
     if (!entry.error_code.empty()) {
-        msg << "*Error Code:* " << entry.error_code << "\n";
+        msg << "{\"title\":\"Error Code\",\"value\":\"" << entry.error_code << "\",\"short\":true},";
     }
-    
+
     auto time_t = std::chrono::system_clock::to_time_t(entry.timestamp);
-    msg << "*Time:* " << std::put_time(std::gmtime(&time_t), "%Y-%m-%d %H:%M:%S UTC") << "\n";
-    
+    char time_buf[100];
+    std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S UTC", std::gmtime(&time_t));
+    msg << "{\"title\":\"Time\",\"value\":\"" << time_buf << "\",\"short\":true}";
+
     if (!entry.context.empty()) {
-        msg << "*Context:*\n";
+        msg << ",{\"title\":\"Context\",\"value\":\"";
         for (const auto& [key, value] : entry.context) {
-            msg << "• " << key << ": " << value << "\n";
+            msg << "• " << key << ": " << value << "\\n";
         }
+        msg << "\",\"short\":false}";
     }
-    
+
+    msg << "]}]}";
     return msg.str();
 }
 
@@ -73,11 +90,13 @@ EmailAlertChannel::EmailAlertChannel(const std::string& smtp_server, int port,
       from_email_(from_email), to_email_(to_email), enabled_(enabled) {}
 
 void EmailAlertChannel::send_alert(const LogEntry& entry) {
-    // Note: This is a simplified implementation
-    // In production, you'd use a proper SMTP library
+    if (!is_enabled()) return;
+    // Note: This is a simplified implementation for demonstration.
+    // In a production environment, this would use a proper SMTP client library
+    // to send an email.
     std::cout << "EMAIL ALERT (to: " << to_email_ << "): " << std::endl;
     std::cout << "Subject: " << format_email_subject(entry) << std::endl;
-    std::cout << "Body: " << format_email_body(entry) << std::endl;
+    std::cout << "Body: \n" << format_email_body(entry) << std::endl;
 }
 
 std::string EmailAlertChannel::format_email_subject(const LogEntry& entry) const {
@@ -88,26 +107,30 @@ std::string EmailAlertChannel::format_email_body(const LogEntry& entry) const {
     std::ostringstream body;
     body << "A critical failure has been detected in the Slonana validator.\n\n"
          << "Details:\n"
-         << "Module: " << entry.module << "\n"
-         << "Message: " << entry.message << "\n";
-    
+         << "------------------------------------\n"
+         << "Module:    " << entry.module << "\n"
+         << "Message:   " << entry.message << "\n";
+
     auto time_t = std::chrono::system_clock::to_time_t(entry.timestamp);
-    body << "Time: " << std::put_time(std::gmtime(&time_t), "%Y-%m-%d %H:%M:%S UTC") << "\n";
-    
+    char time_buf[100];
+    std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S UTC", std::gmtime(&time_t));
+    body << "Time:      " << time_buf << "\n";
+
     if (!entry.error_code.empty()) {
         body << "Error Code: " << entry.error_code << "\n";
     }
-    
-    body << "Thread: " << entry.thread_id << "\n";
-    
+
+    body << "Thread ID: " << entry.thread_id << "\n";
+
     if (!entry.context.empty()) {
         body << "\nAdditional Context:\n";
         for (const auto& [key, value] : entry.context) {
-            body << key << ": " << value << "\n";
+            body << "  - " << key << ": " << value << "\n";
         }
     }
-    
-    body << "\nThis alert requires immediate attention.\n";
+
+    body << "\n------------------------------------\n"
+         << "This alert requires immediate attention.\n";
     return body.str();
 }
 
@@ -116,31 +139,33 @@ FileAlertChannel::FileAlertChannel(const std::string& file_path, bool enabled)
     : file_path_(file_path), enabled_(enabled) {}
 
 void FileAlertChannel::send_alert(const LogEntry& entry) {
+    if (!is_enabled()) return;
     std::ofstream file(file_path_, std::ios::app);
     if (!file.is_open()) {
-        // Fallback to stderr if file cannot be opened
-        std::cerr << "ALERT: Failed to open alert file '" << file_path_ 
-                  << "' - Module: " << entry.module 
+        // Fallback to stderr if the file cannot be opened
+        std::cerr << "ALERT: Failed to open alert file '" << file_path_
+                  << "' - Module: " << entry.module
                   << ", Message: " << entry.message << std::endl;
         return;
     }
-    
+
     auto time_t = std::chrono::system_clock::to_time_t(entry.timestamp);
-    
-    file << "[" << std::put_time(std::gmtime(&time_t), "%Y-%m-%d %H:%M:%S UTC") << "] "
-         << "CRITICAL ALERT - Module: " << entry.module 
+    char time_buf[100];
+    std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S UTC", std::gmtime(&time_t));
+
+    file << "[" << time_buf << "] "
+         << "CRITICAL ALERT - Module: " << entry.module
          << ", Message: " << entry.message;
-    
+
     if (!entry.error_code.empty()) {
         file << ", Error: " << entry.error_code;
     }
-    
+
     file << std::endl;
-    
-    // Check if write was successful
+
     if (file.fail()) {
-        std::cerr << "ALERT: Failed to write to alert file '" << file_path_ 
-                  << "' - Module: " << entry.module 
+        std::cerr << "ALERT: Failed to write to alert file '" << file_path_
+                  << "' - Module: " << entry.module
                   << ", Message: " << entry.message << std::endl;
     }
 }
@@ -149,9 +174,10 @@ void FileAlertChannel::send_alert(const LogEntry& entry) {
 PrometheusAlertChannel::PrometheusAlertChannel(bool enabled) : enabled_(enabled) {}
 
 void PrometheusAlertChannel::send_alert(const LogEntry& entry) {
-    // In a real implementation, this would increment Prometheus metrics
-    // that can trigger alerts in Alertmanager
-    std::cout << "PROMETHEUS METRIC: critical_failures_total{module=\"" 
+    if (!enabled_) return;
+    // In a real implementation, this would use a Prometheus client library
+    // to increment a metric. This is a placeholder for demonstration.
+    std::cout << "PROMETHEUS METRIC: critical_failures_total{module=\""
               << entry.module << "\"} +1" << std::endl;
 }
 

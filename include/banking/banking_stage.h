@@ -1,3 +1,12 @@
+/**
+ * @file banking_stage.h
+ * @brief Defines the core components of the transaction processing pipeline (Banking Stage).
+ *
+ * This file contains the classes that manage the flow of transactions from
+ * submission to final commitment in the ledger. It includes a multi-stage,
+ * parallel pipeline designed for high-throughput processing, with features like
+ * adaptive batching, resource monitoring, and fault tolerance.
+ */
 #pragma once
 
 #include "common/types.h"
@@ -20,37 +29,35 @@ namespace slonana {
 namespace banking {
 
 /**
- * Transaction Batch represents a group of transactions processed together
+ * @brief Represents a group of transactions to be processed together as a unit.
+ * @details Encapsulates a collection of transactions, along with metadata such
+ * as a unique batch ID, creation time, and processing state.
  */
 class TransactionBatch {
 public:
+  /// @brief A shared pointer to a transaction.
   using TransactionPtr = std::shared_ptr<ledger::Transaction>;
+
+  /**
+   * @brief The processing state of a transaction batch.
+   */
+  enum class State { PENDING, PROCESSING, COMPLETED, FAILED };
 
   TransactionBatch();
   explicit TransactionBatch(std::vector<TransactionPtr> transactions);
   ~TransactionBatch();
 
-  // Batch operations
   void add_transaction(TransactionPtr transaction);
-  const std::vector<TransactionPtr> &get_transactions() const {
-    return transactions_;
-  }
+  const std::vector<TransactionPtr> &get_transactions() const { return transactions_; }
   size_t size() const { return transactions_.size(); }
   bool empty() const { return transactions_.empty(); }
 
-  // Batch properties
   uint64_t get_batch_id() const { return batch_id_; }
-  std::chrono::steady_clock::time_point get_creation_time() const {
-    return creation_time_;
-  }
-
-  // Execution state
-  enum class State { PENDING, PROCESSING, COMPLETED, FAILED };
+  std::chrono::steady_clock::time_point get_creation_time() const { return creation_time_; }
 
   State get_state() const { return state_; }
   void set_state(State state) { state_ = state; }
 
-  // Results
   void set_results(std::vector<bool> results) { results_ = std::move(results); }
   const std::vector<bool> &get_results() const { return results_; }
 
@@ -60,68 +67,51 @@ private:
   std::chrono::steady_clock::time_point creation_time_;
   State state_;
   std::vector<bool> results_;
-
   static std::atomic<uint64_t> next_batch_id_;
 };
 
 /**
- * Transaction Pipeline Stage represents a processing stage in the banking
- * pipeline
+ * @brief Represents a single, parallelized stage in the transaction processing pipeline.
+ * @details A PipelineStage pulls batches from a queue, processes them using a
+ * provided function, and passes them to the next stage. It manages its own
+ * pool of worker threads.
  */
 class PipelineStage {
 public:
-  using ProcessFunction =
-      std::function<bool(std::shared_ptr<TransactionBatch>)>;
+  /// @brief A function that processes a batch of transactions.
+  using ProcessFunction = std::function<bool(std::shared_ptr<TransactionBatch>)>;
 
   PipelineStage(const std::string &name, ProcessFunction process_fn);
   ~PipelineStage();
 
-  // Stage lifecycle
   bool start();
   bool stop();
   bool is_running() const { return running_; }
 
-  // Processing
   void submit_batch(std::shared_ptr<TransactionBatch> batch);
-  void set_next_stage(std::shared_ptr<PipelineStage> next_stage) {
-    next_stage_ = next_stage;
-  }
+  void set_next_stage(std::shared_ptr<PipelineStage> next_stage) { next_stage_ = next_stage; }
 
-  // Configuration
-  void set_batch_timeout(std::chrono::milliseconds timeout) {
-    batch_timeout_ = timeout;
-  }
-  void set_max_parallel_batches(size_t max_batches) {
-    max_parallel_batches_ = max_batches;
-  }
+  void set_batch_timeout(std::chrono::milliseconds timeout) { batch_timeout_ = timeout; }
+  void set_max_parallel_batches(size_t max_batches) { max_parallel_batches_ = max_batches; }
 
-  // Statistics
   size_t get_processed_batches() const { return processed_batches_; }
   size_t get_failed_batches() const { return failed_batches_; }
   size_t get_pending_batches() const;
   double get_average_processing_time_ms() const;
-
   const std::string &get_name() const { return name_; }
 
 private:
   std::string name_;
   ProcessFunction process_fn_;
   std::shared_ptr<PipelineStage> next_stage_;
-
   bool running_;
   std::chrono::milliseconds batch_timeout_;
   size_t max_parallel_batches_;
-
-  // Processing queue
   std::queue<std::shared_ptr<TransactionBatch>> batch_queue_;
   mutable std::mutex queue_mutex_;
   std::condition_variable queue_cv_;
-
-  // Worker threads
   std::vector<std::thread> workers_;
   bool should_stop_;
-
-  // Statistics
   std::atomic<size_t> processed_batches_;
   std::atomic<size_t> failed_batches_;
   std::atomic<uint64_t> total_processing_time_ms_;
@@ -131,42 +121,34 @@ private:
 };
 
 /**
- * Resource Monitor tracks CPU and memory usage for optimal performance
+ * @brief Monitors system resources like CPU and memory usage.
+ * @details Used by the BankingStage to implement adaptive batching and prevent
+ * the system from becoming overloaded.
  */
 class ResourceMonitor {
 public:
   ResourceMonitor();
   ~ResourceMonitor();
 
-  // Monitoring lifecycle
   bool start();
   bool stop();
 
-  // Resource metrics
   double get_cpu_usage() const { return cpu_usage_; }
   size_t get_memory_usage_mb() const { return memory_usage_mb_; }
   size_t get_peak_memory_usage_mb() const { return peak_memory_usage_mb_; }
 
-  // Thresholds
   void set_cpu_threshold(double threshold) { cpu_threshold_ = threshold; }
-  void set_memory_threshold_mb(size_t threshold) {
-    memory_threshold_mb_ = threshold;
-  }
+  void set_memory_threshold_mb(size_t threshold) { memory_threshold_mb_ = threshold; }
 
-  // Alerts
   bool is_cpu_overloaded() const { return cpu_usage_ > cpu_threshold_; }
-  bool is_memory_overloaded() const {
-    return memory_usage_mb_ > memory_threshold_mb_;
-  }
+  bool is_memory_overloaded() const { return memory_usage_mb_ > memory_threshold_mb_; }
 
 private:
   bool monitoring_;
   std::thread monitor_thread_;
-
   std::atomic<double> cpu_usage_;
   std::atomic<size_t> memory_usage_mb_;
   std::atomic<size_t> peak_memory_usage_mb_;
-
   double cpu_threshold_;
   size_t memory_threshold_mb_;
 
@@ -176,73 +158,51 @@ private:
 };
 
 /**
- * Enhanced Banking Stage provides multi-stage transaction processing pipeline
- * Compatible with Agave's banking stage for high-throughput transaction
- * processing
+ * @brief The main orchestrator for transaction processing.
+ * @details This class manages the entire transaction pipeline, from receiving
+ * transactions to batching, validation, execution, and final commitment.
+ * It is designed for high throughput and compatibility with Agave's banking stage.
  */
 class BankingStage {
 public:
   using TransactionPtr = std::shared_ptr<ledger::Transaction>;
-  using CompletionCallback =
-      std::function<void(std::shared_ptr<TransactionBatch>)>;
-  using BlockNotificationCallback =
-      std::function<void(const ledger::Block&)>;
+  using CompletionCallback = std::function<void(std::shared_ptr<TransactionBatch>)>;
+  using BlockNotificationCallback = std::function<void(const ledger::Block&)>;
 
   BankingStage();
   ~BankingStage();
 
-  // Banking stage lifecycle
   bool initialize();
   bool start();
   bool stop();
   bool shutdown();
   bool is_running() const { return running_; }
 
-  // Transaction processing
   void submit_transaction(TransactionPtr transaction);
   void submit_transactions(std::vector<TransactionPtr> transactions);
   std::future<bool> process_transaction_async(TransactionPtr transaction);
-
-  // **HIGH-PERFORMANCE BATCH PROCESSING** - New methods for 1k+ TPS
   void submit_transaction_batch(std::vector<TransactionPtr> transactions);
-  void enable_ultra_high_throughput_mode(bool enabled) { 
-    ultra_high_throughput_mode_ = enabled; 
-  }
-  void set_batch_processing_size(size_t size) { 
-    batch_processing_size_ = std::min(size, size_t(1000)); // Cap at 1000 per batch
-  }
 
-  // Batch processing
+  void enable_ultra_high_throughput_mode(bool enabled) { ultra_high_throughput_mode_ = enabled; }
+  void set_batch_processing_size(size_t size) { batch_processing_size_ = std::min(size, size_t(1000)); }
+
   void submit_batch(std::shared_ptr<TransactionBatch> batch);
   void set_batch_size(size_t batch_size) { batch_size_ = batch_size; }
-  void set_batch_timeout(std::chrono::milliseconds timeout) {
-    batch_timeout_ = timeout;
-  }
+  void set_batch_timeout(std::chrono::milliseconds timeout) { batch_timeout_ = timeout; }
 
-  // Callback registration
-  void set_completion_callback(CompletionCallback callback) {
-    completion_callback_ = callback;
-  }
-  void set_block_notification_callback(BlockNotificationCallback callback) {
-    block_notification_callback_ = callback;
-  }
+  void set_completion_callback(CompletionCallback callback) { completion_callback_ = callback; }
+  void set_block_notification_callback(BlockNotificationCallback callback) { block_notification_callback_ = callback; }
 
-  // Pipeline configuration
   void set_parallel_stages(size_t stages) { parallel_stages_ = stages; }
-  void set_max_concurrent_batches(size_t max_batches) {
-    max_concurrent_batches_ = max_batches;
-  }
-  void enable_adaptive_batching(bool enabled) {
-    adaptive_batching_enabled_ = enabled;
-  }
+  void set_max_concurrent_batches(size_t max_batches) { max_concurrent_batches_ = max_batches; }
+  void enable_adaptive_batching(bool enabled) { adaptive_batching_enabled_ = enabled; }
 
-  // Performance tuning
   void set_worker_thread_count(size_t count) { worker_thread_count_ = count; }
-  void enable_resource_monitoring(bool enabled) {
-    resource_monitoring_enabled_ = enabled;
-  }
+  void enable_resource_monitoring(bool enabled) { resource_monitoring_enabled_ = enabled; }
 
-  // Statistics and monitoring
+  /**
+   * @brief A collection of performance and status metrics for the BankingStage.
+   */
   struct Statistics {
     size_t total_transactions_processed;
     size_t total_batches_processed;
@@ -259,18 +219,11 @@ public:
   size_t get_pending_transaction_count() const;
   double get_throughput_tps() const;
 
-  // Advanced features
-  void enable_priority_processing(bool enabled) {
-    priority_processing_enabled_ = enabled;
-  }
+  void enable_priority_processing(bool enabled) { priority_processing_enabled_ = enabled; }
   void set_transaction_priority(TransactionPtr transaction, int priority);
 
-  // Ledger integration
-  void set_ledger_manager(std::shared_ptr<ledger::LedgerManager> ledger_manager) {
-    ledger_manager_ = ledger_manager;
-  }
+  void set_ledger_manager(std::shared_ptr<ledger::LedgerManager> ledger_manager) { ledger_manager_ = ledger_manager; }
   
-  // Fault tolerance public interface
   common::Result<bool> process_transaction_with_fault_tolerance(TransactionPtr transaction);
   common::Result<bool> save_banking_state();
   common::Result<bool> restore_banking_state();

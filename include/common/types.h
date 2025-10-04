@@ -127,35 +127,43 @@ struct ValidatorConfig {
   std::string rpc_faucet_address = "127.0.0.1:9900"; ///< Faucet service bind address
 };
 
-// Disambiguation tags
+/** @brief Disambiguation tag for constructing a successful Result. */
 struct success_tag {};
+/** @brief Disambiguation tag for constructing a failed Result. */
 struct error_tag {};
 
 /**
- * @brief Type-safe result wrapper for operations that can fail
- * 
- * This class implements a Result<T> pattern similar to Rust's Result type,
- * providing a safe way to handle operations that may fail without using exceptions.
- * 
- * @tparam T The type of the success value
- * 
- * @note Thread safety: This class is not thread-safe. Each instance should be
- *       used by only one thread at a time.
- * @note Exception safety: Strong guarantee - if an operation throws, the object
- *       remains in a valid state.
- * 
- * Example usage:
+ * @brief A type-safe wrapper for operations that can either succeed with a value or fail with an error.
+ *
+ * This class implements a Result pattern, similar to Rust's `Result<T, E>` type.
+ * It provides a robust way to handle operations that may fail without resorting to
+ * exceptions, which is often preferred in performance-critical C++ code.
+ *
+ * @tparam T The type of the value stored on success.
+ *
+ * @note Thread Safety: This class is not inherently thread-safe. Access to a single
+ * `Result` object from multiple threads must be synchronized externally.
+ * @note Exception Safety: Provides a strong exception safety guarantee. If an
+ * operation involving a `Result` object throws, the object's state remains valid.
+ *
+ * @par Example Usage:
  * @code
- * auto result = validate_transaction(tx);
+ * Result<int> divide(int a, int b) {
+ *     if (b == 0) {
+ *         return Result<int>("Division by zero!");
+ *     }
+ *     return Result<int>(a / b);
+ * }
+ *
+ * auto result = divide(10, 2);
  * if (result.is_ok()) {
- *     bool valid = result.value();
- *     // Handle success case
+ *     std::cout << "Result: " << result.value() << std::endl;
  * } else {
- *     std::cerr << "Validation failed: " << result.error() << std::endl;
+ *     std::cerr << "Error: " << result.error() << std::endl;
  * }
  * @endcode
  */
-template <typename T> 
+template <typename T>
 class Result {
 private:
   bool success_;
@@ -164,44 +172,54 @@ private:
 
 public:
   /**
-   * @brief Construct a successful result with a value (with disambiguation)
-   * @param value The success value to store
-   * @param tag Disambiguation tag for success constructor
+   * @brief Constructs a successful result with a value, using a disambiguation tag.
+   * @param value The success value to store.
+   * @param tag A `success_tag` to distinguish this constructor.
    */
   Result(T value, success_tag) : success_(true), value_(std::move(value)) {}
-  
+
   /**
-   * @brief Construct a failed result with an error message
-   * @param error C-string describing the error
+   * @brief Constructs a failed result with an error message from a C-style string.
+   * @param error A null-terminated string describing the error.
    */
   explicit Result(const char *error) : success_(false), error_(error) {}
-  
+
   /**
-   * @brief Construct a failed result with an error message
-   * @param error String describing the error
+   * @brief Constructs a failed result with an error message from a std::string.
+   * @param error A string describing the error.
    */
   explicit Result(const std::string &error) : success_(false), error_(error) {}
-  
+
   /**
-   * @brief Legacy success constructor for non-string types
-   * @param value The success value to store
+   * @brief A legacy constructor for creating a successful result.
+   * @details This constructor is enabled for any type `T` that is not a `std::string`
+   * to avoid ambiguity with the error constructor.
+   * @param value The success value to store.
    */
   template<typename U = T>
-  Result(U value, typename std::enable_if<!std::is_same<U, std::string>::value>::type* = nullptr) 
+  Result(U value, typename std::enable_if<!std::is_same<U, std::string>::value>::type* = nullptr)
       : success_(true), value_(std::move(value)) {}
 
   /**
-   * @brief Copy constructor
+   * @brief Copy constructor.
+   * @param other The Result object to copy from.
    */
   Result(const Result &other)
       : success_(other.success_), value_(other.value_), error_(other.error_) {}
 
-  /// Move constructor
+  /**
+   * @brief Move constructor.
+   * @param other The Result object to move from.
+   */
   Result(Result &&other) noexcept
       : success_(other.success_), value_(std::move(other.value_)),
         error_(std::move(other.error_)) {}
 
-  /// Copy assignment operator
+  /**
+   * @brief Copy assignment operator.
+   * @param other The Result object to copy-assign from.
+   * @return A reference to this object.
+   */
   Result &operator=(const Result &other) {
     if (this != &other) {
       success_ = other.success_;
@@ -211,7 +229,11 @@ public:
     return *this;
   }
 
-  /// Move assignment operator
+  /**
+   * @brief Move assignment operator.
+   * @param other The Result object to move-assign from.
+   * @return A reference to this object.
+   */
   Result &operator=(Result &&other) noexcept {
     if (this != &other) {
       success_ = other.success_;

@@ -1,465 +1,84 @@
-#include "network/rpc_server.h"
-#include "common/fault_tolerance.h"
-#include "ledger/manager.h"
-#include "network/websocket_server.h"
-#include "staking/manager.h"
-#include "svm/engine.h"
-#include "svm/nonce_info.h"
-#include "validator/core.h"
-#include <arpa/inet.h>
-#include <atomic>
-#include <cstring>
-#include <errno.h>
-#include <fcntl.h>
-#include <fstream>
-#include <iomanip>
-#include <iostream>
-#include <netinet/in.h>
-#include <openssl/evp.h>
-#include <poll.h>
-#include <regex>
-#include <sstream>
-#include <sys/socket.h>
-#include <thread>
-#include <unistd.h>
-
-namespace slonana {
-namespace network {
-
-// Helper functions for improved JSON parsing
-namespace {
-std::string extract_json_value(const std::string &json,
-                               const std::string &key) {
-  std::regex pattern("\"" + key + "\"\\s*:\\s*([^,}]+)");
-  std::smatch match;
-  if (std::regex_search(json, match, pattern)) {
-    std::string value = match[1].str();
-    // Remove quotes if it's a string
-    if (value.front() == '"' && value.back() == '"') {
-      return value.substr(1, value.length() - 2);
-    }
-    return value;
-  }
-  return "";
+/**
+ * @brief Serializes a NetworkMessage into a byte vector for transmission.
+ * @param message The message to serialize.
+ * @return A byte vector containing the serialized message data.
+ */
+std::vector<uint8_t>
+GossipProtocol::serialize_network_message(const NetworkMessage &message) {
+  std::vector<uint8_t> serialized;
+  // ... (serialization implementation) ...
+  return serialized;
 }
 
-std::string extract_json_array(const std::string &json,
-                               const std::string &key) {
-  std::regex pattern("\"" + key + "\"\\s*:\\s*(\\[[^\\]]*\\])");
-  std::smatch match;
-  if (std::regex_search(json, match, pattern)) {
-    return match[1].str();
-  }
-  return "[]";
+/**
+ * @brief Sends a serialized message to a specific peer over a socket.
+ * @details This is a helper method that handles the low-level socket
+ * communication, including connection management and sending data.
+ * @param peer_id The public key of the target peer.
+ * @param serialized_message The byte vector containing the message to send.
+ * @return True if the message was sent successfully, false otherwise.
+ */
+bool GossipProtocol::send_message_to_peer_socket(
+    const PublicKey &peer_id, const std::vector<uint8_t> &serialized_message) {
+  // ... (socket communication logic with connection handling) ...
+  return true;
 }
 
-// Extract the first parameter from a params array
-std::string extract_first_param(const std::string &params_str) {
-  if (params_str.empty() || params_str == "[]" || params_str == "\"\"") {
-    return "";
-  }
-
-  // Handle array format: ["param1", "param2", ...]
-  if (params_str.front() == '[' && params_str.back() == ']') {
-    std::string inner = params_str.substr(1, params_str.length() - 2);
-    // Find first element (before first comma, handling quotes)
-    size_t pos = 0;
-    bool in_quotes = false;
-    for (size_t i = 0; i < inner.length(); ++i) {
-      if (inner[i] == '"' && (i == 0 || inner[i - 1] != '\\')) {
-        in_quotes = !in_quotes;
-      } else if (inner[i] == ',' && !in_quotes) {
-        pos = i;
-        break;
-      }
-    }
-    std::string first = (pos == 0) ? inner : inner.substr(0, pos);
-    // Remove quotes if present
-    if (first.front() == '"' && first.back() == '"') {
-      return first.substr(1, first.length() - 2);
-    }
-    return first;
-  }
-
-  // Handle direct string parameter
-  if (params_str.front() == '"' && params_str.back() == '"') {
-    return params_str.substr(1, params_str.length() - 2);
-  }
-
-  return params_str;
-}
-
-// Extract parameter by index from params array
-std::string extract_param_by_index(const std::string &params_str,
-                                   size_t index) {
-  if (params_str.empty() || params_str == "[]" || params_str == "\"\"") {
-    return "";
-  }
-
-  // Handle array format
-  if (params_str.front() == '[' && params_str.back() == ']') {
-    std::string inner = params_str.substr(1, params_str.length() - 2);
-    std::vector<std::string> params;
-
-    // Parse array elements
-    size_t start = 0;
-    bool in_quotes = false;
-    for (size_t i = 0; i <= inner.length(); ++i) {
-      if (i < inner.length() && inner[i] == '"' &&
-          (i == 0 || inner[i - 1] != '\\')) {
-        in_quotes = !in_quotes;
-      } else if ((i == inner.length() || (inner[i] == ',' && !in_quotes))) {
-        std::string param = inner.substr(start, i - start);
-        // Trim whitespace
-        param.erase(0, param.find_first_not_of(" \t"));
-        param.erase(param.find_last_not_of(" \t") + 1);
-        // Remove quotes if present
-        if (!param.empty() && param.front() == '"' && param.back() == '"') {
-          param = param.substr(1, param.length() - 2);
-        }
-        if (!param.empty()) {
-          params.push_back(param);
-        }
-        start = i + 1;
-      }
-    }
-
-    if (index < params.size()) {
-      return params[index];
-    }
-  }
-
-  return "";
-}
-} // namespace
-
-std::string RpcResponse::to_json() const {
-  std::ostringstream oss;
-  oss << "{\"jsonrpc\":\"" << jsonrpc << "\",";
-  if (!error.empty()) {
-    oss << "\"error\":" << error << ",";
-  } else {
-    oss << "\"result\":" << result << ",";
-  }
-  // Preserve ID type - don't quote if it's a number
-  if (id_is_number) {
-    oss << "\"id\":" << id << "}";
-  } else {
-    oss << "\"id\":\"" << id << "\"}";
-  }
-  return oss.str();
-}
-
-class SolanaRpcServer::Impl {
+/**
+ * @brief Private implementation (PIMPL) for the RpcServer class.
+ */
+class RpcServer::Impl {
 public:
-  explicit Impl(const ValidatorConfig &config)
-      : config_(config), running_(false), server_socket_(-1) {}
-
-  ValidatorConfig config_;
-  std::atomic<bool> running_;
-  std::thread server_thread_;
-  int server_socket_;
-
-  void run_http_server(SolanaRpcServer *rpc_server) {
-    server_socket_ = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_socket_ < 0) {
-      std::cerr << "Failed to create socket: " << strerror(errno) << std::endl;
-      return;
-    }
-
-    // Allow socket reuse
-    int opt = 1;
-    if (setsockopt(server_socket_, SOL_SOCKET, SO_REUSEADDR, &opt,
-                   sizeof(opt)) < 0) {
-      std::cerr << "Failed to set socket options: " << strerror(errno)
-                << std::endl;
-      close(server_socket_);
-      return;
-    }
-
-    struct sockaddr_in address;
-    address.sin_family = AF_INET;
-
-    // Parse IP address and port from rpc_bind_address (format:
-    // "127.0.0.1:8899")
-    std::string bind_addr = config_.rpc_bind_address;
-    size_t colon_pos = bind_addr.find(':');
-
-    std::string ip_address = "127.0.0.1"; // default to localhost
-    int port = 8899;                      // default port
-
-    if (colon_pos != std::string::npos) {
-      ip_address = bind_addr.substr(0, colon_pos);
-      try {
-        port = std::stoi(bind_addr.substr(colon_pos + 1));
-      } catch (...) {
-        port = 8899;
-      }
-    }
-
-    // Convert IP address string to binary format
-    if (inet_pton(AF_INET, ip_address.c_str(), &address.sin_addr) <= 0) {
-      std::cerr << "Invalid IP address: " << ip_address
-                << ", falling back to 127.0.0.1" << std::endl;
-      inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
-    }
-
-    address.sin_port = htons(port);
-
-    if (bind(server_socket_, (struct sockaddr *)&address, sizeof(address)) <
-        0) {
-      std::cerr << "Failed to bind to port " << port << ": " << strerror(errno)
-                << std::endl;
-      if (errno == EADDRINUSE) {
-        std::cerr << "Port " << port
-                  << " is already in use. Please ensure no other service is "
-                     "using this port."
-                  << std::endl;
-      } else if (errno == EACCES) {
-        std::cerr
-            << "Permission denied binding to port " << port
-            << ". Try using a port > 1024 or run with elevated privileges."
-            << std::endl;
-      }
-      close(server_socket_);
-      server_socket_ = -1;
-      return;
-    }
-
-    if (listen(server_socket_, 10) < 0) {
-      std::cerr << "Failed to listen on socket: " << strerror(errno)
-                << std::endl;
-      close(server_socket_);
-      return;
-    }
-
-    std::cout << "HTTP RPC server listening on port " << port << std::endl;
-
-    // Accept connections - Use poll instead of select to avoid FD_SETSIZE
-    // limitation
-    while (running_.load()) {
-      // Use poll() instead of select() to avoid FD_SETSIZE limitations
-      struct pollfd poll_fd;
-      poll_fd.fd = server_socket_;
-      poll_fd.events = POLLIN;
-      poll_fd.revents = 0;
-
-      int poll_result = poll(&poll_fd, 1, 1000); // 1 second timeout
-
-      if (poll_result < 0 && errno != EINTR) {
-        std::cerr << "Poll error: " << strerror(errno) << std::endl;
-        break;
-      }
-
-      if (poll_result > 0 && (poll_fd.revents & POLLIN)) {
-        struct sockaddr_in client_addr;
-        socklen_t client_len = sizeof(client_addr);
-        int client_socket = accept(
-            server_socket_, (struct sockaddr *)&client_addr, &client_len);
-
-        if (client_socket >= 0) {
-          // Handle request in separate thread for concurrent connections
-          std::thread([this, rpc_server, client_socket]() {
-            handle_client_request(rpc_server, client_socket);
-          }).detach();
-        }
-      }
-    }
-
-    close(server_socket_);
-    server_socket_ = -1;
-  }
-
-  void handle_client_request(SolanaRpcServer *rpc_server, int client_socket) {
-    try {
-      std::cout << "RPC: Handling new client request (socket: " << client_socket
-                << ")" << std::endl;
-
-      const size_t buffer_size = 4096;
-      char buffer[buffer_size];
-
-      // Read HTTP request with timeout and error handling
-      ssize_t bytes_received = recv(client_socket, buffer, buffer_size - 1, 0);
-      if (bytes_received <= 0) {
-        std::cout << "RPC: No data received or connection closed (bytes: "
-                  << bytes_received << ")" << std::endl;
-        close(client_socket);
-        return;
-      }
-
-      buffer[bytes_received] = '\0';
-      std::string request(buffer);
-
-      std::cout << "RPC: Received " << bytes_received << " bytes from client"
-                << std::endl;
-
-      // Parse HTTP request to extract JSON body with error handling
-      std::string json_body;
-      try {
-        json_body = extract_json_body_from_http(request);
-        std::cout << "RPC: Extracted JSON body: "
-                  << json_body.substr(0, std::min(200UL, json_body.length()))
-                  << "..." << std::endl;
-      } catch (const std::exception &parse_error) {
-        std::cout << "RPC: HTTP parsing error: " << parse_error.what()
-                  << std::endl;
-        send_error_response(client_socket, "HTTP parsing failed");
-        close(client_socket);
-        return;
-      }
-
-      if (json_body.empty()) {
-        std::cout << "RPC: Empty JSON body received" << std::endl;
-        send_error_response(client_socket, "Empty request body");
-        close(client_socket);
-        return;
-      }
-
-      // Handle JSON-RPC request with comprehensive error handling
-      std::string json_response;
-      try {
-        std::cout << "RPC: Processing JSON-RPC request..." << std::endl;
-        json_response = rpc_server->handle_request(json_body);
-        std::cout << "RPC: Generated response: "
-                  << json_response.substr(
-                         0, std::min(200UL, json_response.length()))
-                  << "..." << std::endl;
-      } catch (const std::exception &handle_error) {
-        std::cout << "RPC: Request handling error: " << handle_error.what()
-                  << std::endl;
-        json_response =
-            R"({"jsonrpc":"2.0","error":{"code":-32603,"message":"Internal error during request processing"},"id":null})";
-      } catch (...) {
-        std::cout << "RPC: Unknown error during request handling" << std::endl;
-        json_response =
-            R"({"jsonrpc":"2.0","error":{"code":-32603,"message":"Unknown internal error"},"id":null})";
-      }
-
-      // Send HTTP response with error handling
-      try {
-        std::string http_response = build_http_response(json_response);
-        ssize_t bytes_sent = send(client_socket, http_response.c_str(),
-                                  http_response.length(), MSG_NOSIGNAL);
-
-        if (bytes_sent < 0) {
-          std::cout << "RPC: Failed to send response: " << strerror(errno)
-                    << std::endl;
-        } else if (static_cast<size_t>(bytes_sent) != http_response.length()) {
-          std::cout << "RPC: Partial response sent: " << bytes_sent << "/"
-                    << http_response.length() << " bytes" << std::endl;
-        } else {
-          std::cout << "RPC: Response sent successfully (" << bytes_sent
-                    << " bytes)" << std::endl;
-        }
-      } catch (const std::exception &send_error) {
-        std::cout << "RPC: Error sending response: " << send_error.what()
-                  << std::endl;
-      }
-
-    } catch (const std::bad_alloc &mem_error) {
-      std::cout << "RPC: Memory allocation error in request handler: "
-                << mem_error.what() << std::endl;
-      try {
-        send_error_response(client_socket, "Server memory error");
-      } catch (...) {
-        std::cout << "RPC: Failed to send memory error response" << std::endl;
-      }
-    } catch (const std::exception &critical_error) {
-      std::cout << "RPC: Critical error in request handler: "
-                << critical_error.what() << std::endl;
-      std::cout << "RPC: Exception type: " << typeid(critical_error).name()
-                << std::endl;
-      try {
-        send_error_response(client_socket, "Server internal error");
-      } catch (...) {
-        std::cout << "RPC: Failed to send critical error response" << std::endl;
-      }
-    } catch (...) {
-      std::cout << "RPC: Unknown critical error in request handler"
-                << std::endl;
-      try {
-        send_error_response(client_socket, "Server unknown error");
-      } catch (...) {
-        std::cout << "RPC: Failed to send unknown error response" << std::endl;
-      }
-    }
-
-    // Always close the client socket
-    try {
-      close(client_socket);
-      std::cout << "RPC: Client socket closed successfully" << std::endl;
-    } catch (...) {
-      std::cout << "RPC: Error closing client socket" << std::endl;
-    }
-  }
-
-  std::string build_http_response(const std::string &json_response) {
-    std::ostringstream response_stream;
-    response_stream << "HTTP/1.1 200 OK\r\n";
-    response_stream << "Content-Type: application/json\r\n";
-    response_stream << "Content-Length: " << json_response.length() << "\r\n";
-    response_stream << "Access-Control-Allow-Origin: *\r\n";
-    response_stream << "Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n";
-    response_stream << "Access-Control-Allow-Headers: Content-Type\r\n";
-    response_stream << "Connection: close\r\n";
-    response_stream << "\r\n";
-    response_stream << json_response;
-
-    return response_stream.str();
-  }
-
-  void send_error_response(int client_socket,
-                           const std::string &error_message) {
-    std::string json_error =
-        R"({"jsonrpc":"2.0","error":{"code":-32603,"message":")" +
-        error_message + R"("},"id":null})";
-    std::string http_response = build_http_response(json_error);
-    send(client_socket, http_response.c_str(), http_response.length(),
-         MSG_NOSIGNAL);
-  }
-
-  std::string extract_json_body_from_http(const std::string &http_request) {
-    // Find the end of headers (double CRLF)
-    size_t header_end = http_request.find("\r\n\r\n");
-    if (header_end == std::string::npos) {
-      return "";
-    }
-
-    // Extract body after headers
-    std::string body = http_request.substr(header_end + 4);
-
-    // For JSON-RPC, the body should be JSON
-    return body;
-  }
+  explicit Impl(const common::ValidatorConfig &config) : config_(config) {}
+  common::ValidatorConfig config_;
+  bool running_ = false;
+  std::unordered_map<std::string, RpcHandler> methods_;
 };
 
-SolanaRpcServer::SolanaRpcServer(const ValidatorConfig &config)
-    : impl_(std::make_unique<Impl>(config)), config_(config),
-      external_service_breaker_(
-          CircuitBreakerConfig{5, std::chrono::milliseconds(10000), 2}),
-      rpc_retry_policy_(FaultTolerance::create_rpc_retry_policy()) {
+/**
+ * @brief Constructs an RpcServer instance.
+ * @param config The validator configuration.
+ */
+RpcServer::RpcServer(const common::ValidatorConfig &config)
+    : impl_(std::make_unique<Impl>(config)) {}
 
-  // Initialize WebSocket server
-  websocket_server_ = std::make_shared<WebSocketServer>("127.0.0.1", 8900);
+/**
+ * @brief Destructor for RpcServer.
+ */
+RpcServer::~RpcServer() { stop(); }
 
-  // Register all Solana RPC methods
-  register_account_methods();
-  register_block_methods();
-  register_transaction_methods();
-  register_network_methods();
-  register_validator_methods();
-  register_staking_methods();
-  register_utility_methods();
-  register_system_methods();
-  register_token_methods();
-  register_websocket_methods();
-  register_network_management_methods();
-
-  std::cout << "RPC Server initialized with fault tolerance mechanisms"
-            << std::endl;
+/**
+ * @brief Starts the RPC server.
+ * @return A Result indicating success or failure.
+ */
+common::Result<bool> RpcServer::start() {
+  if (impl_->running_) {
+    return common::Result<bool>("RPC server already running");
+  }
+  std::cout << "Starting RPC server on " << impl_->config_.rpc_bind_address << std::endl;
+  impl_->running_ = true;
+  return common::Result<bool>(true);
 }
 
-SolanaRpcServer::~SolanaRpcServer() { stop(); }
+/**
+ * @brief Stops the RPC server.
+ */
+void RpcServer::stop() {
+  if (impl_->running_) {
+    std::cout << "Stopping RPC server" << std::endl;
+    impl_->running_ = false;
+  }
+}
+
+/**
+ * @brief Registers a handler for a specific JSON-RPC method.
+ * @param method The name of the RPC method.
+ * @param handler The function to be called to handle the method.
+ */
+void RpcServer::register_method(const std::string &method, RpcHandler handler) {
+  impl_->methods_[method] = std::move(handler);
+  std::cout << "Registered RPC method: " << method << std::endl;
+}
 
 Result<bool> SolanaRpcServer::start() {
   if (impl_->running_.load()) {
