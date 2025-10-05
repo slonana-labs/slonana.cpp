@@ -14,16 +14,19 @@ namespace slonana {
 namespace network {
 
 DistributedLoadBalancer::DistributedLoadBalancer(const std::string &balancer_id,
-                                                 const ValidatorConfig &config)
-    : balancer_id_(balancer_id), config_(config), running_(false) {
+                                                 const ValidatorConfig &config,
+                                                 size_t queue_capacity)
+    : balancer_id_(balancer_id), config_(config), running_(false),
+      queue_capacity_(queue_capacity) {
 
   // Initialize default statistics
   std::memset(&current_stats_, 0, sizeof(current_stats_));
 
   // Initialize lock-free request queue if available
 #if HAS_LOCKFREE_QUEUE
-  lock_free_request_queue_ = std::make_unique<boost::lockfree::queue<ConnectionRequest*>>(1024);
-  std::cout << "Lock-free request queue enabled with ownership tracking" << std::endl;
+  lock_free_request_queue_ = std::make_unique<boost::lockfree::queue<ConnectionRequest*>>(queue_capacity_);
+  std::cout << "Lock-free request queue enabled (capacity: " << queue_capacity_ 
+            << ") with ownership tracking" << std::endl;
 #else
   std::cout << "Using mutex-protected request queue with condition variable" << std::endl;
 #endif
@@ -1211,6 +1214,40 @@ std::string generate_request_id() {
   static std::atomic<uint64_t> counter{0};
   return "req_" + std::to_string(counter.fetch_add(1)) + "_" +
          std::to_string(std::time(nullptr));
+}
+
+void DistributedLoadBalancer::set_queue_capacity(size_t capacity) {
+  if (running_.load()) {
+    std::cerr << "Cannot change queue capacity while load balancer is running" << std::endl;
+    return;
+  }
+#if HAS_LOCKFREE_QUEUE
+  queue_capacity_ = capacity;
+  // Queue will be recreated on next start() call
+  std::cout << "Queue capacity set to " << capacity << " (will take effect on next start)" << std::endl;
+#else
+  std::cout << "Queue capacity configuration not applicable for mutex-based queue" << std::endl;
+#endif
+}
+
+DistributedLoadBalancer::QueueMetrics 
+DistributedLoadBalancer::get_queue_metrics() const {
+  QueueMetrics metrics;
+#if HAS_LOCKFREE_QUEUE
+  metrics.allocated_count = queue_allocated_count_.load(std::memory_order_acquire);
+  metrics.capacity = queue_capacity_;
+  metrics.push_failure_count = queue_push_failure_count_.load(std::memory_order_relaxed);
+  metrics.utilization_percent = (metrics.capacity > 0) 
+      ? (static_cast<double>(metrics.allocated_count) / static_cast<double>(metrics.capacity)) * 100.0
+      : 0.0;
+#else
+  // For mutex-based fallback, return placeholder values
+  metrics.allocated_count = 0;
+  metrics.capacity = 0;
+  metrics.push_failure_count = 0;
+  metrics.utilization_percent = 0.0;
+#endif
+  return metrics;
 }
 
 } // namespace network

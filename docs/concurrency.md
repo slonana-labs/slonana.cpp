@@ -156,6 +156,30 @@ if (!queue.push(data_ptr)) {
 }
 ```
 
+#### 4. Lock-Free Queue Backpressure
+```cpp
+// ❌ DANGEROUS: Silent push failure without handling
+ConnectionRequest* req = new ConnectionRequest(...);
+if (!lock_free_request_queue_->push(req)) {
+  // Memory leak! No cleanup or backpressure handling
+}
+
+// ✅ CORRECT: Proper push failure handling with backpressure
+ConnectionRequest* req = new ConnectionRequest(...);
+if (!lock_free_request_queue_->push(req)) {
+  delete req;  // Mandatory cleanup
+  queue_push_failure_count_.fetch_add(1, std::memory_order_relaxed);
+  // Implement backpressure policy:
+  // - Return error to client
+  // - Apply rate limiting
+  // - Drop request with logging
+  // - Retry with exponential backoff
+  return ConnectionResponse{/* error response */};
+} else {
+  queue_allocated_count_.fetch_add(1, std::memory_order_relaxed);
+}
+```
+
 ## Testing and Validation
 
 ### ThreadSanitizer Integration
@@ -229,6 +253,20 @@ clang++ -Wthread-safety -fsyntax-only *.cpp
 - Minimize lock hold times in background threads
 - Keep sleep times low (1-5s) for responsive systems
 - Test under realistic concurrent load scenarios
+
+### 6. Lock-Free Queue Management
+- Configure queue capacity based on expected workload
+- Monitor queue metrics regularly:
+  - `allocated_count`: Current items in queue
+  - `push_failure_count`: Indicates backpressure events
+  - `utilization_percent`: Queue fullness indicator
+- Implement backpressure policies when push fails:
+  - Return errors to clients
+  - Apply rate limiting
+  - Log drops for monitoring
+  - Consider retry with exponential backoff
+- Always clean up on push failure to prevent leaks
+- Track metrics in production for capacity planning
 
 ## Known Limitations
 

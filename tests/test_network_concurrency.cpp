@@ -26,6 +26,7 @@ public:
         run_load_balancer_request_queue_stress_test();
         run_topology_manager_concurrent_updates_test();
         run_mixed_workload_test();
+        run_queue_metrics_test();
 
         std::cout << "\n✅ All network concurrency stress tests completed!\n";
     }
@@ -293,6 +294,54 @@ private:
         std::cout << "  ✓ Duration: " << duration.count() << "ms\n";
         std::cout << "  ✓ Mixed throughput: " << ops_per_sec << " ops/sec\n";
         std::cout << "  ✓ No deadlocks detected: ✓\n\n";
+    }
+
+    static void run_queue_metrics_test() {
+        std::cout << "🔬 Test: Lock-Free Queue Metrics and Configuration\n";
+
+        ValidatorConfig config;
+        config.identity_keypair_path = "/tmp/test_keypair";
+        
+        // Test configurable queue capacity
+        size_t custom_capacity = 512;
+        DistributedLoadBalancer balancer("metrics_balancer", config, custom_capacity);
+
+        // Verify capacity is set correctly
+        if (balancer.get_queue_capacity() != custom_capacity) {
+            std::cout << "  ⚠ Queue capacity mismatch (expected: " << custom_capacity 
+                     << ", got: " << balancer.get_queue_capacity() << ")\n";
+        }
+
+        balancer.start();
+
+        // Get initial metrics
+        auto metrics = balancer.get_queue_metrics();
+        std::cout << "  ✓ Initial queue metrics:\n";
+        std::cout << "    - Capacity: " << metrics.capacity << "\n";
+        std::cout << "    - Allocated: " << metrics.allocated_count << "\n";
+        std::cout << "    - Push failures: " << metrics.push_failure_count << "\n";
+        std::cout << "    - Utilization: " << metrics.utilization_percent << "%\n";
+
+        // Verify initial state
+        if (metrics.allocated_count != 0) {
+            std::cout << "  ⚠ Queue should be empty initially\n";
+        }
+        if (metrics.push_failure_count != 0) {
+            std::cout << "  ⚠ Should have no push failures initially\n";
+        }
+
+        balancer.stop();
+
+        // Verify cleanup
+        metrics = balancer.get_queue_metrics();
+        if (metrics.allocated_count != 0) {
+            std::cout << "  ⚠ Memory leak detected: " << metrics.allocated_count 
+                     << " items not cleaned up\n";
+        } else {
+            std::cout << "  ✓ Queue properly cleaned up on shutdown\n";
+        }
+
+        std::cout << "  ✓ Queue metrics test completed\n\n";
     }
 };
 

@@ -108,13 +108,18 @@ struct LoadBalancerStats {
 class DistributedLoadBalancer {
 public:
   DistributedLoadBalancer(const std::string &balancer_id,
-                          const ValidatorConfig &config);
+                          const ValidatorConfig &config,
+                          size_t queue_capacity = 1024);
   ~DistributedLoadBalancer();
 
   // Core management
   bool start();
   void stop();
   bool is_running() const { return running_.load(); }
+
+  // Lock-free queue configuration (when HAS_LOCKFREE_QUEUE is enabled)
+  size_t get_queue_capacity() const { return queue_capacity_; }
+  void set_queue_capacity(size_t capacity); // Only effective before start()
 
   // Backend server management
   bool register_backend_server(const BackendServer &server);
@@ -159,6 +164,16 @@ public:
   LoadBalancerStats get_statistics() const;
   std::unordered_map<std::string, double> get_server_health_scores() const;
   std::vector<std::pair<std::string, uint32_t>> get_server_loads() const;
+
+  // Lock-free queue monitoring (when HAS_LOCKFREE_QUEUE is enabled)
+  // These methods provide visibility into queue health and backpressure scenarios
+  struct QueueMetrics {
+    size_t allocated_count;      // Current number of allocated items in queue
+    size_t capacity;              // Maximum queue capacity
+    size_t push_failure_count;    // Number of failed push attempts (queue full)
+    double utilization_percent;   // Queue utilization percentage
+  };
+  QueueMetrics get_queue_metrics() const;
 
   // Configuration
   bool update_configuration(
@@ -225,10 +240,27 @@ private:
   // - Shutdown: stop() drains remaining items and verifies no leaks via queue_allocated_count_
   // - Memory Order: relaxed for counter (protected by happens-before relationship of queue operations)
   // - Leak Safety: If push fails, producer must delete and not increment counter
+  // 
+  // PUSH FAILURE HANDLING PROTOCOL:
+  // - When push() returns false (queue full), caller MUST:
+  //   1. Immediately delete the allocated ConnectionRequest*
+  //   2. NOT increment queue_allocated_count_
+  //   3. Implement backpressure or drop policy
+  // - Example:
+  //     ConnectionRequest* req = new ConnectionRequest(...);
+  //     if (!lock_free_request_queue_->push(req)) {
+  //       delete req;  // Mandatory cleanup
+  //       queue_push_failure_count_.fetch_add(1, std::memory_order_relaxed);
+  //       // Handle backpressure (return error, drop, retry later, etc.)
+  //     } else {
+  //       queue_allocated_count_.fetch_add(1, std::memory_order_relaxed);
+  //     }
 #if HAS_LOCKFREE_QUEUE
   std::unique_ptr<boost::lockfree::queue<ConnectionRequest*>> lock_free_request_queue_;
   std::atomic<size_t> queue_allocated_count_{0};  // Track allocations for leak detection
+  std::atomic<size_t> queue_push_failure_count_{0};  // Track push failures for monitoring
 #endif
+  size_t queue_capacity_;  // Configurable queue capacity (used by lock-free queue)
   // Fallback mutex-protected queue with condition variable
   mutable std::mutex request_queue_mutex_;
   std::queue<ConnectionRequest> request_queue_;

@@ -34,6 +34,8 @@ jobs:
           protobuf-compiler \
           libudev-dev \
           libusb-1.0-0-dev \
+          nlohmann-json3-dev \
+          libsodium-dev \
           curl \
           wget \
           git \
