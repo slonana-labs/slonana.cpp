@@ -87,38 +87,62 @@ request_airdrop_rpc() {
     fi
 }
 
-# Helper function to send transaction using direct RPC call
+# Helper function to send transaction using Solana CLI (proper transaction generation)
 send_transaction_rpc() {
     local sender_pubkey="$1"
     local recipient_pubkey="$2" 
     local amount_lamports="$3"
     local transaction_id="$4"
+    local sender_keypair="${5:-$RESULTS_DIR/sender-keypair.json}"  # Accept keypair path or use default
     
-    log_verbose "🚀 Direct RPC sendTransaction - processing via banking stage"
+    log_verbose "🚀 Sending transaction via Solana CLI - proper transaction generation"
     log_verbose "   • From: $sender_pubkey"
     log_verbose "   • To: $recipient_pubkey"
     log_verbose "   • Amount: $amount_lamports lamports"
     log_verbose "   • Transaction ID: $transaction_id"
+    log_verbose "   • Keypair: $sender_keypair"
     
-    # Create varied transaction data that will exercise the pipeline
-    # Use transaction_id to create unique transactions 
-    local tx_variant=$(printf "%04d" $((transaction_id % 10000)))
-    local transaction_data="AQABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5/gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp+goaKjpKWmp6ipqqusra6vsLGys7S1tre4ubq7vL2+v8DBwsPExcbHyMnKy8zNzs/Q0dLT1NXW19jZ2tvc3d7f4OHi4+Tl5ufo6err7O3u7/Dx8vP09fb3+Pn6+/z9/v$tx_variant="
-    
-    log_verbose "   • Submitting transaction $transaction_id to banking stage pipeline..."
-    
-    local response=$(rpc_call "sendTransaction" "[\"$transaction_data\"]" "$transaction_id")
-    
-    if [[ "$response" == *"\"result\":"* ]]; then
-        local signature=$(echo "$response" | grep -o '"result":"[^"]*"' | cut -d'"' -f4)
-        log_verbose "✅ Transaction $transaction_id processed by banking stage, signature: $signature"
-        return 0
-    elif [[ "$response" == *"\"error\":"* ]]; then
-        local error_msg=$(echo "$response" | grep -o '"message":"[^"]*"' | cut -d'"' -f4)
-        log_verbose "❌ Transaction $transaction_id failed: $error_msg"
+    # Check if we have required components for CLI-based transfers
+    if [[ ! -f "$sender_keypair" ]]; then
+        log_verbose "❌ Sender keypair not found at $sender_keypair"
         return 1
+    fi
+    
+    # Check if Solana CLI is available
+    if ! command -v solana &> /dev/null; then
+        log_verbose "❌ Solana CLI not available"
+        return 1
+    fi
+    
+    # Convert lamports to SOL for CLI transfer command
+    local amount_sol
+    if command -v bc &> /dev/null; then
+        amount_sol=$(echo "scale=9; $amount_lamports / 1000000000" | bc -l)
     else
-        log_verbose "❌ Transaction $transaction_id unexpected response: $response"
+        # Fallback if bc not available
+        amount_sol=$(awk "BEGIN {printf \"%.9f\", $amount_lamports / 1000000000}")
+    fi
+    
+    log_verbose "   • Amount: $amount_sol SOL"
+    log_verbose "   • Using Solana CLI transfer command..."
+    
+    # Execute transfer using Solana CLI with proper timeout and error handling
+    local transfer_output
+    transfer_output=$(timeout 10s solana transfer "$recipient_pubkey" "$amount_sol" \
+        --keypair "$sender_keypair" \
+        --allow-unfunded-recipient \
+        --fee-payer "$sender_keypair" \
+        --url "http://localhost:${RPC_PORT:-8899}" \
+        --no-wait \
+        2>&1)
+    local transfer_result=$?
+    
+    if [[ $transfer_result -eq 0 ]]; then
+        log_verbose "✅ Transaction $transaction_id submitted successfully via CLI"
+        return 0
+    else
+        log_verbose "❌ Transaction $transaction_id failed via CLI (exit code: $transfer_result)"
+        log_verbose "   • Output: $transfer_output"
         return 1
     fi
 }
@@ -1968,7 +1992,7 @@ EOF
                 local amount_lamports
                 amount_lamports=$(echo "$transfer_amount * 1000000000" | bc -l | cut -d. -f1 2>/dev/null) || amount_lamports=1000000
                 
-                if send_transaction_rpc "$sender_pubkey_cli" "$recipient_pubkey" "$amount_lamports" "$txn_count"; then
+                if send_transaction_rpc "$sender_pubkey_cli" "$recipient_pubkey" "$amount_lamports" "$txn_count" "$sender_keypair"; then
                     transfer_result=0
                     transfer_output="Direct RPC sendTransaction successful"
                     log_verbose "✅ Transaction $txn_count submitted successfully via RPC"
@@ -2003,7 +2027,7 @@ EOF
                     local amount_lamports
                     amount_lamports=$(echo "$transfer_amount * 1000000000" | bc -l | cut -d. -f1 2>/dev/null) || amount_lamports=1000000
                     
-                    if send_transaction_rpc "$sender_pubkey_cli" "$recipient_pubkey" "$amount_lamports" "$txn_count"; then
+                    if send_transaction_rpc "$sender_pubkey_cli" "$recipient_pubkey" "$amount_lamports" "$txn_count" "$sender_keypair"; then
                         log_verbose "✅ RPC fallback successful for transaction $txn_count"
                         ((success_count++))
                     else
