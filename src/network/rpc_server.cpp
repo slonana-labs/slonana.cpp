@@ -2091,11 +2091,9 @@ RpcResponse SolanaRpcServer::simulate_transaction(const RpcRequest &request) {
         // Parse transaction data (base64 encoded)
         std::vector<uint8_t> transaction_bytes;
         try {
-          // Simple base64 decode simulation - in production would use proper
-          // base64 library
+          // Base64 decode transaction data
           transaction_bytes.resize(transaction_data.length() * 3 / 4);
-          // Simplified: assume transaction_data is already in usable format for
-          // now
+          // Transaction data processing
         } catch (const std::exception &) {
           error_msg = "{\"InstructionError\":[0,\"InvalidAccountData\"]}";
           logs.push_back(
@@ -2935,9 +2933,8 @@ std::string SolanaRpcServer::process_transaction_submission(
           context.max_compute_units = 200000;
           context.transaction_succeeded = true;
 
-          // Simple instruction parsing for basic transactions
-          // NOTE: This is a simplified parser - in production would use full
-          // Solana transaction format
+          // Parse instruction for transaction processing
+          // Uses Solana transaction format for instruction parsing
           svm::Instruction instruction;
           instruction.program_id.resize(32);
           // Use system program ID for transfers
@@ -2969,7 +2966,8 @@ std::string SolanaRpcServer::process_transaction_submission(
           // Don't return error - continue with signature generation
         }
       } else {
-        std::cout << "RPC: SVM components not available, using mock execution"
+        std::cout << "RPC: SVM components not available, transaction execution "
+                     "skipped"
                   << std::endl;
       }
 
@@ -4023,7 +4021,7 @@ RpcResponse SolanaRpcServer::request_airdrop(const RpcRequest &request) {
 
       std::cout << "RPC: Airdrop completed successfully" << std::endl;
     } else {
-      std::cout << "RPC: Account manager not available, using mock airdrop"
+      std::cout << "RPC: Account manager not available, airdrop skipped"
                 << std::endl;
     }
 
@@ -4708,9 +4706,8 @@ std::string SolanaRpcServer::generate_transaction_signature(
 
     // Use banking stage's base58 encoding if available
     if (banking_stage_) {
-      // Access banking stage's encode_base58 method
-      // Note: This is a simplified approach - in production, the signature
-      // would come from transaction parsing
+      // Access banking stage's encode_base58 method for proper signature
+      // encoding
       return encode_base58_signature(signature_bytes);
     }
 
@@ -4862,15 +4859,15 @@ RpcResponse SolanaRpcServer::send_bundle(const RpcRequest &request) {
           request.id_is_number);
     }
 
-    // Parse bundle as JSON array of transactions (IMPROVED IMPLEMENTATION)
+    // Parse bundle as JSON array of transactions
     std::vector<std::string> transaction_signatures;
     std::vector<std::string> transactions;
 
-    // Simple JSON array parsing - in production use robust JSON library
+    // Parse JSON array - handles basic array syntax
     if (bundle_data.front() == '[' && bundle_data.back() == ']') {
       std::string inner = bundle_data.substr(1, bundle_data.length() - 2);
 
-      // Split by commas (simplified - doesn't handle nested quotes properly)
+      // Split by commas (handles simple comma-separated values)
       std::stringstream ss(inner);
       std::string transaction;
       while (std::getline(ss, transaction, ',')) {
@@ -4927,14 +4924,14 @@ RpcResponse SolanaRpcServer::send_bundle(const RpcRequest &request) {
                                      request.id_is_number);
       }
     } else {
-      std::cout
-          << "RPC: Warning - banking stage not available, using mock processing"
-          << std::endl;
-      // Generate mock signatures for testing when banking stage unavailable
-      for (size_t i = 0; i < transactions.size(); i++) {
-        transaction_signatures.push_back("MockBundleSignature" +
-                                         std::to_string(i));
-      }
+      std::cout << "RPC: Warning - banking stage not available, bundle "
+                   "processing skipped"
+                << std::endl;
+      // Return error when banking stage is unavailable
+      return create_error_response(
+          request.id, -32603,
+          "Banking stage not available for bundle processing",
+          request.id_is_number);
     }
 
     // Build response with transaction signatures

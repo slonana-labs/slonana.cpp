@@ -250,7 +250,8 @@ NonceValidationResult validate_nonce(const NonceInfo &nonce_info,
 }
 
 PublicKey get_system_program_id() {
-  // Return system program ID (all zeros for now)
+  // Return Solana system program ID (32 bytes of zeros)
+  // This matches the canonical system program address in Solana
   PublicKey system_id(32, 0);
   return system_id;
 }

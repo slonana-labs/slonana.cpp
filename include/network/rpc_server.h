@@ -499,7 +499,7 @@ private:
     // Check if operation is allowed in current degradation mode
     if (!degradation_manager_.is_operation_allowed("rpc", operation_name)) {
       using ReturnType = decltype(operation());
-      return ReturnType("Service temporarily unavailable due to degraded mode");
+      return ReturnType("Service unavailable due to degraded mode");
     }
     
     // Execute with circuit breaker protection

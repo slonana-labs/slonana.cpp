@@ -1330,7 +1330,13 @@ bool JITBackendFactory::is_backend_available(const std::string &backend_name) {
 namespace jit_utils {
 
 bool is_jit_supported_platform() {
-  return true; // Assume supported for now
+// Check platform-specific JIT support
+#if defined(__x86_64__) || defined(__aarch64__) || defined(_M_X64) ||          \
+    defined(_M_ARM64)
+  return true; // JIT supported on x86_64 and ARM64
+#else
+  return false; // JIT not supported on other platforms
+#endif
 }
 
 std::string get_target_triple() {

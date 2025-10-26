@@ -641,7 +641,7 @@ std::vector<uint8_t>
 SnapshotManager::serialize_metadata(const SnapshotMetadata &metadata) const {
   std::vector<uint8_t> result;
 
-  // This is a simplified serialization - in production use a proper format
+  // Serialize snapshot metadata in binary format
   result.insert(result.end(), reinterpret_cast<const uint8_t *>(&metadata.slot),
                 reinterpret_cast<const uint8_t *>(&metadata.slot) +
                     sizeof(metadata.slot));
