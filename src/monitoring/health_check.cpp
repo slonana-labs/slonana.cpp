@@ -280,28 +280,18 @@ HealthCheckResult ValidatorHealthCheck::check() {
 
   try {
     // Check validator-specific health metrics
-    // Validates consensus participation, block production, and network
-    // connectivity
+    // Note: This health check runs independently without direct access to
+    // validator components. For detailed component health, use the
+    // HealthMonitor to register component-specific checks.
 
-    // Check consensus participation rate
-    bool consensus_active = true; // Would query consensus manager
-
-    // Check block production performance
-    bool block_production_active = true; // Would query block producer
-
-    // Check network connectivity to other validators
-    bool network_connected = true; // Would query network layer
-
-    // Check RPC service availability
-    bool rpc_available = true; // Would query RPC server
-
-    result.status = HealthStatus::HEALTHY;
-    result.message = "Validator operations healthy";
-    result.metadata["consensus_enabled"] = consensus_active ? "true" : "false";
-    result.metadata["rpc_enabled"] = rpc_available ? "true" : "false";
-    result.metadata["block_production"] =
-        block_production_active ? "active" : "inactive";
-    result.metadata["network_connected"] = network_connected ? "true" : "false";
+    // Return UNKNOWN since we don't have direct access to validator state
+    // The proper way to check validator health is through the HealthMonitor
+    // which aggregates registered component checks
+    result.status = HealthStatus::UNKNOWN;
+    result.message = "Validator health check requires component registration "
+                     "with HealthMonitor";
+    result.metadata["note"] =
+        "Register validator components with HealthMonitor for detailed status";
 
   } catch (const std::exception &e) {
     result.status = HealthStatus::UNHEALTHY;

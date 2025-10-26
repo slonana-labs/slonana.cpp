@@ -1545,13 +1545,29 @@ common::Result<bool> BankingStage::process_transaction_with_fault_tolerance(
   // Define the transaction processing operation
   auto process_operation = [this, transaction]() -> common::Result<bool> {
     try {
-      // Process transaction through the execution pipeline
-      std::cout << "Processing transaction with fault tolerance..."
-                << std::endl;
+      // Validate transaction
+      if (!transaction || !transaction->verify()) {
+        return common::Result<bool>("Transaction validation failed");
+      }
 
-      // Execute transaction processing with actual transaction logic
-      // This includes validation, execution, and commitment
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      // Create a batch with single transaction for processing
+      auto batch = std::make_shared<TransactionBatch>();
+      batch->add_transaction(transaction);
+
+      // Execute through validation stage
+      if (!validate_batch(batch)) {
+        return common::Result<bool>("Transaction validation failed in batch");
+      }
+
+      // Execute through execution stage
+      if (!execute_batch(batch)) {
+        return common::Result<bool>("Transaction execution failed");
+      }
+
+      // Commit to ledger
+      if (!commit_batch(batch)) {
+        return common::Result<bool>("Transaction commitment failed");
+      }
 
       return common::Result<bool>(true);
     } catch (const std::exception &e) {
