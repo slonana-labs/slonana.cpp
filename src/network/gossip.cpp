@@ -40,13 +40,13 @@ public:
   std::mutex peers_mutex_;
   std::unordered_map<PublicKey, ConnectionInfo> peer_connections_;
   std::unique_ptr<slonana::security::SecureMessaging> secure_messaging_;
-  
+
 private:
   bool setup_secure_messaging() {
     if (!config_.enable_secure_messaging) {
       return true;
     }
-    
+
     slonana::security::SecureMessagingConfig sec_config;
     sec_config.enable_tls = config_.enable_tls;
     sec_config.require_mutual_auth = config_.require_mutual_tls;
@@ -58,15 +58,17 @@ private:
     sec_config.enable_message_encryption = config_.enable_message_encryption;
     sec_config.enable_replay_protection = config_.enable_replay_protection;
     sec_config.message_ttl_seconds = config_.message_ttl_seconds;
-    
-    secure_messaging_ = std::make_unique<slonana::security::SecureMessaging>(sec_config);
-    
+
+    secure_messaging_ =
+        std::make_unique<slonana::security::SecureMessaging>(sec_config);
+
     auto init_result = secure_messaging_->initialize();
     if (!init_result.is_ok()) {
-      std::cerr << "Gossip secure messaging initialization failed: " << init_result.error() << std::endl;
+      std::cerr << "Gossip secure messaging initialization failed: "
+                << init_result.error() << std::endl;
       return false;
     }
-    
+
     return true;
   }
 };
