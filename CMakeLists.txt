@@ -457,6 +457,13 @@ target_include_directories(slonana_secure_networking_integration_tests PRIVATE "
 target_compile_definitions(slonana_secure_networking_integration_tests PRIVATE STANDALONE_SECURE_NETWORKING_TESTS)
 add_test(NAME secure_networking_integration_tests COMMAND slonana_secure_networking_integration_tests)
 
+# Gossip protocol tests
+add_executable(slonana_gossip_protocol_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_gossip_protocol.cpp"
+)
+target_link_libraries(slonana_gossip_protocol_tests slonana_core)
+target_include_directories(slonana_gossip_protocol_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME gossip_protocol_tests COMMAND slonana_gossip_protocol_tests)
 
 
 # Genesis CLI tool
