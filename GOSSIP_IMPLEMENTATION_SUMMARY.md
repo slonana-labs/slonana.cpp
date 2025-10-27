@@ -4,7 +4,7 @@
 
 This document summarizes the complete implementation of the Agave-compatible gossip protocol for slonana.cpp, as requested in the issue:
 
-> "also implement FULLY gossip protocol according to agave, download this folder and analyze each file and implement fully compatable c++ implementation: https://raw.githubusercontent.com/anza-xyz/agave/master/gossip"
+> "also implement FULLY gossip protocol according to agave, download this folder and analyze each file and implement fully compatible c++ implementation: https://raw.githubusercontent.com/anza-xyz/agave/master/gossip"
 
 ## 📊 What Was Delivered
 
