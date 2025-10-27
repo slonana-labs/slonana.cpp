@@ -151,8 +151,13 @@ AccountInfo NonceInfo::get_updated_account() const { return account_; }
 
 bool NonceInfo::is_nonce_account(const AccountInfo &account) {
   // Check account size and ownership
-  return account.data.size() >= NONCE_ACCOUNT_SIZE;
-  // TODO: Add ownership check when system program ID is available
+  if (account.data.size() < NONCE_ACCOUNT_SIZE) {
+    return false;
+  }
+
+  // Check that account is owned by system program
+  PublicKey system_program_id = nonce_utils::get_system_program_id();
+  return account.owner == system_program_id;
 }
 
 std::optional<NonceData>
@@ -245,7 +250,8 @@ NonceValidationResult validate_nonce(const NonceInfo &nonce_info,
 }
 
 PublicKey get_system_program_id() {
-  // Return system program ID (all zeros for now)
+  // Return Solana system program ID (32 bytes of zeros)
+  // This matches the canonical system program address in Solana
   PublicKey system_id(32, 0);
   return system_id;
 }

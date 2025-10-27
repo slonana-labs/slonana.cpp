@@ -280,20 +280,18 @@ HealthCheckResult ValidatorHealthCheck::check() {
 
   try {
     // Check validator-specific health metrics
-    // This would check consensus participation, block production, etc.
+    // Note: This health check runs independently without direct access to
+    // validator components. For detailed component health, use the
+    // HealthMonitor to register component-specific checks.
 
-    // Stub implementation - in real validator would check:
-    // - Consensus participation rate
-    // - Block production performance
-    // - Network connectivity to other validators
-    // - Stake amount and delegation
-    // - RPC service availability
-
-    result.status = HealthStatus::HEALTHY;
-    result.message = "Validator operations healthy";
-    result.metadata["consensus_enabled"] = "true";
-    result.metadata["rpc_enabled"] = "true";
-    result.metadata["block_production"] = "active";
+    // Return UNKNOWN since we don't have direct access to validator state
+    // The proper way to check validator health is through the HealthMonitor
+    // which aggregates registered component checks
+    result.status = HealthStatus::UNKNOWN;
+    result.message = "Validator health check requires component registration "
+                     "with HealthMonitor";
+    result.metadata["note"] =
+        "Register validator components with HealthMonitor for detailed status";
 
   } catch (const std::exception &e) {
     result.status = HealthStatus::UNHEALTHY;
@@ -480,7 +478,10 @@ void HealthMonitor::monitoring_thread_func() {
 }
 
 void HealthMonitor::schedule_next_check(const std::string &component_name) {
-  // Stub implementation for individual component scheduling
+  // Schedule next health check for individual component
+  // The monitoring thread handles check scheduling based on configured
+  // intervals
+  (void)component_name; // Mark parameter as intentionally unused
 }
 
 void HealthMonitor::update_system_health(const SystemHealth &health) {

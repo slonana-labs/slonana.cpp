@@ -379,8 +379,8 @@ std::vector<std::string> NetworkTopologyManager::find_path_to_region(
   // Simple pathfinding using available cross-region links
   std::vector<std::string> path;
 
-  // Get current node's region
-  std::string current_region = "default"; // TODO: Get from config
+  // Get current node's region from config
+  std::string current_region = config_.node_region;
 
   if (current_region == target_region) {
     return {current_region};

@@ -432,10 +432,21 @@ std::vector<Hash> LedgerManager::get_block_chain(const Hash &from_hash,
                                                  size_t count) const {
   std::vector<Hash> result;
 
-  // Stub implementation - would traverse the actual chain
+  // Traverse the block chain starting from the specified hash
+  bool found_start = from_hash.empty();
+
   for (const auto &block : impl_->blocks_) {
+    if (!found_start) {
+      // Search for the starting block
+      if (block.block_hash == from_hash) {
+        found_start = true;
+      }
+      continue;
+    }
+
     if (result.size() >= count)
       break;
+
     result.push_back(block.block_hash);
   }
 

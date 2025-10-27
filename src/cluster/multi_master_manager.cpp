@@ -239,7 +239,7 @@ std::string MultiMasterManager::select_master_for_service(
     return candidate_masters[index].node_id;
   } else if (rule.load_balancing_strategy == "regional") {
     // Prefer masters in the same region as this node
-    std::string my_region = "default"; // TODO: Get from config
+    std::string my_region = config_.node_region;
 
     auto regional_it =
         std::find_if(candidate_masters.begin(), candidate_masters.end(),
@@ -393,11 +393,11 @@ bool MultiMasterManager::promote_to_master(MasterRole role, uint32_t shard_id) {
   // Create master node entry for this node
   MasterNode my_master;
   my_master.node_id = node_id_;
-  my_master.address = "127.0.0.1"; // TODO: Get from config
-  my_master.port = 8899;           // TODO: Get from config
+  my_master.address = config_.node_address;
+  my_master.port = config_.node_port;
   my_master.role = role;
   my_master.shard_id = shard_id;
-  my_master.region = "default"; // TODO: Get from config
+  my_master.region = config_.node_region;
   my_master.load_score = 0;
   my_master.is_healthy = true;
 

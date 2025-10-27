@@ -24,11 +24,14 @@ DistributedLoadBalancer::DistributedLoadBalancer(const std::string &balancer_id,
 
   // Initialize lock-free request queue if available
 #if HAS_LOCKFREE_QUEUE
-  lock_free_request_queue_ = std::make_unique<boost::lockfree::queue<ConnectionRequest*>>(queue_capacity_);
-  std::cout << "Lock-free request queue enabled (capacity: " << queue_capacity_ 
+  lock_free_request_queue_ =
+      std::make_unique<boost::lockfree::queue<ConnectionRequest *>>(
+          queue_capacity_);
+  std::cout << "Lock-free request queue enabled (capacity: " << queue_capacity_
             << ") with ownership tracking" << std::endl;
 #else
-  std::cout << "Using mutex-protected request queue with condition variable" << std::endl;
+  std::cout << "Using mutex-protected request queue with condition variable"
+            << std::endl;
 #endif
 
   // Create default load balancing rule
@@ -92,16 +95,17 @@ void DistributedLoadBalancer::stop() {
 #if HAS_LOCKFREE_QUEUE
   // Clean up any remaining items in lock-free queue to prevent memory leaks
   // This is safe because all producer/consumer threads have been stopped
-  ConnectionRequest* req_ptr = nullptr;
+  ConnectionRequest *req_ptr = nullptr;
   while (lock_free_request_queue_->pop(req_ptr)) {
     delete req_ptr;
     queue_allocated_count_.fetch_sub(1, std::memory_order_relaxed);
   }
-  
+
   // Verify no leaks - all allocations should be cleaned up
   size_t remaining = queue_allocated_count_.load(std::memory_order_acquire);
   if (remaining > 0) {
-    std::cerr << "WARNING: " << remaining << " queue items may have leaked during shutdown" << std::endl;
+    std::cerr << "WARNING: " << remaining
+              << " queue items may have leaked during shutdown" << std::endl;
   }
 #endif
 
@@ -758,14 +762,18 @@ void DistributedLoadBalancer::request_processor_loop() {
 #if HAS_LOCKFREE_QUEUE
     // Lock-free path with RAII-style ownership management
     // OWNERSHIP PROTOCOL:
-    // - Producer allocates ConnectionRequest* and increments queue_allocated_count_ AFTER successful push
+    // - Producer allocates ConnectionRequest* and increments
+    // queue_allocated_count_ AFTER successful push
     // - Consumer (this loop) takes ownership via pop and decrements counter
-    // - RAII: unique_ptr ensures cleanup even if exception thrown during processing
-    // - Memory Order: relaxed on counter is safe - queue operations provide happens-before
-    ConnectionRequest* req_ptr = nullptr;
+    // - RAII: unique_ptr ensures cleanup even if exception thrown during
+    // processing
+    // - Memory Order: relaxed on counter is safe - queue operations provide
+    // happens-before
+    ConnectionRequest *req_ptr = nullptr;
     for (int i = 0; i < 10; ++i) {
       if (lock_free_request_queue_->pop(req_ptr)) {
-        // Use unique_ptr for automatic cleanup (RAII) - prevents leaks on exception
+        // Use unique_ptr for automatic cleanup (RAII) - prevents leaks on
+        // exception
         std::unique_ptr<ConnectionRequest> req_guard(req_ptr);
         requests_to_process.push_back(*req_guard);
         // Decrement allocation counter - balances producer's increment
@@ -776,7 +784,7 @@ void DistributedLoadBalancer::request_processor_loop() {
         break; // Queue is empty
       }
     }
-    
+
     // If no requests, sleep briefly (still using minimal sleep for lock-free)
     // SHUTDOWN NOTE: Relies on running_ flag check with 1ms sleep
     // Trade-off: Max 1ms delay on shutdown vs zero CPU waste during operation
@@ -788,16 +796,16 @@ void DistributedLoadBalancer::request_processor_loop() {
     // Fallback mutex-protected path with event-driven wakeup
     {
       std::unique_lock<std::mutex> lock(request_queue_mutex_);
-      
+
       // Wait for requests with condition variable (event-driven)
       request_queue_cv_.wait_for(lock, std::chrono::milliseconds(10), [this] {
         return !request_queue_.empty() || !running_.load();
       });
-      
+
       if (!running_.load()) {
         break;
       }
-      
+
       // Process up to 10 requests at a time
       for (int i = 0; i < 10 && !request_queue_.empty(); ++i) {
         requests_to_process.push_back(request_queue_.front());
@@ -827,7 +835,7 @@ std::string DistributedLoadBalancer::select_server_round_robin(
   // 1. New service additions are rare in production (happens during startup)
   // 2. Once added, all subsequent calls use fast lock-free atomic path
   // 3. shared_mutex allows unlimited concurrent reads without contention
-  
+
   // Try shared lock first for read-only access (concurrent reads allowed)
   {
     std::shared_lock<std::shared_mutex> lock(round_robin_mutex_);
@@ -838,10 +846,11 @@ std::string DistributedLoadBalancer::select_server_round_robin(
       return servers[counter % servers.size()];
     }
   }
-  
+
   // Counter doesn't exist, need exclusive lock to insert
   // RACE SAFETY: Double-check pattern prevents duplicate insertions
-  // Even if multiple threads race to insert same service_name, emplace is idempotent
+  // Even if multiple threads race to insert same service_name, emplace is
+  // idempotent
   {
     std::unique_lock<std::shared_mutex> lock(round_robin_mutex_);
     // Use emplace return value to avoid duplicate find() call
@@ -1218,28 +1227,36 @@ std::string generate_request_id() {
 
 void DistributedLoadBalancer::set_queue_capacity(size_t capacity) {
   if (running_.load()) {
-    std::cerr << "Cannot change queue capacity while load balancer is running" << std::endl;
+    std::cerr << "Cannot change queue capacity while load balancer is running"
+              << std::endl;
     return;
   }
 #if HAS_LOCKFREE_QUEUE
   queue_capacity_ = capacity;
   // Queue will be recreated on next start() call
-  std::cout << "Queue capacity set to " << capacity << " (will take effect on next start)" << std::endl;
+  std::cout << "Queue capacity set to " << capacity
+            << " (will take effect on next start)" << std::endl;
 #else
-  std::cout << "Queue capacity configuration not applicable for mutex-based queue" << std::endl;
+  std::cout
+      << "Queue capacity configuration not applicable for mutex-based queue"
+      << std::endl;
 #endif
 }
 
-DistributedLoadBalancer::QueueMetrics 
+DistributedLoadBalancer::QueueMetrics
 DistributedLoadBalancer::get_queue_metrics() const {
   QueueMetrics metrics;
 #if HAS_LOCKFREE_QUEUE
-  metrics.allocated_count = queue_allocated_count_.load(std::memory_order_acquire);
+  metrics.allocated_count =
+      queue_allocated_count_.load(std::memory_order_acquire);
   metrics.capacity = queue_capacity_;
-  metrics.push_failure_count = queue_push_failure_count_.load(std::memory_order_relaxed);
-  metrics.utilization_percent = (metrics.capacity > 0) 
-      ? (static_cast<double>(metrics.allocated_count) / static_cast<double>(metrics.capacity)) * 100.0
-      : 0.0;
+  metrics.push_failure_count =
+      queue_push_failure_count_.load(std::memory_order_relaxed);
+  metrics.utilization_percent =
+      (metrics.capacity > 0) ? (static_cast<double>(metrics.allocated_count) /
+                                static_cast<double>(metrics.capacity)) *
+                                   100.0
+                             : 0.0;
 #else
   // For mutex-based fallback, return placeholder values
   metrics.allocated_count = 0;

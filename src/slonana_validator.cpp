@@ -1,7 +1,7 @@
 #include "slonana_validator.h"
-#include "consensus/proof_of_history.h"
-#include "common/logging.h"
 #include "common/alerting.h"
+#include "common/logging.h"
+#include "consensus/proof_of_history.h"
 #include <algorithm>
 #include <chrono>
 #include <fstream>
@@ -41,9 +41,11 @@ SolanaValidator::SolanaValidator(const common::ValidatorConfig &config)
     if (identity_result.is_ok()) {
       validator_identity_ = identity_result.value();
       impl_->validator_identity_ = identity_result.value();
-      LOG_INFO("Loaded validator identity from ", config_.identity_keypair_path);
+      LOG_INFO("Loaded validator identity from ",
+               config_.identity_keypair_path);
     } else {
-      LOG_WARN("Failed to load identity, generating new one: ", identity_result.error());
+      LOG_WARN("Failed to load identity, generating new one: ",
+               identity_result.error());
       validator_identity_ = generate_validator_identity();
       impl_->validator_identity_ = validator_identity_;
     }
@@ -72,23 +74,23 @@ common::Result<bool> SolanaValidator::initialize() {
   // Initialize identity
   auto identity_result = initialize_identity();
   if (!identity_result.is_ok()) {
-    LOG_VALIDATOR_ERROR("Failed to initialize validator identity", "VAL_INIT_001", 
-                        {{"error", identity_result.error()}});
+    LOG_VALIDATOR_ERROR("Failed to initialize validator identity",
+                        "VAL_INIT_001", {{"error", identity_result.error()}});
     return identity_result;
   }
 
   // Initialize components
   auto components_result = initialize_components();
   if (!components_result.is_ok()) {
-    LOG_VALIDATOR_ERROR("Failed to initialize validator components", "VAL_INIT_002", 
-                        {{"error", components_result.error()}});
+    LOG_VALIDATOR_ERROR("Failed to initialize validator components",
+                        "VAL_INIT_002", {{"error", components_result.error()}});
     return components_result;
   }
 
   // Bootstrap ledger from snapshot if needed (for RPC nodes)
   auto bootstrap_result = bootstrap_ledger();
   if (!bootstrap_result.is_ok()) {
-    LOG_VALIDATOR_ERROR("Failed to bootstrap ledger", "VAL_INIT_003", 
+    LOG_VALIDATOR_ERROR("Failed to bootstrap ledger", "VAL_INIT_003",
                         {{"error", bootstrap_result.error()}});
     return bootstrap_result;
   }
@@ -96,7 +98,7 @@ common::Result<bool> SolanaValidator::initialize() {
   // Setup event handlers
   auto handlers_result = setup_event_handlers();
   if (!handlers_result.is_ok()) {
-    LOG_VALIDATOR_ERROR("Failed to setup event handlers", "VAL_INIT_004", 
+    LOG_VALIDATOR_ERROR("Failed to setup event handlers", "VAL_INIT_004",
                         {{"error", handlers_result.error()}});
     return handlers_result;
   }
@@ -112,8 +114,8 @@ common::Result<bool> SolanaValidator::start() {
   if (!initialized_.load()) {
     auto init_result = initialize();
     if (!init_result.is_ok()) {
-      LOG_VALIDATOR_ERROR("Failed to initialize validator before start", "VAL_START_001", 
-                          {{"error", init_result.error()}});
+      LOG_VALIDATOR_ERROR("Failed to initialize validator before start",
+                          "VAL_START_001", {{"error", init_result.error()}});
       return init_result;
     }
   }
@@ -187,23 +189,28 @@ common::Result<bool> SolanaValidator::start() {
   std::cout << "  🔗 Setting up block notification callback..." << std::endl;
   if (banking_stage_ && validator_core_) {
     banking_stage_->set_block_notification_callback(
-      [this](const ledger::Block &block) {
-        // Update validator statistics when blocks are committed
-        this->on_block_received(block);
-        // Also ensure validator core processes the block
-        if (validator_core_) {
-          try {
-            // This will trigger validator core's block processing and statistics
-            validator_core_->process_block(block);
-          } catch (const std::exception &e) {
-            std::cerr << "WARNING: Failed to process block in validator core: " << e.what() << std::endl;
+        [this](const ledger::Block &block) {
+          // Update validator statistics when blocks are committed
+          this->on_block_received(block);
+          // Also ensure validator core processes the block
+          if (validator_core_) {
+            try {
+              // This will trigger validator core's block processing and
+              // statistics
+              validator_core_->process_block(block);
+            } catch (const std::exception &e) {
+              std::cerr
+                  << "WARNING: Failed to process block in validator core: "
+                  << e.what() << std::endl;
+            }
           }
-        }
-      }
-    );
-    std::cout << "  ✅ Block notification callback connected successfully" << std::endl;
+        });
+    std::cout << "  ✅ Block notification callback connected successfully"
+              << std::endl;
   } else {
-    std::cerr << "WARNING: Could not set up block notification callback (missing components)" << std::endl;
+    std::cerr << "WARNING: Could not set up block notification callback "
+                 "(missing components)"
+              << std::endl;
   }
 
   running_.store(true);
@@ -523,9 +530,10 @@ common::Result<bool> SolanaValidator::initialize_components() {
     LOG_INFO("  📚 Initializing ledger manager...");
     ledger_manager_ =
         std::make_shared<ledger::LedgerManager>(config_.ledger_path);
-    
+
     if (!ledger_manager_) {
-      LOG_LEDGER_ERROR("Failed to create ledger manager instance", "LED_CREATE_001",
+      LOG_LEDGER_ERROR("Failed to create ledger manager instance",
+                       "LED_CREATE_001",
                        {{"ledger_path", config_.ledger_path}});
       return common::Result<bool>("Failed to create ledger manager");
     }
@@ -534,18 +542,20 @@ common::Result<bool> SolanaValidator::initialize_components() {
     LOG_INFO("  ⚙️  Initializing SVM execution engine...");
     execution_engine_ = std::make_shared<svm::ExecutionEngine>();
     account_manager_ = std::make_shared<svm::AccountManager>();
-    
+
     if (!execution_engine_ || !account_manager_) {
-      LOG_SVM_ERROR("Failed to create SVM component instances", "SVM_CREATE_001");
+      LOG_SVM_ERROR("Failed to create SVM component instances",
+                    "SVM_CREATE_001");
       return common::Result<bool>("Failed to create SVM components");
     }
 
     // Initialize staking manager
     LOG_INFO("  💰 Initializing staking manager...");
     staking_manager_ = std::make_shared<staking::StakingManager>();
-    
+
     if (!staking_manager_) {
-      LOG_VALIDATOR_ERROR("Failed to create staking manager instance", "VAL_CREATE_STAKE_001");
+      LOG_VALIDATOR_ERROR("Failed to create staking manager instance",
+                          "VAL_CREATE_STAKE_001");
       return common::Result<bool>("Failed to create staking manager");
     }
 
@@ -553,7 +563,8 @@ common::Result<bool> SolanaValidator::initialize_components() {
     LOG_INFO("  🏦 Initializing banking stage...");
     banking_stage_ = std::make_shared<banking::BankingStage>();
     if (!banking_stage_->initialize()) {
-      LOG_VALIDATOR_ERROR("Failed to initialize banking stage", "VAL_INIT_BANK_001");
+      LOG_VALIDATOR_ERROR("Failed to initialize banking stage",
+                          "VAL_INIT_BANK_001");
       return common::Result<bool>("Failed to initialize banking stage");
     }
     LOG_INFO("    Banking stage initialized successfully");
@@ -562,9 +573,10 @@ common::Result<bool> SolanaValidator::initialize_components() {
     LOG_INFO("  🎯 Initializing validator core...");
     validator_core_ = std::make_shared<validator::ValidatorCore>(
         ledger_manager_, validator_identity_);
-    
+
     if (!validator_core_) {
-      LOG_VALIDATOR_ERROR("Failed to create validator core instance", "VAL_CREATE_CORE_001");
+      LOG_VALIDATOR_ERROR("Failed to create validator core instance",
+                          "VAL_CREATE_CORE_001");
       return common::Result<bool>("Failed to create validator core");
     }
 
@@ -572,7 +584,8 @@ common::Result<bool> SolanaValidator::initialize_components() {
     LOG_INFO("  ⏰ Initializing Proof of History...");
 
     LOG_INFO("    PoH configuration: ");
-    LOG_INFO("      Tick duration: ", config_.poh_target_tick_duration_us, "μs");
+    LOG_INFO("      Tick duration: ", config_.poh_target_tick_duration_us,
+             "μs");
     LOG_INFO("      Ticks per slot: ", config_.poh_ticks_per_slot);
     LOG_INFO("      Batch processing: ",
              (config_.poh_enable_batch_processing ? "enabled" : "disabled"));
@@ -583,14 +596,15 @@ common::Result<bool> SolanaValidator::initialize_components() {
     try {
       gossip_protocol_ = std::make_shared<network::GossipProtocol>(config_);
       rpc_server_ = std::make_shared<network::SolanaRpcServer>(config_);
-      
+
       if (!gossip_protocol_ || !rpc_server_) {
-        LOG_NETWORK_ERROR("Failed to create network component instances", "NET_CREATE_001");
+        LOG_NETWORK_ERROR("Failed to create network component instances",
+                          "NET_CREATE_001");
         return common::Result<bool>("Failed to create network components");
       }
-    } catch (const std::exception& e) {
-      LOG_NETWORK_ERROR("Exception during network component initialization", "NET_INIT_EXC_001", 
-                        {{"exception", e.what()}});
+    } catch (const std::exception &e) {
+      LOG_NETWORK_ERROR("Exception during network component initialization",
+                        "NET_INIT_EXC_001", {{"exception", e.what()}});
       return common::Result<bool>("Network component initialization failed");
     }
 
@@ -598,9 +612,9 @@ common::Result<bool> SolanaValidator::initialize_components() {
     try {
       banking_stage_->set_ledger_manager(ledger_manager_);
       LOG_INFO("    Banking stage connected to ledger manager");
-    } catch (const std::exception& e) {
-      LOG_VALIDATOR_ERROR("Failed to connect banking stage to ledger", "VAL_CONNECT_001", 
-                          {{"exception", e.what()}});
+    } catch (const std::exception &e) {
+      LOG_VALIDATOR_ERROR("Failed to connect banking stage to ledger",
+                          "VAL_CONNECT_001", {{"exception", e.what()}});
       return common::Result<bool>("Failed to connect banking stage to ledger");
     }
 
@@ -612,9 +626,9 @@ common::Result<bool> SolanaValidator::initialize_components() {
       rpc_server_->set_banking_stage(banking_stage_);
       rpc_server_->set_execution_engine(execution_engine_);
       rpc_server_->set_account_manager(account_manager_);
-    } catch (const std::exception& e) {
-      LOG_NETWORK_ERROR("Failed to configure RPC server connections", "RPC_CONFIG_001", 
-                        {{"exception", e.what()}});
+    } catch (const std::exception &e) {
+      LOG_NETWORK_ERROR("Failed to configure RPC server connections",
+                        "RPC_CONFIG_001", {{"exception", e.what()}});
       return common::Result<bool>("Failed to configure RPC server");
     }
 
@@ -624,9 +638,9 @@ common::Result<bool> SolanaValidator::initialize_components() {
       try {
         snapshot_bootstrap_ =
             std::make_unique<validator::SnapshotBootstrapManager>(config_);
-      } catch (const std::exception& e) {
-        LOG_VALIDATOR_ERROR("Failed to initialize snapshot bootstrap", "VAL_SNAP_001", 
-                            {{"exception", e.what()}});
+      } catch (const std::exception &e) {
+        LOG_VALIDATOR_ERROR("Failed to initialize snapshot bootstrap",
+                            "VAL_SNAP_001", {{"exception", e.what()}});
         return common::Result<bool>("Failed to initialize snapshot bootstrap");
       }
     }
@@ -635,8 +649,8 @@ common::Result<bool> SolanaValidator::initialize_components() {
     return common::Result<bool>(true);
 
   } catch (const std::exception &e) {
-    LOG_VALIDATOR_ERROR("Unexpected exception during component initialization", "VAL_INIT_UNK_001", 
-                        {{"exception", e.what()}});
+    LOG_VALIDATOR_ERROR("Unexpected exception during component initialization",
+                        "VAL_INIT_UNK_001", {{"exception", e.what()}});
     return common::Result<bool>(
         std::string("Component initialization failed: ") + e.what());
   }
@@ -831,11 +845,11 @@ common::Result<bool> SolanaValidator::bootstrap_ledger() {
 
 void SolanaValidator::setupLoggingAndAlerting() {
   using namespace common;
-  
+
   // Configure logging level based on environment or config
   // Default to INFO for production, but allow override
-  Logger& logger = Logger::instance();
-  
+  Logger &logger = Logger::instance();
+
   // Enable structured JSON logging for production environments
   if (config_.network_id == "mainnet") {
     logger.set_json_format(true);
@@ -844,36 +858,62 @@ void SolanaValidator::setupLoggingAndAlerting() {
     logger.set_json_format(false);
     logger.set_level(LogLevel::DEBUG);
   }
-  
+
   // Enable async logging for better performance in production
   if (config_.network_id == "mainnet" || config_.network_id == "testnet") {
     logger.set_async_logging(true);
   }
-  
+
   // Setup alert channels based on configuration
-  
+
   // Always enable console alerts for development
   if (config_.network_id == "devnet") {
     logger.add_alert_channel(AlertChannelFactory::create_console_channel(true));
   }
-  
+
   // Add file-based alerting for all environments
   std::string alert_file = config_.ledger_path + "/critical_alerts.log";
-  logger.add_alert_channel(AlertChannelFactory::create_file_channel(alert_file, true));
-  
+  logger.add_alert_channel(
+      AlertChannelFactory::create_file_channel(alert_file, true));
+
   // Add Prometheus metrics channel for monitoring integration
-  logger.add_alert_channel(AlertChannelFactory::create_prometheus_channel(true));
-  
-  // TODO: Add Slack/email channels when webhook URLs are configured
-  // These would be configured via environment variables in production:
-  // - SLONANA_SLACK_WEBHOOK_URL
-  // - SLONANA_ALERT_EMAIL_TO
-  // - SLONANA_SMTP_SERVER, etc.
-  
+  logger.add_alert_channel(
+      AlertChannelFactory::create_prometheus_channel(true));
+
+  // Add Slack alert channel if webhook URL is configured
+  if (!config_.slack_webhook_url.empty()) {
+    logger.add_alert_channel(AlertChannelFactory::create_slack_channel(
+        config_.slack_webhook_url, true));
+    LOG_INFO("  Slack alerts: enabled");
+  }
+
+  // Add email alert channel if SMTP is configured
+  if (!config_.alert_email_to.empty() && !config_.smtp_server.empty()) {
+    // Default SMTP port if not specified
+    int smtp_port = 587;
+
+    // Parse SMTP server if it includes port (server:port format)
+    std::string smtp_server = config_.smtp_server;
+    size_t colon_pos = smtp_server.find(':');
+    if (colon_pos != std::string::npos) {
+      smtp_port = std::stoi(smtp_server.substr(colon_pos + 1));
+      smtp_server = smtp_server.substr(0, colon_pos);
+    }
+
+    std::string from_email = "alerts@slonana.validator";
+    logger.add_alert_channel(AlertChannelFactory::create_email_channel(
+        smtp_server, smtp_port, config_.smtp_username, config_.smtp_password,
+        from_email, config_.alert_email_to, true));
+    LOG_INFO("  Email alerts: enabled to ", config_.alert_email_to);
+  }
+
   LOG_INFO("Logging and alerting system initialized");
-  LOG_INFO("  Log level: ", (config_.network_id == "mainnet" ? "INFO" : "DEBUG"));
-  LOG_INFO("  JSON format: ", (config_.network_id == "mainnet" ? "enabled" : "disabled"));
-  LOG_INFO("  Async logging: ", (config_.network_id != "devnet" ? "enabled" : "disabled"));
+  LOG_INFO("  Log level: ",
+           (config_.network_id == "mainnet" ? "INFO" : "DEBUG"));
+  LOG_INFO("  JSON format: ",
+           (config_.network_id == "mainnet" ? "enabled" : "disabled"));
+  LOG_INFO("  Async logging: ",
+           (config_.network_id != "devnet" ? "enabled" : "disabled"));
   LOG_INFO("  Alert file: ", alert_file);
 }
 

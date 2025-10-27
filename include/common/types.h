@@ -86,6 +86,9 @@ struct ValidatorConfig {
   std::string expected_genesis_hash;          ///< Expected genesis block hash for validation
   std::vector<std::string> bootstrap_entrypoints; ///< Initial cluster discovery endpoints
   std::vector<std::string> known_validators;  ///< Trusted validator public keys
+  std::string node_region = "default";        ///< Geographic region for multi-region deployments
+  std::string node_address = "127.0.0.1";     ///< Node's network address for cluster communication
+  uint32_t node_port = 8899;                  ///< Node's port for cluster communication
 
   // Security and validation parameters
   bool require_validator_identity = false;   ///< Require identity verification for peers
@@ -125,6 +128,13 @@ struct ValidatorConfig {
   bool enable_faucet = false;               ///< Enable built-in faucet (devnet only)
   uint32_t faucet_port = 9900;              ///< Port for faucet service
   std::string rpc_faucet_address = "127.0.0.1:9900"; ///< Faucet service bind address
+  
+  // Alerting and notification configuration
+  std::string slack_webhook_url = "";       ///< Slack webhook URL for critical alerts
+  std::string alert_email_to = "";          ///< Email address for critical alerts
+  std::string smtp_server = "";             ///< SMTP server for email alerts
+  std::string smtp_username = "";           ///< SMTP username for authentication
+  std::string smtp_password = "";           ///< SMTP password for authentication
 };
 
 // Disambiguation tags

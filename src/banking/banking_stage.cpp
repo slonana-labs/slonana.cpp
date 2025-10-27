@@ -553,9 +553,11 @@ bool BankingStage::start() {
     try {
       should_stop_ = false;
       batch_processor_ = std::thread(&BankingStage::process_batches, this);
-      std::cout << "Banking stage batch processor thread started successfully" << std::endl;
+      std::cout << "Banking stage batch processor thread started successfully"
+                << std::endl;
     } catch (const std::exception &e) {
-      std::cerr << "ERROR: Failed to start batch processor thread: " << e.what() << std::endl;
+      std::cerr << "ERROR: Failed to start batch processor thread: " << e.what()
+                << std::endl;
       return false;
     }
 
@@ -654,7 +656,8 @@ void BankingStage::submit_transaction(TransactionPtr transaction) {
 }
 
 // **NEW: BATCH TRANSACTION SUBMISSION** for ultra-high throughput
-void BankingStage::submit_transaction_batch(std::vector<TransactionPtr> transactions) {
+void BankingStage::submit_transaction_batch(
+    std::vector<TransactionPtr> transactions) {
   if (!running_ || transactions.empty()) {
     return;
   }
@@ -663,18 +666,19 @@ void BankingStage::submit_transaction_batch(std::vector<TransactionPtr> transact
     // **BATCH PROCESSING** - Submit multiple transactions with single lock
     {
       std::lock_guard<std::mutex> lock(queue_mutex_);
-      for (auto& tx : transactions) {
+      for (auto &tx : transactions) {
         if (tx) {
           transaction_queue_.push(tx);
         }
       }
     }
-    
+
     // **BULK NOTIFICATION** - Wake multiple workers
-    for (size_t i = 0; i < std::min(transactions.size(), size_t(worker_thread_count_)); ++i) {
+    for (size_t i = 0;
+         i < std::min(transactions.size(), size_t(worker_thread_count_)); ++i) {
       queue_cv_.notify_one();
     }
-    
+
   } catch (...) {
     return;
   }
@@ -1070,14 +1074,16 @@ bool BankingStage::commit_batch(std::shared_ptr<TransactionBatch> batch) {
           std::chrono::duration_cast<std::chrono::seconds>(
               std::chrono::system_clock::now().time_since_epoch())
               .count();
-      
+
       // **FIX: Handle genesis block case where parent hash might be empty**
       common::Hash parent_hash = ledger_manager_->get_latest_block_hash();
       if (parent_hash.empty()) {
-        // For genesis block, use a well-known genesis hash (all zeros with specific pattern)
+        // For genesis block, use a well-known genesis hash (all zeros with
+        // specific pattern)
         parent_hash.resize(32, 0);
         parent_hash[0] = 0x42; // Genesis marker
-        std::cout << "Banking: Creating genesis block (parent hash is empty)" << std::endl;
+        std::cout << "Banking: Creating genesis block (parent hash is empty)"
+                  << std::endl;
       }
       new_block.parent_hash = parent_hash;
 
@@ -1154,18 +1160,21 @@ bool BankingStage::commit_batch(std::shared_ptr<TransactionBatch> batch) {
                                                     std::memory_order_relaxed);
             total_batches_processed_.fetch_add(1, std::memory_order_relaxed);
 
-            // **BLOCK NOTIFICATION CALLBACK** - Notify validator core about the new block
+            // **BLOCK NOTIFICATION CALLBACK** - Notify validator core about the
+            // new block
             if (block_notification_callback_) {
               try {
                 block_notification_callback_(new_block);
-                std::cout << "Banking: Notified validator core about block at slot "
-                          << new_block.slot << std::endl;
+                std::cout
+                    << "Banking: Notified validator core about block at slot "
+                    << new_block.slot << std::endl;
               } catch (const std::exception &callback_error) {
                 std::cerr << "ERROR: Block notification callback failed: "
                           << callback_error.what() << std::endl;
               }
             } else {
-              std::cout << "Banking: No block notification callback registered" << std::endl;
+              std::cout << "Banking: No block notification callback registered"
+                        << std::endl;
             }
           }
         } catch (const std::exception &block_error) {
@@ -1530,20 +1539,35 @@ common::Result<bool> BankingStage::process_transaction_with_fault_tolerance(
   if (!degradation_manager_.is_operation_allowed("banking",
                                                  "process_transaction")) {
     return common::Result<bool>(
-        "Transaction processing temporarily disabled due to degraded mode");
+        "Transaction processing disabled due to degraded mode");
   }
 
   // Define the transaction processing operation
   auto process_operation = [this, transaction]() -> common::Result<bool> {
     try {
-      // Simulate transaction processing logic here
-      // In real implementation, this would call actual transaction processing
-      std::cout << "Processing transaction with fault tolerance..."
-                << std::endl;
+      // Validate transaction
+      if (!transaction || !transaction->verify()) {
+        return common::Result<bool>("Transaction validation failed");
+      }
 
-      // Mock processing - in real implementation this would be actual
-      // transaction logic
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      // Create a batch with single transaction for processing
+      auto batch = std::make_shared<TransactionBatch>();
+      batch->add_transaction(transaction);
+
+      // Execute through validation stage
+      if (!validate_batch(batch)) {
+        return common::Result<bool>("Transaction validation failed in batch");
+      }
+
+      // Execute through execution stage
+      if (!execute_batch(batch)) {
+        return common::Result<bool>("Transaction execution failed");
+      }
+
+      // Commit to ledger
+      if (!commit_batch(batch)) {
+        return common::Result<bool>("Transaction commitment failed");
+      }
 
       return common::Result<bool>(true);
     } catch (const std::exception &e) {
