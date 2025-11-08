@@ -247,15 +247,13 @@ This implementation is designed to be wire-compatible with Agave:
 - ✅ All protocol messages
 - ✅ Multi-threaded gossip service
 - ✅ Push and pull gossip
-- ✅ Bloom filters
+- ✅ Bloom filters with SipHash
 - ✅ Active set management
 - ✅ Entry timeout and trimming
-
-**Simplified (Production-ready requires):**
-- ⚠️ Cryptographic signatures (stubbed, needs proper Ed25519)
-- ⚠️ Network serialization (needs bincode-compatible format)
-- ⚠️ Weighted peer selection (needs stake-weighted shuffle)
-- ⚠️ Full duplicate shred handling
+- ✅ Ed25519 signature verification (OpenSSL)
+- ✅ SHA256 hash computation (OpenSSL)
+- ✅ Bincode-compatible serialization
+- ✅ UDP network I/O (send/receive)
 
 ## Testing
 

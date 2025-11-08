@@ -1,4 +1,6 @@
 #include "network/gossip/protocol.h"
+#include "network/gossip/crypto_utils.h"
+#include "network/gossip/serializer.h"
 #include <algorithm>
 #include <cstring>
 #include <random>
@@ -21,14 +23,13 @@ void PruneData::sign(const Signature &external_sig) {
 }
 
 bool PruneData::verify() const {
-  // In production: verify signature
-  return !signature.empty();
+  // Serialize and verify signature
+  auto data_bytes = Serializer::serialize(*this);
+  return CryptoUtils::verify_ed25519(data_bytes, signature, pubkey);
 }
 
 std::vector<uint8_t> PruneData::serialize() const {
-  std::vector<uint8_t> result;
-  // Simplified serialization
-  return result;
+  return Serializer::serialize(*this);
 }
 
 // CrdsFilter implementations
@@ -46,12 +47,9 @@ void CrdsFilter::add(const Hash &hash) {
     return;
 
   for (size_t i = 0; i < num_hashes_; ++i) {
-    // Simple hash function - in production use better hash
-    uint64_t h = 0;
-    for (size_t j = 0; j < std::min(hash.size(), size_t(8)); ++j) {
-      h = (h << 8) | hash[j];
-    }
-    h = (h * (i + 1)) % num_bits_;
+    // Use SipHash for production-grade hashing
+    uint64_t h = CryptoUtils::siphash24(hash, i, i + 1);
+    h = h % num_bits_;
 
     size_t word_idx = h / 64;
     size_t bit_idx = h % 64;
@@ -66,11 +64,9 @@ bool CrdsFilter::contains(const Hash &hash) const {
     return false;
 
   for (size_t i = 0; i < num_hashes_; ++i) {
-    uint64_t h = 0;
-    for (size_t j = 0; j < std::min(hash.size(), size_t(8)); ++j) {
-      h = (h << 8) | hash[j];
-    }
-    h = (h * (i + 1)) % num_bits_;
+    // Use SipHash for production-grade hashing
+    uint64_t h = CryptoUtils::siphash24(hash, i, i + 1);
+    h = h % num_bits_;
 
     size_t word_idx = h / 64;
     size_t bit_idx = h % 64;
@@ -195,56 +191,11 @@ const PingMessage *Protocol::get_ping() const { return ping_.get(); }
 const PongMessage *Protocol::get_pong() const { return pong_.get(); }
 
 std::vector<uint8_t> Protocol::serialize() const {
-  std::vector<uint8_t> result;
-
-  // Add message type
-  result.push_back(static_cast<uint8_t>(type_));
-
-  // Add from pubkey
-  result.insert(result.end(), from_.begin(), from_.end());
-
-  // Add type-specific data
-  switch (type_) {
-  case Type::PullRequest:
-    if (filter_) {
-      auto filter_data = filter_->serialize();
-      result.insert(result.end(), filter_data.begin(), filter_data.end());
-    }
-    break;
-
-  case Type::PullResponse:
-  case Type::PushMessage:
-    // Serialize values
-    for (const auto &value : values_) {
-      // In production: proper serialization
-    }
-    break;
-
-  case Type::PruneMessage:
-    if (prune_data_) {
-      auto prune_bytes = prune_data_->serialize();
-      result.insert(result.end(), prune_bytes.begin(), prune_bytes.end());
-    }
-    break;
-
-  case Type::PingMessage:
-  case Type::PongMessage:
-    // Serialize ping/pong
-    break;
-  }
-
-  return result;
+  return Serializer::serialize(*this);
 }
 
 Result<Protocol> Protocol::deserialize(const std::vector<uint8_t> &data) {
-  if (data.empty()) {
-    return Result<Protocol>(std::string("Empty data"));
-  }
-
-  // Simplified deserialization
-  PublicKey from;
-  Protocol p(Type::PullRequest, from);
-  return Result<Protocol>(p);
+  return Serializer::deserialize_protocol(data);
 }
 
 bool Protocol::is_valid() const {

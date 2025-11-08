@@ -1,4 +1,6 @@
 #include "network/gossip/crds_value.h"
+#include "network/gossip/crypto_utils.h"
+#include "network/gossip/serializer.h"
 #include <algorithm>
 #include <cstring>
 
@@ -56,26 +58,18 @@ void CrdsValue::sign(const Signature &external_sig) {
 }
 
 bool CrdsValue::verify() const {
-  // In a real implementation, this would:
-  // 1. Serialize the data
-  // 2. Verify the signature against the pubkey
-  // For now, just check signature exists
-  return !signature_.empty();
+  // Serialize the data
+  auto data_bytes = Serializer::serialize(data_);
+  
+  // Verify signature using Ed25519
+  PublicKey pk = pubkey();
+  return CryptoUtils::verify_ed25519(data_bytes, signature_, pk);
 }
 
 size_t CrdsValue::serialized_size() const {
-  // Rough estimate: signature (64) + data overhead
-  size_t size = 64; // Signature
-
-  std::visit(
-      [&size](const auto &value) {
-        // Add size for the specific type
-        // This is a simplified calculation
-        size += sizeof(value);
-      },
-      data_);
-
-  return size;
+  // Use actual serialization to get accurate size
+  auto serialized = Serializer::serialize(*this);
+  return serialized.size();
 }
 
 bool CrdsValue::overrides(const CrdsValue &other) const {
@@ -111,21 +105,9 @@ bool CrdsValue::overrides(const CrdsValue &other) const {
 }
 
 void CrdsValue::compute_hash() {
-  // In a real implementation, this would compute SHA256(signature || data)
-  // For now, create a simple hash from signature and wallclock
-  hash_.clear();
-  hash_.resize(32, 0);
-
-  // Mix signature into hash
-  for (size_t i = 0; i < std::min(signature_.size(), hash_.size()); ++i) {
-    hash_[i] ^= signature_[i];
-  }
-
-  // Mix wallclock into hash
-  uint64_t wc = wallclock();
-  for (size_t i = 0; i < 8 && i < hash_.size(); ++i) {
-    hash_[i] ^= (wc >> (i * 8)) & 0xFF;
-  }
+  // Compute SHA256 hash of signature + data
+  auto data_bytes = Serializer::serialize(data_);
+  hash_ = CryptoUtils::sha256_multi({signature_, data_bytes});
 }
 
 // VersionedCrdsValue implementations

@@ -1,6 +1,8 @@
 #include "network/gossip/gossip_service.h"
+#include "network/gossip/serializer.h"
 #include <arpa/inet.h>
 #include <cstring>
+#include <fcntl.h>
 #include <iostream>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -422,15 +424,72 @@ Protocol GossipService::build_pull_request() {
 // Network operations
 bool GossipService::send_message(const Protocol &msg,
                                  const std::string &dest_addr) {
-  // In production: serialize and send via UDP
-  return true;
+  std::lock_guard<std::mutex> lock(socket_mutex_);
+  
+  if (gossip_socket_ < 0) {
+    return false;
+  }
+  
+  // Serialize the message
+  auto data = msg.serialize();
+  
+  // Parse destination address
+  size_t colon_pos = dest_addr.find(':');
+  if (colon_pos == std::string::npos) {
+    return false;
+  }
+  
+  std::string ip = dest_addr.substr(0, colon_pos);
+  int port = std::stoi(dest_addr.substr(colon_pos + 1));
+  
+  struct sockaddr_in dest;
+  memset(&dest, 0, sizeof(dest));
+  dest.sin_family = AF_INET;
+  dest.sin_port = htons(port);
+  
+  if (inet_pton(AF_INET, ip.c_str(), &dest.sin_addr) <= 0) {
+    return false;
+  }
+  
+  // Send via UDP
+  ssize_t sent = sendto(gossip_socket_, data.data(), data.size(), 0,
+                       (struct sockaddr *)&dest, sizeof(dest));
+  
+  return sent == static_cast<ssize_t>(data.size());
 }
 
 Result<Protocol> GossipService::receive_message() {
-  // In production: receive and deserialize UDP message
-  // For now, just sleep
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  return Result<Protocol>(std::string("No message"));
+  std::lock_guard<std::mutex> lock(socket_mutex_);
+  
+  if (gossip_socket_ < 0) {
+    return Result<Protocol>(std::string("Socket not initialized"));
+  }
+  
+  // Set non-blocking mode for timeout
+  int flags = fcntl(gossip_socket_, F_GETFL, 0);
+  fcntl(gossip_socket_, F_SETFL, flags | O_NONBLOCK);
+  
+  std::vector<uint8_t> buffer(65536); // Max UDP packet size
+  struct sockaddr_in sender;
+  socklen_t sender_len = sizeof(sender);
+  
+  ssize_t received = recvfrom(gossip_socket_, buffer.data(), buffer.size(), 0,
+                              (struct sockaddr *)&sender, &sender_len);
+  
+  if (received < 0) {
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      // No data available
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      return Result<Protocol>(std::string("No message"));
+    }
+    return Result<Protocol>(std::string("Receive error"));
+  }
+  
+  // Resize buffer to actual size
+  buffer.resize(received);
+  
+  // Deserialize
+  return Serializer::deserialize_protocol(buffer);
 }
 
 // Helper methods
