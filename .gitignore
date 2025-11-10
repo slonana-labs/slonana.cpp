@@ -158,3 +158,5 @@ test_ledgers/
 benchmark_results/
 test_ledger/
 test_results/
+_codeql_build_dir/
+_codeql_detected_source_root
