@@ -489,6 +489,14 @@ target_link_libraries(slonana_cpi_depth_tests slonana_core)
 target_include_directories(slonana_cpi_depth_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 add_test(NAME cpi_depth_tests COMMAND slonana_cpi_depth_tests)
 
+# Banking stage integration tests
+add_executable(slonana_banking_integration_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_banking_integration.cpp"
+)
+target_link_libraries(slonana_banking_integration_tests slonana_core)
+target_include_directories(slonana_banking_integration_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME banking_integration_tests COMMAND slonana_banking_integration_tests)
+
 
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")
