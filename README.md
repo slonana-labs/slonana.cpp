@@ -40,6 +40,7 @@ Slonana.cpp is a battle-tested native C++ validator that delivers exceptional pe
 |----------|-------------|
 | **[Agave Compatibility Audit](AGAVE_COMPATIBILITY_AUDIT.md)** | Comprehensive gap analysis vs Agave validator |
 | **[Agave Compatibility Tracking](AGAVE_COMPATIBILITY_TRACKING.md)** | Feature-by-feature implementation status and roadmap |
+| **[Core Validator Implementation Plan](CORE_VALIDATOR_IMPLEMENTATION_PLAN.md)** | Detailed plan for 100% Core Validator completion |
 | **[Agave Implementation Plan](AGAVE_IMPLEMENTATION_PLAN.md)** | Phase 1 implementation details (completed) |
 | **[Implementation Status Report](IMPLEMENTATION_STATUS_REPORT.md)** | Overall implementation status and verification |
 
