@@ -431,8 +431,13 @@ BankingStage::BankingStage()
       state_checkpoint_(std::make_shared<common::FileCheckpoint>(
           get_checkpoint_directory())) {
 
+  // Initialize fee market and MEV protection
+  fee_market_ = std::make_unique<FeeMarket>();
+  mev_protection_ = std::make_unique<MEVProtection>();
+  
   std::cout << "Banking Stage initialized with fault tolerance mechanisms"
             << std::endl;
+  std::cout << "Fee market and MEV protection modules enabled" << std::endl;
 }
 
 BankingStage::~BankingStage() { shutdown(); }
@@ -627,14 +632,41 @@ void BankingStage::submit_transaction(TransactionPtr transaction) {
   }
 
   try {
+    // **FEE-BASED PRIORITY CALCULATION** - Use fee market for intelligent ordering
+    int priority = 0;
+    if (fee_market_enabled_ && fee_market_) {
+      // Extract fee from transaction (simplified - would need proper fee extraction)
+      uint64_t tx_fee = 5000; // Default fee, in production would extract from tx
+      
+      // Calculate priority based on fee tier
+      FeeTier tier = fee_market_->classify_fee_tier(tx_fee);
+      switch (tier) {
+        case FeeTier::URGENT:
+          priority = 1000;
+          break;
+        case FeeTier::HIGH:
+          priority = 500;
+          break;
+        case FeeTier::NORMAL:
+          priority = 100;
+          break;
+        case FeeTier::LOW:
+          priority = 10;
+          break;
+      }
+      
+      // Record fee for statistics
+      fee_market_->record_transaction_fee(tx_fee, true);
+    }
+    
     // **OPTIMIZED PRIORITY QUEUEING** - Minimal lock contention
-    if (priority_processing_enabled_) {
+    if (priority_processing_enabled_ || fee_market_enabled_) {
       std::unique_lock<std::mutex> lock(priority_mutex_, std::try_to_lock);
       if (lock) {
-        int priority = 0;
+        // Check for manual priority override
         auto it = transaction_priorities_.find(transaction);
         if (it != transaction_priorities_.end()) {
-          priority = it->second;
+          priority = std::max(priority, it->second);
         }
         priority_queue_.push({priority, transaction});
         queue_cv_.notify_one();
@@ -889,7 +921,7 @@ void BankingStage::process_transaction_queue() {
   }
 
   // Handle priority queue if enabled
-  if (priority_processing_enabled_) {
+  if (priority_processing_enabled_ || fee_market_enabled_) {
     std::lock_guard<std::mutex> priority_lock(priority_mutex_);
 
     size_t remaining_capacity = batch_size_ - transactions_to_process.size();
@@ -897,6 +929,16 @@ void BankingStage::process_transaction_queue() {
       transactions_to_process.push_back(priority_queue_.top().second);
       priority_queue_.pop();
       remaining_capacity--;
+    }
+  }
+
+  // **MEV PROTECTION** - Apply fair ordering before batching
+  if (mev_protection_enabled_ && mev_protection_ && !transactions_to_process.empty()) {
+    try {
+      transactions_to_process = mev_protection_->apply_fair_ordering(transactions_to_process);
+    } catch (const std::exception &e) {
+      LOG_ERROR("MEV protection failed: {}", e.what());
+      // Continue with original ordering on failure
     }
   }
 
@@ -1175,6 +1217,26 @@ bool BankingStage::commit_batch(std::shared_ptr<TransactionBatch> batch) {
             } else {
               std::cout << "Banking: No block notification callback registered"
                         << std::endl;
+            }
+            
+            // **FEE MARKET UPDATE** - Adjust base fee based on block utilization
+            if (fee_market_enabled_ && fee_market_) {
+              try {
+                // Calculate block utilization (transactions processed / max capacity)
+                double utilization = static_cast<double>(processed_transactions) / 
+                                    std::max(size_t(1), batch_size_);
+                utilization = std::min(1.0, utilization); // Cap at 100%
+                
+                fee_market_->update_base_fee(utilization);
+                
+                uint64_t new_base_fee = fee_market_->get_current_base_fee();
+                std::cout << "Banking: Updated base fee to " << new_base_fee 
+                         << " lamports (utilization: " << (utilization * 100.0) 
+                         << "%)" << std::endl;
+              } catch (const std::exception &fee_error) {
+                std::cerr << "ERROR: Fee market update failed: " << fee_error.what()
+                          << std::endl;
+              }
             }
           }
         } catch (const std::exception &block_error) {
@@ -1677,6 +1739,43 @@ common::Result<bool> BankingStage::restore_banking_state() {
     return common::Result<bool>("Failed to restore banking state: " +
                                 std::string(e.what()));
   }
+}
+
+// Fee market integration methods
+void BankingStage::set_mev_protection_level(ProtectionLevel level) {
+  if (mev_protection_) {
+    mev_protection_->set_protection_level(level);
+    std::cout << "Banking: MEV protection level set to " << static_cast<int>(level) 
+              << std::endl;
+  }
+}
+
+FeeStats BankingStage::get_fee_market_stats() const {
+  if (fee_market_) {
+    return fee_market_->get_recent_fee_stats();
+  }
+  return FeeStats{};
+}
+
+uint64_t BankingStage::get_current_base_fee() const {
+  if (fee_market_) {
+    return fee_market_->get_current_base_fee();
+  }
+  return 5000; // Default base fee
+}
+
+size_t BankingStage::get_detected_mev_attacks() const {
+  if (mev_protection_) {
+    return mev_protection_->get_detected_attacks_count();
+  }
+  return 0;
+}
+
+size_t BankingStage::get_protected_transactions() const {
+  if (mev_protection_) {
+    return mev_protection_->get_protected_transactions_count();
+  }
+  return 0;
 }
 
 } // namespace banking

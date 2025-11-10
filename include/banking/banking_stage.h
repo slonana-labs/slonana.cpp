@@ -4,6 +4,8 @@
 #include "common/fault_tolerance.h"
 #include "common/recovery.h"
 #include "ledger/manager.h"
+#include "banking/fee_market.h"
+#include "banking/mev_protection.h"
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -265,6 +267,23 @@ public:
   }
   void set_transaction_priority(TransactionPtr transaction, int priority);
 
+  // Fee market integration
+  void enable_fee_market(bool enabled) {
+    fee_market_enabled_ = enabled;
+  }
+  void enable_mev_protection(bool enabled) {
+    mev_protection_enabled_ = enabled;
+  }
+  void set_mev_protection_level(ProtectionLevel level);
+  
+  // Fee market statistics
+  FeeStats get_fee_market_stats() const;
+  uint64_t get_current_base_fee() const;
+  
+  // MEV protection statistics
+  size_t get_detected_mev_attacks() const;
+  size_t get_protected_transactions() const;
+
   // Ledger integration
   void set_ledger_manager(std::shared_ptr<ledger::LedgerManager> ledger_manager) {
     ledger_manager_ = ledger_manager;
@@ -298,6 +317,12 @@ private:
   // **HIGH-PERFORMANCE CONFIGURATION**
   bool ultra_high_throughput_mode_ = false;
   size_t batch_processing_size_ = 100;
+
+  // Fee market and MEV protection
+  std::unique_ptr<FeeMarket> fee_market_;
+  std::unique_ptr<MEVProtection> mev_protection_;
+  bool fee_market_enabled_ = true;
+  bool mev_protection_enabled_ = true;
 
   // Ledger integration
   std::shared_ptr<ledger::LedgerManager> ledger_manager_;
