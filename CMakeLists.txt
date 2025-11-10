@@ -497,6 +497,14 @@ target_link_libraries(slonana_banking_integration_tests slonana_core)
 target_include_directories(slonana_banking_integration_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 add_test(NAME banking_integration_tests COMMAND slonana_banking_integration_tests)
 
+# Networking enhancements tests
+add_executable(slonana_networking_enhancements_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_networking_enhancements.cpp"
+)
+target_link_libraries(slonana_networking_enhancements_tests slonana_core)
+target_include_directories(slonana_networking_enhancements_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME networking_enhancements_tests COMMAND slonana_networking_enhancements_tests)
+
 
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")
