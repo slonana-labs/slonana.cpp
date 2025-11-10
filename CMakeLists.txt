@@ -505,6 +505,13 @@ target_link_libraries(slonana_networking_enhancements_tests slonana_core)
 target_include_directories(slonana_networking_enhancements_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 add_test(NAME networking_enhancements_tests COMMAND slonana_networking_enhancements_tests)
 
+# Networking performance benchmarks
+add_executable(benchmark_networking
+    "${CMAKE_SOURCE_DIR}/tests/benchmark_networking.cpp"
+)
+target_link_libraries(benchmark_networking slonana_core)
+target_include_directories(benchmark_networking PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+
 
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")
