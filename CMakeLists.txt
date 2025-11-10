@@ -465,6 +465,30 @@ target_link_libraries(slonana_gossip_protocol_tests slonana_core)
 target_include_directories(slonana_gossip_protocol_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 add_test(NAME gossip_protocol_tests COMMAND slonana_gossip_protocol_tests)
 
+# Fee market tests
+add_executable(slonana_fee_market_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_fee_market.cpp"
+)
+target_link_libraries(slonana_fee_market_tests slonana_core)
+target_include_directories(slonana_fee_market_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME fee_market_tests COMMAND slonana_fee_market_tests)
+
+# MEV protection tests
+add_executable(slonana_mev_protection_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_mev_protection.cpp"
+)
+target_link_libraries(slonana_mev_protection_tests slonana_core)
+target_include_directories(slonana_mev_protection_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME mev_protection_tests COMMAND slonana_mev_protection_tests)
+
+# CPI depth tracking tests
+add_executable(slonana_cpi_depth_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_cpi_depth.cpp"
+)
+target_link_libraries(slonana_cpi_depth_tests slonana_core)
+target_include_directories(slonana_cpi_depth_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME cpi_depth_tests COMMAND slonana_cpi_depth_tests)
+
 
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")

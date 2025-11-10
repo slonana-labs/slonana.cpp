@@ -64,6 +64,49 @@ struct ExecutionContext {
 
   // Track modified accounts during execution
   std::unordered_set<PublicKey> modified_accounts;
+
+  // CPI (Cross-Program Invocation) depth tracking
+  size_t current_cpi_depth = 0;
+  static constexpr size_t MAX_CPI_DEPTH = 4;
+
+  /**
+   * Enter a CPI call, incrementing depth counter
+   * @return True if depth limit not exceeded, false otherwise
+   */
+  bool enter_cpi() {
+    if (current_cpi_depth >= MAX_CPI_DEPTH) {
+      error_message = "CPI depth limit exceeded (max: " + std::to_string(MAX_CPI_DEPTH) + ")";
+      transaction_succeeded = false;
+      return false;
+    }
+    current_cpi_depth++;
+    return true;
+  }
+
+  /**
+   * Exit a CPI call, decrementing depth counter
+   */
+  void exit_cpi() {
+    if (current_cpi_depth > 0) {
+      current_cpi_depth--;
+    }
+  }
+
+  /**
+   * Check if a CPI call can be made
+   * @return True if within depth limit
+   */
+  bool can_invoke_cpi() const {
+    return current_cpi_depth < MAX_CPI_DEPTH;
+  }
+
+  /**
+   * Get current CPI depth
+   * @return Current depth level
+   */
+  size_t get_cpi_depth() const {
+    return current_cpi_depth;
+  }
 };
 
 /**
@@ -99,7 +142,8 @@ enum class ExecutionResult {
   FAILED, // Added for backward compatibility
   INVALID_ACCOUNT_ACCESS,
   MEMORY_ACCESS_VIOLATION,
-  EXECUTION_ERROR
+  EXECUTION_ERROR,
+  CPI_DEPTH_EXCEEDED // CPI depth limit exceeded
 };
 
 struct ExecutionOutcome {
