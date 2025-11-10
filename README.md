@@ -34,6 +34,20 @@ Slonana.cpp is a battle-tested native C++ validator that delivers exceptional pe
 | **[Benchmarking Guide](BENCHMARKING.md)** | Performance analysis and comparisons |
 | **[Phase 2 Plan](PHASE2_PLAN.md)** | Comprehensive roadmap for production readiness |
 
+### Agave Compatibility
+
+| Document | Description |
+|----------|-------------|
+| **[Agave Compatibility Audit](AGAVE_COMPATIBILITY_AUDIT.md)** | Comprehensive gap analysis vs Agave validator |
+| **[Agave Compatibility Tracking](AGAVE_COMPATIBILITY_TRACKING.md)** | Feature-by-feature implementation status and roadmap |
+| **[Core Validator Implementation Plan](CORE_VALIDATOR_IMPLEMENTATION_PLAN.md)** | Banking stage enhancement (93.75% → 100%, 4-6 weeks) |
+| **[Networking Implementation Plan](NETWORKING_IMPLEMENTATION_PLAN.md)** | UDP, connection cache, flow control (77% → 100%, 3-4 weeks) |
+| **[SVM Implementation Plan](SVM_IMPLEMENTATION_PLAN.md)** | Syscalls, program cache, BPF features (78% → 100%, 4-5 weeks) |
+| **[RPC API Implementation Plan](RPC_IMPLEMENTATION_PLAN.md)** | 10 missing RPC methods (83% → 100%, 2-3 weeks) |
+| **[Storage Implementation Plan](STORAGE_IMPLEMENTATION_PLAN.md)** | Versioned accounts, fork state (78% → 100%, 5-7 weeks) |
+| **[Agave Implementation Plan](AGAVE_IMPLEMENTATION_PLAN.md)** | Phase 1 implementation details (completed) |
+| **[Implementation Status Report](IMPLEMENTATION_STATUS_REPORT.md)** | Overall implementation status and verification |
+
 ## 🚀 Quick Start
 
 ### One-Line Installation
