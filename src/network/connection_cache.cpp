@@ -27,6 +27,12 @@ bool ConnectionCache::initialize() {
   running_.store(true);
   should_stop_.store(false);
 
+  // Reserve capacity for hash map to reduce rehashing overhead
+  {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    connections_.reserve(config_.max_connections);
+  }
+
   // Set default connection factory if not provided
   if (!connection_factory_) {
     connection_factory_ = [this](const std::string& addr, uint16_t port) {
@@ -69,32 +75,28 @@ void ConnectionCache::shutdown() {
 }
 
 std::string ConnectionCache::generate_connection_id(const std::string& address, uint16_t port) {
-  std::ostringstream oss;
-  oss << address << ":" << port;
-  return oss.str();
+  // Optimized: pre-allocate and use direct string concatenation instead of ostringstream
+  std::string conn_id;
+  conn_id.reserve(address.size() + 1 + 5); // address + ':' + max 5 digits for port
+  conn_id = address;
+  conn_id += ':';
+  conn_id += std::to_string(port);
+  return conn_id;
 }
 
 std::shared_ptr<ConnectionCache::ConnectionInfo> 
 ConnectionCache::get_or_create(const std::string& address, uint16_t port) {
-  auto start_time = std::chrono::high_resolution_clock::now();
-  
   std::string conn_id = generate_connection_id(address, port);
   
   {
     std::lock_guard<std::mutex> lock(cache_mutex_);
     stats_.total_lookups++;
     
-    // Check if connection exists
+    // Check if connection exists (fast path - no timing here)
     auto it = connections_.find(conn_id);
     if (it != connections_.end()) {
       stats_.cache_hits++;
       it->second->last_used = std::chrono::steady_clock::now();
-      
-      // Update lookup time
-      auto end_time = std::chrono::high_resolution_clock::now();
-      auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-      stats_.avg_lookup_time = duration; // Simplified - would use moving average
-      
       return it->second;
     }
     
@@ -113,7 +115,7 @@ ConnectionCache::get_or_create(const std::string& address, uint16_t port) {
     
     // Create new connection
     auto conn = std::make_shared<ConnectionInfo>();
-    conn->connection_id = conn_id;
+    conn->connection_id = std::move(conn_id);
     conn->remote_address = address;
     conn->remote_port = port;
     conn->state = ConnectionState::CONNECTING;
@@ -129,16 +131,11 @@ ConnectionCache::get_or_create(const std::string& address, uint16_t port) {
     }
     
     stats_.total_connections++;
-    connections_[conn_id] = conn;
+    connections_[conn->connection_id] = conn;
     
     if (event_callback_) {
-      event_callback_(conn_id, conn->state);
+      event_callback_(conn->connection_id, conn->state);
     }
-    
-    // Update lookup time
-    auto end_time = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-    stats_.avg_lookup_time = duration;
     
     return conn;
   }

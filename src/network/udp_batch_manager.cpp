@@ -91,6 +91,14 @@ bool UDPBatchManager::queue_packet(std::vector<uint8_t>&& data,
     return false;
   }
 
+  std::unique_lock<std::mutex> lock(send_queue_.mutex);
+  
+  // Check queue size
+  if (send_queue_.total_size() >= config_.buffer_pool_size) {
+    stats_.queue_full_errors++;
+    return false;
+  }
+
   Packet packet;
   packet.data = std::move(data);
   packet.destination_addr = addr;
@@ -98,7 +106,9 @@ bool UDPBatchManager::queue_packet(std::vector<uint8_t>&& data,
   packet.priority = priority;
   packet.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
 
-  return queue_packet(packet);
+  enqueue_by_priority(std::move(packet));
+  send_queue_.cv.notify_one();
+  return true;
 }
 
 void UDPBatchManager::enqueue_by_priority(Packet&& packet) {
@@ -144,9 +154,12 @@ bool UDPBatchManager::has_packets_to_send() const {
 }
 
 void UDPBatchManager::batch_sender_loop() {
+  // Pre-allocate batch vector once to avoid repeated allocations
+  std::vector<Packet> batch;
+  batch.reserve(config_.max_batch_size);
+  
   while (!should_stop_.load()) {
-    std::vector<Packet> batch;
-    batch.reserve(config_.max_batch_size);
+    batch.clear(); // Reuse the vector
 
     {
       std::unique_lock<std::mutex> lock(send_queue_.mutex);
@@ -159,9 +172,9 @@ void UDPBatchManager::batch_sender_loop() {
         break;
       }
 
-      // Collect batch
+      // Collect batch with move semantics
       while (batch.size() < config_.max_batch_size && has_packets_to_send()) {
-        batch.push_back(dequeue_by_priority());
+        batch.push_back(std::move(dequeue_by_priority()));
       }
     }
 
