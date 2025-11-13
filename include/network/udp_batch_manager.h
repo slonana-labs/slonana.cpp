@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/types.h"
+#include "network/lockfree_queue.h"
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -100,13 +101,12 @@ private:
   std::atomic<bool> running_;
   BatchStats stats_;
 
-  // Packet queues (priority-based)
+  // Packet queues (lock-free priority-based for concurrent access)
   struct PacketQueue {
-    std::queue<Packet> high_priority;
-    std::queue<Packet> normal_priority;
-    std::queue<Packet> low_priority;
-    std::mutex mutex;
-    std::condition_variable cv;
+    LockFreeQueue<Packet> high_priority;
+    LockFreeQueue<Packet> normal_priority;
+    LockFreeQueue<Packet> low_priority;
+    std::atomic<bool> has_data{false}; // Signal for consumer
     size_t total_size() const {
       return high_priority.size() + normal_priority.size() + low_priority.size();
     }

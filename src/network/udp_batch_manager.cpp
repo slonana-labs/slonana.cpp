@@ -64,8 +64,8 @@ void UDPBatchManager::shutdown() {
   should_stop_.store(true);
   running_.store(false);
 
-  // Wake up threads
-  send_queue_.cv.notify_all();
+  // Signal threads with atomic flag (no mutex needed)
+  send_queue_.has_data.store(true, std::memory_order_release);
 
   // Join threads
   if (batch_sender_thread_.joinable()) {
@@ -77,20 +77,20 @@ void UDPBatchManager::shutdown() {
 }
 
 bool UDPBatchManager::queue_packet(const Packet& packet) {
-  if (!running_.load()) {
+  // Branch prediction: running check is likely true
+  if (__builtin_expect(!running_.load(std::memory_order_relaxed), 0)) {
     return false;
   }
-
-  std::unique_lock<std::mutex> lock(send_queue_.mutex);
   
-  // Check queue size
-  if (send_queue_.total_size() >= config_.buffer_pool_size) {
-    stats_.queue_full_errors++;
+  // Lock-free check of queue size (approximate, but fast)
+  if (__builtin_expect(send_queue_.total_size() >= config_.buffer_pool_size, 0)) {
+    stats_.queue_full_errors.fetch_add(1, std::memory_order_relaxed);
     return false;
   }
 
+  // Lock-free enqueue
   enqueue_by_priority(Packet(packet));
-  send_queue_.cv.notify_one();
+  send_queue_.has_data.store(true, std::memory_order_release);
   return true;
 }
 
@@ -103,9 +103,7 @@ bool UDPBatchManager::queue_packet(std::vector<uint8_t>&& data,
     return false;
   }
 
-  std::unique_lock<std::mutex> lock(send_queue_.mutex);
-  
-  // Branch prediction: queue full is unlikely
+  // Lock-free check of queue size (approximate, but fast)
   if (__builtin_expect(send_queue_.total_size() >= config_.buffer_pool_size, 0)) {
     stats_.queue_full_errors.fetch_add(1, std::memory_order_relaxed);
     return false;
@@ -122,8 +120,9 @@ bool UDPBatchManager::queue_packet(std::vector<uint8_t>&& data,
   __builtin_prefetch(&send_queue_.high_priority, 1, 3);
   __builtin_prefetch(&send_queue_.normal_priority, 1, 3);
   
+  // Lock-free enqueue
   enqueue_by_priority(std::move(packet));
-  send_queue_.cv.notify_one();
+  send_queue_.has_data.store(true, std::memory_order_release);
   return true;
 }
 
@@ -146,24 +145,21 @@ void UDPBatchManager::enqueue_by_priority(Packet&& packet) {
 }
 
 UDPBatchManager::Packet UDPBatchManager::dequeue_by_priority() {
-  // High priority first
-  if (!send_queue_.high_priority.empty()) {
-    auto packet = std::move(send_queue_.high_priority.front());
-    send_queue_.high_priority.pop();
+  Packet packet;
+  
+  // High priority first (lock-free)
+  if (send_queue_.high_priority.try_pop(packet)) {
     return packet;
   }
-  // Then normal priority
-  if (!send_queue_.normal_priority.empty()) {
-    auto packet = std::move(send_queue_.normal_priority.front());
-    send_queue_.normal_priority.pop();
+  // Then normal priority (lock-free)
+  if (send_queue_.normal_priority.try_pop(packet)) {
     return packet;
   }
-  // Finally low priority
-  if (!send_queue_.low_priority.empty()) {
-    auto packet = std::move(send_queue_.low_priority.front());
-    send_queue_.low_priority.pop();
+  // Finally low priority (lock-free)
+  if (send_queue_.low_priority.try_pop(packet)) {
     return packet;
   }
+  
   return Packet();
 }
 
@@ -181,26 +177,35 @@ void UDPBatchManager::batch_sender_loop() {
   while (__builtin_expect(!should_stop_.load(std::memory_order_relaxed), 1)) {
     batch.clear(); // Reuse the vector
 
-    {
-      std::unique_lock<std::mutex> lock(send_queue_.mutex);
-      
-      // Wait for packets or timeout
-      send_queue_.cv.wait_for(lock, config_.batch_timeout, 
-                              [this]() { 
-                                return __builtin_expect(has_packets_to_send(), 1) || 
-                                       __builtin_expect(should_stop_.load(std::memory_order_relaxed), 0); 
-                              });
-
-      if (__builtin_expect(should_stop_.load(std::memory_order_relaxed), 0)) {
-        break;
+    // Lock-free polling with adaptive sleep
+    if (!has_packets_to_send()) {
+      // Wait for signal or timeout (lock-free)
+      auto start = std::chrono::steady_clock::now();
+      while (!send_queue_.has_data.load(std::memory_order_acquire) && 
+             !should_stop_.load(std::memory_order_relaxed)) {
+        auto elapsed = std::chrono::steady_clock::now() - start;
+        if (elapsed >= config_.batch_timeout) break;
+        // Adaptive spin-then-sleep
+        if (elapsed < std::chrono::microseconds(10)) {
+          _mm_pause(); // CPU hint for spin-wait
+        } else {
+          std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
       }
+      send_queue_.has_data.store(false, std::memory_order_relaxed);
+    }
 
-      // Collect batch with move semantics
-      // Unroll inner loop for better performance
-      size_t batch_size = config_.max_batch_size;
-      while (batch.size() < batch_size && __builtin_expect(has_packets_to_send(), 1)) {
-        batch.push_back(std::move(dequeue_by_priority()));
-      }
+    if (__builtin_expect(should_stop_.load(std::memory_order_relaxed), 0)) {
+      break;
+    }
+
+    // Collect batch with lock-free dequeue
+    // Unroll inner loop for better performance
+    size_t batch_size = config_.max_batch_size;
+    while (batch.size() < batch_size && __builtin_expect(has_packets_to_send(), 1)) {
+      auto packet = dequeue_by_priority();
+      if (packet.data.empty()) break; // No more packets
+      batch.push_back(std::move(packet));
     }
 
     // Send batch if we have packets
@@ -427,11 +432,11 @@ std::vector<UDPBatchManager::Packet> UDPBatchManager::receive_batch(size_t max_p
 void UDPBatchManager::flush_batches() {
   std::vector<Packet> batch;
   
-  {
-    std::unique_lock<std::mutex> lock(send_queue_.mutex);
-    while (has_packets_to_send()) {
-      batch.push_back(dequeue_by_priority());
-    }
+  // Lock-free flush - drain all queues
+  while (has_packets_to_send()) {
+    auto packet = dequeue_by_priority();
+    if (packet.data.empty()) break; // No more packets
+    batch.push_back(std::move(packet));
   }
 
   if (!batch.empty()) {
@@ -442,7 +447,7 @@ void UDPBatchManager::flush_batches() {
 #else
     send_batch_fallback(batch);
 #endif
-    stats_.batches_sent++;
+    stats_.batches_sent.fetch_add(1, std::memory_order_relaxed);
   }
 }
 
