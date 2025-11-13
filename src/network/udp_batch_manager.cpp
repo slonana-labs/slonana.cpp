@@ -11,7 +11,7 @@
 #include <x86intrin.h> // For SIMD and prefetch
 
 #ifdef __linux__
-#include <sys/socket.h>
+#include <pthread.h>
 #ifndef MSG_WAITFORONE
 #define MSG_WAITFORONE 0x10000
 #endif
@@ -52,6 +52,21 @@ bool UDPBatchManager::initialize(int socket_fd) {
   // Start batch processing threads
   batch_sender_thread_ = std::thread(&UDPBatchManager::batch_sender_loop, this);
   batch_receiver_thread_ = std::thread(&UDPBatchManager::batch_receiver_loop, this);
+
+#ifdef __linux__
+  // Pin threads to specific CPU cores for better cache locality
+  cpu_set_t cpuset;
+  
+  // Pin sender thread to core 0
+  CPU_ZERO(&cpuset);
+  CPU_SET(0, &cpuset);
+  pthread_setaffinity_np(batch_sender_thread_.native_handle(), sizeof(cpu_set_t), &cpuset);
+  
+  // Pin receiver thread to core 1
+  CPU_ZERO(&cpuset);
+  CPU_SET(1, &cpuset);
+  pthread_setaffinity_np(batch_receiver_thread_.native_handle(), sizeof(cpu_set_t), &cpuset);
+#endif
 
   return true;
 }
@@ -247,48 +262,81 @@ void UDPBatchManager::batch_receiver_loop() {
 
 #ifdef __linux__
 bool UDPBatchManager::send_batch_mmsg(const std::vector<Packet>& packets) {
-  if (packets.empty() || socket_fd_ < 0) {
+  if (__builtin_expect(packets.empty() || socket_fd_ < 0, 0)) {
     return false;
   }
 
-  // Prepare mmsghdr structures
-  std::vector<struct mmsghdr> msgs(packets.size());
-  std::vector<struct iovec> iovecs(packets.size());
-  std::vector<struct sockaddr_in> addrs(packets.size());
+  const size_t batch_size = packets.size();
+  
+  // Thread-local pre-allocated buffers (reused across calls, no allocation overhead)
+  thread_local std::vector<struct mmsghdr> msgs;
+  thread_local std::vector<struct iovec> iovecs;
+  thread_local std::vector<struct sockaddr_in> addrs;
+  
+  // Resize once if needed (no reallocation on subsequent calls)
+  if (msgs.capacity() < batch_size) {
+    msgs.reserve(batch_size * 2); // Reserve extra to avoid frequent resizes
+    iovecs.reserve(batch_size * 2);
+    addrs.reserve(batch_size * 2);
+  }
+  msgs.resize(batch_size);
+  iovecs.resize(batch_size);
+  addrs.resize(batch_size);
 
-  for (size_t i = 0; i < packets.size(); ++i) {
-    // Setup address
-    addrs[i].sin_family = AF_INET;
-    addrs[i].sin_port = htons(packets[i].destination_port);
-    inet_pton(AF_INET, packets[i].destination_addr.c_str(), &addrs[i].sin_addr);
+  // Prefetch first packet data to reduce cache misses
+  __builtin_prefetch(&packets[0], 0, 3);
+  
+  // Setup batch - optimized loop with prefetching
+  for (size_t i = 0; i < batch_size; ++i) {
+    // Prefetch next packet while processing current
+    if (__builtin_expect(i + 1 < batch_size, 1)) {
+      __builtin_prefetch(&packets[i + 1], 0, 3);
+    }
+    
+    const auto& packet = packets[i];
+    auto& addr = addrs[i];
+    auto& iovec = iovecs[i];
+    auto& msg = msgs[i];
+    
+    // Setup address - inline and optimized
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(packet.destination_port);
+    inet_pton(AF_INET, packet.destination_addr.c_str(), &addr.sin_addr);
 
     // Setup iovec
-    iovecs[i].iov_base = const_cast<uint8_t*>(packets[i].data.data());
-    iovecs[i].iov_len = packets[i].data.size();
+    iovec.iov_base = const_cast<uint8_t*>(packet.data.data());
+    iovec.iov_len = packet.data.size();
 
-    // Setup mmsghdr
-    std::memset(&msgs[i], 0, sizeof(struct mmsghdr));
-    msgs[i].msg_hdr.msg_name = &addrs[i];
-    msgs[i].msg_hdr.msg_namelen = sizeof(struct sockaddr_in);
-    msgs[i].msg_hdr.msg_iov = &iovecs[i];
-    msgs[i].msg_hdr.msg_iovlen = 1;
+    // Setup mmsghdr - zero only necessary fields
+    msg.msg_hdr.msg_name = &addr;
+    msg.msg_hdr.msg_namelen = sizeof(struct sockaddr_in);
+    msg.msg_hdr.msg_iov = &iovec;
+    msg.msg_hdr.msg_iovlen = 1;
+    msg.msg_hdr.msg_control = nullptr;
+    msg.msg_hdr.msg_controllen = 0;
+    msg.msg_hdr.msg_flags = 0;
+    msg.msg_len = 0;
   }
 
   // Send batch using sendmmsg
-  int sent = sendmmsg(socket_fd_, msgs.data(), packets.size(), 0);
-  if (sent < 0) {
+  int sent = sendmmsg(socket_fd_, msgs.data(), batch_size, 0);
+  if (__builtin_expect(sent < 0, 0)) {
     std::cerr << "sendmmsg failed: " << strerror(errno) << std::endl;
     return false;
   }
 
-  // Update statistics
-  stats_.packets_sent += sent;
+  // Update statistics with atomic operations
+  stats_.packets_sent.fetch_add(sent, std::memory_order_relaxed);
+  
+  // Calculate total bytes sent
+  size_t total_bytes = 0;
   for (int i = 0; i < sent; ++i) {
-    stats_.total_bytes_sent += msgs[i].msg_len;
+    total_bytes += msgs[i].msg_len;
   }
+  stats_.total_bytes_sent.fetch_add(total_bytes, std::memory_order_relaxed);
 
-  if (static_cast<size_t>(sent) < packets.size()) {
-    stats_.dropped_packets += (packets.size() - sent);
+  if (__builtin_expect(static_cast<size_t>(sent) < batch_size, 0)) {
+    stats_.dropped_packets.fetch_add(batch_size - sent, std::memory_order_relaxed);
   }
 
   return true;
