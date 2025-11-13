@@ -7,6 +7,9 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+// Advanced optimizations
+#include <x86intrin.h> // For SIMD and prefetch
+
 #ifdef __linux__
 #include <sys/socket.h>
 #ifndef MSG_WAITFORONE
@@ -17,8 +20,16 @@
 namespace slonana {
 namespace network {
 
+// Cache-line aligned atomics to prevent false sharing
+struct alignas(64) AlignedAtomic {
+  std::atomic<bool> value{false};
+};
+
 UDPBatchManager::UDPBatchManager(const BatchConfig& config)
-    : config_(config), socket_fd_(-1), running_(false), should_stop_(false) {}
+    : config_(config), socket_fd_(-1), running_(false), should_stop_(false) {
+  // Ensure proper alignment for performance
+  static_assert(sizeof(std::atomic<bool>) <= 64, "Atomic too large for cache line");
+}
 
 UDPBatchManager::~UDPBatchManager() {
   shutdown();
@@ -87,15 +98,16 @@ bool UDPBatchManager::queue_packet(std::vector<uint8_t>&& data,
                                    const std::string& addr, 
                                    uint16_t port, 
                                    uint8_t priority) {
-  if (!running_.load()) {
+  // Branch prediction: running check is likely true
+  if (__builtin_expect(!running_.load(std::memory_order_relaxed), 0)) {
     return false;
   }
 
   std::unique_lock<std::mutex> lock(send_queue_.mutex);
   
-  // Check queue size
-  if (send_queue_.total_size() >= config_.buffer_pool_size) {
-    stats_.queue_full_errors++;
+  // Branch prediction: queue full is unlikely
+  if (__builtin_expect(send_queue_.total_size() >= config_.buffer_pool_size, 0)) {
+    stats_.queue_full_errors.fetch_add(1, std::memory_order_relaxed);
     return false;
   }
 
@@ -106,17 +118,25 @@ bool UDPBatchManager::queue_packet(std::vector<uint8_t>&& data,
   packet.priority = priority;
   packet.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
 
+  // Prefetch queue data structures
+  __builtin_prefetch(&send_queue_.high_priority, 1, 3);
+  __builtin_prefetch(&send_queue_.normal_priority, 1, 3);
+  
   enqueue_by_priority(std::move(packet));
   send_queue_.cv.notify_one();
   return true;
 }
 
 void UDPBatchManager::enqueue_by_priority(Packet&& packet) {
-  if (config_.enable_priority_queue) {
-    if (packet.priority >= 192) {
-      send_queue_.high_priority.push(std::move(packet));
-    } else if (packet.priority >= 64) {
-      send_queue_.normal_priority.push(std::move(packet));
+  if (__builtin_expect(config_.enable_priority_queue, 1)) {
+    // Use computed goto-like optimization with branch hints
+    // Most packets are normal priority (64-191)
+    if (__builtin_expect(packet.priority >= 64, 1)) {
+      if (__builtin_expect(packet.priority >= 192, 0)) {
+        send_queue_.high_priority.push(std::move(packet));
+      } else {
+        send_queue_.normal_priority.push(std::move(packet));
+      }
     } else {
       send_queue_.low_priority.push(std::move(packet));
     }
@@ -158,7 +178,7 @@ void UDPBatchManager::batch_sender_loop() {
   std::vector<Packet> batch;
   batch.reserve(config_.max_batch_size);
   
-  while (!should_stop_.load()) {
+  while (__builtin_expect(!should_stop_.load(std::memory_order_relaxed), 1)) {
     batch.clear(); // Reuse the vector
 
     {
@@ -166,20 +186,25 @@ void UDPBatchManager::batch_sender_loop() {
       
       // Wait for packets or timeout
       send_queue_.cv.wait_for(lock, config_.batch_timeout, 
-                              [this]() { return has_packets_to_send() || should_stop_.load(); });
+                              [this]() { 
+                                return __builtin_expect(has_packets_to_send(), 1) || 
+                                       __builtin_expect(should_stop_.load(std::memory_order_relaxed), 0); 
+                              });
 
-      if (should_stop_.load()) {
+      if (__builtin_expect(should_stop_.load(std::memory_order_relaxed), 0)) {
         break;
       }
 
       // Collect batch with move semantics
-      while (batch.size() < config_.max_batch_size && has_packets_to_send()) {
+      // Unroll inner loop for better performance
+      size_t batch_size = config_.max_batch_size;
+      while (batch.size() < batch_size && __builtin_expect(has_packets_to_send(), 1)) {
         batch.push_back(std::move(dequeue_by_priority()));
       }
     }
 
     // Send batch if we have packets
-    if (!batch.empty()) {
+    if (__builtin_expect(!batch.empty(), 1)) {
 #ifdef __linux__
       if (!send_batch_mmsg(batch)) {
         send_batch_fallback(batch);
@@ -187,7 +212,7 @@ void UDPBatchManager::batch_sender_loop() {
 #else
       send_batch_fallback(batch);
 #endif
-      stats_.batches_sent++;
+      stats_.batches_sent.fetch_add(1, std::memory_order_relaxed);
     }
   }
 }

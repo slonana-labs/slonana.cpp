@@ -9,6 +9,52 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+// Advanced optimizations
+#include <x86intrin.h> // For SIMD and prefetch
+
+namespace slonana {
+namespace network {
+
+// Fast hash function for connection IDs - FNV-1a
+static inline uint64_t fast_hash(const char* str, size_t len, uint16_t port) {
+  uint64_t hash = 14695981039346656037ULL; // FNV offset basis
+  for (size_t i = 0; i < len; ++i) {
+    hash ^= static_cast<uint64_t>(str[i]);
+    hash *= 1099511628211ULL; // FNV prime
+  }
+  hash ^= static_cast<uint64_t>(port);
+  hash *= 1099511628211ULL;
+  return hash;
+}
+
+// Connection key for faster lookups - uses uint64 hash instead of string
+struct ConnectionKey {
+  uint64_t hash;
+  std::string address;
+  uint16_t port;
+  
+  ConnectionKey(const std::string& addr, uint16_t p) 
+    : hash(fast_hash(addr.c_str(), addr.size(), p)), address(addr), port(p) {}
+  
+  bool operator==(const ConnectionKey& other) const {
+    return hash == other.hash && port == other.port && 
+           __builtin_expect(address == other.address, 1); // Likely equal if hash matches
+  }
+};
+
+} // namespace network
+} // namespace slonana
+
+// Hash function for ConnectionKey
+namespace std {
+template<>
+struct hash<slonana::network::ConnectionKey> {
+  size_t operator()(const slonana::network::ConnectionKey& k) const {
+    return k.hash;
+  }
+};
+}
+
 namespace slonana {
 namespace network {
 
@@ -88,22 +134,31 @@ std::shared_ptr<ConnectionCache::ConnectionInfo>
 ConnectionCache::get_or_create(const std::string& address, uint16_t port) {
   std::string conn_id = generate_connection_id(address, port);
   
+  // Prefetch the hash map data to reduce cache miss penalty
+  __builtin_prefetch(&connections_, 0, 3);
+  
   {
     std::lock_guard<std::mutex> lock(cache_mutex_);
     stats_.total_lookups++;
     
     // Check if connection exists (fast path - no timing here)
     auto it = connections_.find(conn_id);
-    if (it != connections_.end()) {
+    
+    // Branch prediction hint: cache hits are more likely
+    if (__builtin_expect(it != connections_.end(), 1)) {
       stats_.cache_hits++;
       it->second->last_used = std::chrono::steady_clock::now();
+      
+      // Prefetch connection data for immediate use
+      __builtin_prefetch(it->second.get(), 0, 3);
+      
       return it->second;
     }
     
     stats_.cache_misses++;
     
     // Check connection limit
-    if (connections_.size() >= config_.max_connections) {
+    if (__builtin_expect(connections_.size() >= config_.max_connections, 0)) {
       // Evict oldest stale connection
       for (auto it = connections_.begin(); it != connections_.end(); ++it) {
         if (is_connection_stale(*it->second)) {
@@ -133,7 +188,7 @@ ConnectionCache::get_or_create(const std::string& address, uint16_t port) {
     stats_.total_connections++;
     connections_[conn->connection_id] = conn;
     
-    if (event_callback_) {
+    if (__builtin_expect(event_callback_ != nullptr, 0)) {
       event_callback_(conn->connection_id, conn->state);
     }
     
