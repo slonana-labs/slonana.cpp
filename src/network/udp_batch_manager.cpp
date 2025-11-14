@@ -49,22 +49,31 @@ bool UDPBatchManager::initialize(int socket_fd) {
     initialize_buffer_pool();
   }
 
-  // Start batch processing threads
-  batch_sender_thread_ = std::thread(&UDPBatchManager::batch_sender_loop, this);
+  // Start multiple sender threads for parallel processing
+  size_t num_senders = std::min(config_.num_sender_threads, size_t(192)); // Cap at 192 cores
+  batch_sender_threads_.reserve(num_senders);
+  
+  for (size_t i = 0; i < num_senders; ++i) {
+    batch_sender_threads_.emplace_back(&UDPBatchManager::batch_sender_loop, this);
+  }
+  
+  // Start receiver thread
   batch_receiver_thread_ = std::thread(&UDPBatchManager::batch_receiver_loop, this);
 
 #ifdef __linux__
   // Pin threads to specific CPU cores for better cache locality
   cpu_set_t cpuset;
   
-  // Pin sender thread to core 0
-  CPU_ZERO(&cpuset);
-  CPU_SET(0, &cpuset);
-  pthread_setaffinity_np(batch_sender_thread_.native_handle(), sizeof(cpu_set_t), &cpuset);
+  // Pin each sender thread to a unique CPU core (spread across cores)
+  for (size_t i = 0; i < batch_sender_threads_.size(); ++i) {
+    CPU_ZERO(&cpuset);
+    CPU_SET(i % 192, &cpuset); // Distribute across available cores
+    pthread_setaffinity_np(batch_sender_threads_[i].native_handle(), sizeof(cpu_set_t), &cpuset);
+  }
   
-  // Pin receiver thread to core 1
+  // Pin receiver thread to a core after sender threads
   CPU_ZERO(&cpuset);
-  CPU_SET(1, &cpuset);
+  CPU_SET(batch_sender_threads_.size() % 192, &cpuset);
   pthread_setaffinity_np(batch_receiver_thread_.native_handle(), sizeof(cpu_set_t), &cpuset);
 #endif
 
@@ -82,10 +91,14 @@ void UDPBatchManager::shutdown() {
   // Signal threads with atomic flag (no mutex needed)
   send_queue_.has_data.store(true, std::memory_order_release);
 
-  // Join threads
-  if (batch_sender_thread_.joinable()) {
-    batch_sender_thread_.join();
+  // Join all sender threads
+  for (auto& thread : batch_sender_threads_) {
+    if (thread.joinable()) {
+      thread.join();
+    }
   }
+  
+  // Join receiver thread
   if (batch_receiver_thread_.joinable()) {
     batch_receiver_thread_.join();
   }

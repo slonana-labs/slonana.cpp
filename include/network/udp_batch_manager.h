@@ -9,6 +9,7 @@
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <thread>
 #include <vector>
 
 namespace slonana {
@@ -38,6 +39,7 @@ public:
     size_t max_packet_size;
     bool enable_zero_copy;
     bool enable_priority_queue;
+    size_t num_sender_threads; // Number of parallel sender threads
     
     BatchConfig()
         : max_batch_size(64),
@@ -45,7 +47,8 @@ public:
           buffer_pool_size(1024),
           max_packet_size(1500),
           enable_zero_copy(false),
-          enable_priority_queue(true) {}
+          enable_priority_queue(true),
+          num_sender_threads(4) {} // Default to 4 threads
   };
 
   struct BatchStats {
@@ -118,8 +121,8 @@ private:
   std::queue<size_t> available_buffers_;
   std::mutex buffer_pool_mutex_;
 
-  // Batch processing
-  std::thread batch_sender_thread_;
+  // Batch processing (multi-threaded)
+  std::vector<std::thread> batch_sender_threads_;
   std::thread batch_receiver_thread_;
   std::atomic<bool> should_stop_;
 
