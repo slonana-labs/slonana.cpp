@@ -512,6 +512,22 @@ add_executable(benchmark_networking
 target_link_libraries(benchmark_networking slonana_core)
 target_include_directories(benchmark_networking PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 
+# SVM Syscalls Tests - Cryptographic Operations
+add_executable(slonana_syscalls_crypto_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_syscalls_crypto.cpp"
+)
+target_link_libraries(slonana_syscalls_crypto_tests slonana_core)
+target_include_directories(slonana_syscalls_crypto_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME syscalls_crypto_tests COMMAND slonana_syscalls_crypto_tests)
+
+# SVM Syscalls Tests - Sysvar Access
+add_executable(slonana_syscalls_sysvar_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_syscalls_sysvar.cpp"
+)
+target_link_libraries(slonana_syscalls_sysvar_tests slonana_core)
+target_include_directories(slonana_syscalls_sysvar_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME syscalls_sysvar_tests COMMAND slonana_syscalls_sysvar_tests)
+
 
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")
