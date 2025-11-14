@@ -1,6 +1,5 @@
 #include "svm/syscalls.h"
 #include <cstring>
-#include <iostream>
 
 namespace slonana {
 namespace svm {

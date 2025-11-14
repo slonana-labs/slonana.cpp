@@ -1,6 +1,6 @@
 #include "svm/syscalls.h"
 #include <cstring>
-#include <iostream>
+#include <algorithm>
 
 namespace slonana {
 namespace svm {
@@ -32,11 +32,9 @@ struct BN254Point {
     }
     
     bool is_infinity() const {
-        // Check if all bytes are zero
-        for (int i = 0; i < 32; i++) {
-            if (x[i] != 0 || y[i] != 0) return false;
-        }
-        return true;
+        // Optimized: Use std::all_of for better compiler optimization
+        return std::all_of(x, x + 32, [](uint8_t b) { return b == 0; }) &&
+               std::all_of(y, y + 32, [](uint8_t b) { return b == 0; });
     }
 };
 
@@ -121,7 +119,7 @@ uint64_t sol_alt_bn128_multiplication(
         return ERROR_INVALID_POINT;
     }
     
-    // Handle special cases
+    // Handle special cases early
     if (point.is_infinity()) {
         // scalar * infinity = infinity
         std::memset(output, 0, 64);
@@ -129,16 +127,8 @@ uint64_t sol_alt_bn128_multiplication(
         return SUCCESS;
     }
     
-    // Check if scalar is zero
-    bool scalar_is_zero = true;
-    for (int i = 0; i < 32; i++) {
-        if (scalar[i] != 0) {
-            scalar_is_zero = false;
-            break;
-        }
-    }
-    
-    if (scalar_is_zero) {
+    // Check if scalar is zero - optimized check
+    if (std::all_of(scalar, scalar + 32, [](uint8_t b) { return b == 0; })) {
         // 0 * point = infinity
         std::memset(output, 0, 64);
         *output_len = 64;
@@ -304,16 +294,8 @@ uint64_t sol_curve25519_ristretto_multiply(
     // This requires libsodium's crypto_scalarmult_ristretto255
     // or a similar Ristretto implementation
     
-    // Handle zero scalar
-    bool scalar_is_zero = true;
-    for (int i = 0; i < 32; i++) {
-        if (scalar[i] != 0) {
-            scalar_is_zero = false;
-            break;
-        }
-    }
-    
-    if (scalar_is_zero) {
+    // Handle zero scalar - optimized check
+    if (std::all_of(scalar, scalar + 32, [](uint8_t b) { return b == 0; })) {
         // Return identity element
         std::memset(result, 0, 32);
         return SUCCESS;
