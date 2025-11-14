@@ -17,7 +17,7 @@ void benchmark_udp_batch_manager() {
   config.batch_timeout = std::chrono::milliseconds(1);
   config.buffer_pool_size = 100000; // Large buffer for benchmark stress test
   config.enable_priority_queue = true;
-  config.num_sender_threads = 32; // Use 32 threads for testing
+  config.num_sender_threads = 8; // Use 8 threads for testing (optimal)
 
   slonana::network::UDPBatchManager batch_mgr(config);
 
