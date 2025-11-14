@@ -528,6 +528,14 @@ target_link_libraries(slonana_syscalls_sysvar_tests slonana_core)
 target_include_directories(slonana_syscalls_sysvar_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 add_test(NAME syscalls_sysvar_tests COMMAND slonana_syscalls_sysvar_tests)
 
+# Enhanced BPF Runtime Tests
+add_executable(slonana_bpf_enhanced_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_bpf_runtime_enhanced.cpp"
+)
+target_link_libraries(slonana_bpf_enhanced_tests slonana_core)
+target_include_directories(slonana_bpf_enhanced_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME bpf_enhanced_tests COMMAND slonana_bpf_enhanced_tests)
+
 
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")
