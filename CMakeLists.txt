@@ -512,6 +512,13 @@ add_executable(benchmark_networking
 target_link_libraries(benchmark_networking slonana_core)
 target_include_directories(benchmark_networking PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 
+# BPF Runtime performance benchmarks
+add_executable(benchmark_bpf_runtime
+    "${CMAKE_SOURCE_DIR}/tests/benchmark_bpf_runtime.cpp"
+)
+target_link_libraries(benchmark_bpf_runtime slonana_core)
+target_include_directories(benchmark_bpf_runtime PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+
 # SVM Syscalls Tests - Cryptographic Operations
 add_executable(slonana_syscalls_crypto_tests
     "${CMAKE_SOURCE_DIR}/tests/test_syscalls_crypto.cpp"
