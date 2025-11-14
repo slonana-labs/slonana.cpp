@@ -11,13 +11,13 @@ void benchmark_udp_batch_manager() {
   std::cout << "\n🌐 UDP Batch Manager Performance Benchmark" << std::endl;
   std::cout << "==========================================\n" << std::endl;
 
-  // Create batch manager with optimized config for multi-threading
+  // Create batch manager with OPTIMAL config for peak performance
   slonana::network::UDPBatchManager::BatchConfig config;
-  config.max_batch_size = 64;
+  config.max_batch_size = 128;       // OPTIMAL: Larger batches for peak performance
   config.batch_timeout = std::chrono::milliseconds(1);
-  config.buffer_pool_size = 100000; // Large buffer for benchmark stress test
+  config.buffer_pool_size = 200000;  // OPTIMAL: Large buffer pool for burst workloads
   config.enable_priority_queue = true;
-  config.num_sender_threads = 8; // Use 8 threads for testing (optimal)
+  config.num_sender_threads = 8;     // OPTIMAL: 8 threads confirmed best
 
   slonana::network::UDPBatchManager batch_mgr(config);
 
