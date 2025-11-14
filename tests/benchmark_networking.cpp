@@ -11,12 +11,13 @@ void benchmark_udp_batch_manager() {
   std::cout << "\n🌐 UDP Batch Manager Performance Benchmark" << std::endl;
   std::cout << "==========================================\n" << std::endl;
 
-  // Create batch manager with optimized config
+  // Create batch manager with optimized config for multi-threading
   slonana::network::UDPBatchManager::BatchConfig config;
   config.max_batch_size = 64;
   config.batch_timeout = std::chrono::milliseconds(1);
-  config.buffer_pool_size = 2048;
+  config.buffer_pool_size = 100000; // Large buffer for benchmark stress test
   config.enable_priority_queue = true;
+  config.num_sender_threads = 8; // Use 8 threads for testing
 
   slonana::network::UDPBatchManager batch_mgr(config);
 
@@ -41,18 +42,33 @@ void benchmark_udp_batch_manager() {
 
   batch_mgr.initialize(sock);
 
-  // Benchmark packet queuing
-  const size_t num_packets = 100000;
+  // Benchmark packet queuing with multi-threading
+  const size_t num_packets = 1000000; // 1 million packets for better multi-threaded testing
   std::vector<uint8_t> test_data(1024, 0xAB); // 1KB packets
+
+  std::cout << "Starting packet queueing with " << config.num_sender_threads << " sender threads...\n" << std::endl;
 
   auto start = std::chrono::high_resolution_clock::now();
 
+  // Queue packets aggressively to saturate the multi-threaded senders
   for (size_t i = 0; i < num_packets; ++i) {
-    batch_mgr.queue_packet(std::vector<uint8_t>(test_data), "127.0.0.1", 8080, 128);
+    // Retry if queue is full (backpressure)
+    while (!batch_mgr.queue_packet(std::vector<uint8_t>(test_data), "127.0.0.1", 8080, 128)) {
+      std::this_thread::sleep_for(std::chrono::microseconds(10)); // Brief backoff
+    }
   }
 
   // Flush all pending batches
   batch_mgr.flush_batches();
+  
+  // Wait for all queued packets to be sent by monitoring stats
+  auto packets_target = num_packets;
+  while (batch_mgr.get_stats().packets_sent.load() < packets_target * 0.95) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    // Timeout after 5 seconds
+    static int timeout_counter = 0;
+    if (++timeout_counter > 500) break;
+  }
   
   auto end = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
@@ -66,11 +82,12 @@ void benchmark_udp_batch_manager() {
   std::cout << "  Packets sent:          " << num_packets << std::endl;
   std::cout << "  Packet size:           " << test_data.size() << " bytes" << std::endl;
   std::cout << "  Batch size:            " << config.max_batch_size << std::endl;
+  std::cout << "  Sender threads:        " << config.num_sender_threads << std::endl;
   std::cout << "\nPerformance Results:" << std::endl;
   std::cout << "  Duration:              " << duration.count() << " ms" << std::endl;
   std::cout << "  Throughput:            " << static_cast<uint64_t>(packets_per_sec) 
-            << " packets/sec" << std::endl;
-  std::cout << "  Bandwidth:             " << throughput_mbps << " Mbps" << std::endl;
+            << " packets/sec (" << (packets_per_sec / 1000000.0) << "M pps)" << std::endl;
+  std::cout << "  Bandwidth:             " << (throughput_mbps / 1000.0) << " Gbps" << std::endl;
 
   // Get statistics
   const auto& stats = batch_mgr.get_stats();
@@ -83,9 +100,12 @@ void benchmark_udp_batch_manager() {
 
   // Target validation
   std::cout << "\n✅ Performance Validation:" << std::endl;
+  double millions_pps = packets_per_sec / 1000000.0;
   if (packets_per_sec > 50000) {
     std::cout << "  ✓ PASSED: Throughput exceeds 50K packets/sec target" << std::endl;
     std::cout << "  ✓ Achievement: " << (packets_per_sec / 50000.0) << "x target" << std::endl;
+    std::cout << "  ✓ Multi-threaded throughput: " << millions_pps << " million packets/sec" << std::endl;
+    std::cout << "  ✓ Per-thread throughput: " << (millions_pps / config.num_sender_threads) << "M pps/thread" << std::endl;
   } else {
     std::cout << "  ✗ FAILED: Throughput below 50K packets/sec target" << std::endl;
   }
