@@ -519,6 +519,14 @@ add_executable(benchmark_bpf_runtime
 target_link_libraries(benchmark_bpf_runtime slonana_core)
 target_include_directories(benchmark_bpf_runtime PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 
+# Lock-free BPF Runtime benchmarks with SIMD optimizations
+add_executable(benchmark_lockfree_bpf
+    "${CMAKE_SOURCE_DIR}/tests/benchmark_lockfree_bpf.cpp"
+)
+target_link_libraries(benchmark_lockfree_bpf slonana_core pthread)
+target_include_directories(benchmark_lockfree_bpf PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_options(benchmark_lockfree_bpf PRIVATE -mavx2 -march=native)
+
 # SVM Syscalls Tests - Cryptographic Operations
 add_executable(slonana_syscalls_crypto_tests
     "${CMAKE_SOURCE_DIR}/tests/test_syscalls_crypto.cpp"
