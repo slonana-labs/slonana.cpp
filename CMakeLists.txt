@@ -567,6 +567,32 @@ target_link_libraries(slonana_bpf_enhanced_tests slonana_core)
 target_include_directories(slonana_bpf_enhanced_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 add_test(NAME bpf_enhanced_tests COMMAND slonana_bpf_enhanced_tests)
 
+# Extended Test Suites for Improved Coverage
+
+# SVM Syscalls Extended Tests - Cryptographic Operations (Edge Cases)
+add_executable(slonana_syscalls_crypto_extended_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_syscalls_crypto_extended.cpp"
+)
+target_link_libraries(slonana_syscalls_crypto_extended_tests slonana_core)
+target_include_directories(slonana_syscalls_crypto_extended_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME syscalls_crypto_extended_tests COMMAND slonana_syscalls_crypto_extended_tests)
+
+# SVM Syscalls Extended Tests - Sysvar Access (Edge Cases)
+add_executable(slonana_syscalls_sysvar_extended_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_syscalls_sysvar_extended.cpp"
+)
+target_link_libraries(slonana_syscalls_sysvar_extended_tests slonana_core)
+target_include_directories(slonana_syscalls_sysvar_extended_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME syscalls_sysvar_extended_tests COMMAND slonana_syscalls_sysvar_extended_tests)
+
+# Enhanced BPF Runtime Extended Tests (Stress, Concurrency, Integration)
+add_executable(slonana_bpf_runtime_extended_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_bpf_runtime_extended.cpp"
+)
+target_link_libraries(slonana_bpf_runtime_extended_tests slonana_core)
+target_include_directories(slonana_bpf_runtime_extended_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME bpf_runtime_extended_tests COMMAND slonana_bpf_runtime_extended_tests)
+
 
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")
