@@ -535,6 +535,14 @@ target_link_libraries(benchmark_ultra_bpf slonana_core pthread)
 target_include_directories(benchmark_ultra_bpf PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 target_compile_options(benchmark_ultra_bpf PRIVATE -O3 -mavx2 -march=native -fno-strict-aliasing)
 
+# Assembly hand-tuned BPF Runtime benchmarks (ultimate performance)
+add_executable(benchmark_asm_bpf
+    "${CMAKE_SOURCE_DIR}/tests/benchmark_asm_bpf.cpp"
+)
+target_link_libraries(benchmark_asm_bpf slonana_core pthread)
+target_include_directories(benchmark_asm_bpf PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_options(benchmark_asm_bpf PRIVATE -O3 -mavx2 -march=native -fno-strict-aliasing -masm=intel)
+
 # SVM Syscalls Tests - Cryptographic Operations
 add_executable(slonana_syscalls_crypto_tests
     "${CMAKE_SOURCE_DIR}/tests/test_syscalls_crypto.cpp"
