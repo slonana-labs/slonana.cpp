@@ -47,13 +47,13 @@ inline int asm_permission_check(uint8_t has_perms, uint8_t required_perms) {
     int result;
     
     asm volatile(
-        "movzbl %[required], %%eax\n\t"   // Load required_perms
-        "and %[has], %%al\n\t"            // has & required
+        "movzbl %b[required], %%eax\n\t"  // Load required_perms (use %b for byte)
+        "and %b[has], %%al\n\t"           // has & required
         "xor %%edx, %%edx\n\t"            // result = 0
-        "cmp %%al, %[required]\n\t"       // (has & required) == required?
+        "cmp %%al, %b[required]\n\t"      // (has & required) == required?
         "sete %%dl\n\t"                   // Set result to 1 if equal
         : "=d"(result)
-        : [has]"r"(has_perms), [required]"r"(required_perms)
+        : [has]"q"(has_perms), [required]"q"(required_perms)
         : "eax", "cc"
     );
     
@@ -74,9 +74,13 @@ inline void asm_validate_batch_8(
     uint8_t* results) {
     
     asm volatile(
-        // Load boundaries into AVX2 registers
-        "vpbroadcastq %[start], %%ymm0\n\t"   // ymm0 = [start, start, start, start]
-        "vpbroadcastq %[end], %%ymm1\n\t"     // ymm1 = [end, end, end, end]
+        // Load boundaries into AVX2 registers (need to use memory or XMM)
+        "movq %[start], %%rax\n\t"
+        "vmovq %%rax, %%xmm0\n\t"
+        "vpbroadcastq %%xmm0, %%ymm0\n\t"     // ymm0 = [start, start, start, start]
+        "movq %[end], %%rax\n\t"
+        "vmovq %%rax, %%xmm1\n\t"
+        "vpbroadcastq %%xmm1, %%ymm1\n\t"     // ymm1 = [end, end, end, end]
         
         // Load first 4 addresses
         "vmovdqu (%[addrs]), %%ymm2\n\t"      // ymm2 = addresses[0..3]
@@ -107,7 +111,7 @@ inline void asm_validate_batch_8(
         
         :
         : [addrs]"r"(addresses), [start]"r"(start), [end]"r"(end), [results]"r"(results)
-        : "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7", "memory"
+        : "rax", "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7", "memory"
     );
 }
 
@@ -118,17 +122,17 @@ inline void asm_validate_batch_8(
  * Expected: 4-5ns per call (includes cache coherency overhead)
  */
 inline bool asm_cas_uint64(uint64_t* ptr, uint64_t expected, uint64_t desired) {
-    uint8_t result;
+    unsigned char result;
     
     asm volatile(
         "lock cmpxchgq %[desired], %[ptr]\n\t"
         "sete %[result]\n\t"
-        : [result]"=q"(result), [ptr]"+m"(*ptr), "+a"(expected)
+        : [result]"=qm"(result), [ptr]"+m"(*ptr), "+a"(expected)
         : [desired]"r"(desired)
         : "cc", "memory"
     );
     
-    return result;
+    return result != 0;
 }
 
 /**
@@ -141,10 +145,10 @@ inline uint32_t asm_cost_lookup(const uint32_t* cost_table, uint8_t opcode) {
     uint32_t cost;
     
     asm volatile(
-        "movzbl %[opcode], %%eax\n\t"         // Zero-extend opcode to 32-bit
+        "movzbl %b[opcode], %%eax\n\t"        // Zero-extend opcode to 32-bit (use %b for byte)
         "mov (%[table], %%rax, 4), %[cost]\n\t" // cost = table[opcode]
         : [cost]"=r"(cost)
-        : [table]"r"(cost_table), [opcode]"r"(opcode)
+        : [table]"r"(cost_table), [opcode]"q"(opcode)
         : "eax"
     );
     
