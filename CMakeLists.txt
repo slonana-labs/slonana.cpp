@@ -593,6 +593,22 @@ target_link_libraries(slonana_bpf_runtime_extended_tests slonana_core)
 target_include_directories(slonana_bpf_runtime_extended_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 add_test(NAME bpf_runtime_extended_tests COMMAND slonana_bpf_runtime_extended_tests)
 
+# Adversarial Syscall Tests (Bug Discovery)
+add_executable(slonana_adversarial_syscalls_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_adversarial_syscalls.cpp"
+)
+target_link_libraries(slonana_adversarial_syscalls_tests slonana_core)
+target_include_directories(slonana_adversarial_syscalls_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME adversarial_syscalls_tests COMMAND slonana_adversarial_syscalls_tests)
+
+# Fuzzing BPF Runtime Tests (Bug Discovery)
+add_executable(slonana_fuzzing_bpf_runtime_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_fuzzing_bpf_runtime.cpp"
+)
+target_link_libraries(slonana_fuzzing_bpf_runtime_tests slonana_core)
+target_include_directories(slonana_fuzzing_bpf_runtime_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME fuzzing_bpf_runtime_tests COMMAND slonana_fuzzing_bpf_runtime_tests)
+
 
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")
