@@ -45,15 +45,17 @@ inline int asm_range_check(uintptr_t addr, uintptr_t start, size_t size) {
  */
 inline int asm_permission_check(uint8_t has_perms, uint8_t required_perms) {
     int result;
+    uint32_t has_32 = has_perms;
+    uint32_t req_32 = required_perms;
     
     asm volatile(
-        "movzbl %b[required], %%eax\n\t"  // Load required_perms (use %b for byte)
-        "and %b[has], %%al\n\t"           // has & required
+        "mov %[required], %%eax\n\t"      // Load required_perms
+        "and %[has], %%eax\n\t"           // has & required
         "xor %%edx, %%edx\n\t"            // result = 0
-        "cmp %%al, %b[required]\n\t"      // (has & required) == required?
+        "cmp %[required], %%eax\n\t"      // (has & required) == required?
         "sete %%dl\n\t"                   // Set result to 1 if equal
         : "=d"(result)
-        : [has]"q"(has_perms), [required]"q"(required_perms)
+        : [has]"r"(has_32), [required]"r"(req_32)
         : "eax", "cc"
     );
     
@@ -143,13 +145,13 @@ inline bool asm_cas_uint64(uint64_t* ptr, uint64_t expected, uint64_t desired) {
  */
 inline uint32_t asm_cost_lookup(const uint32_t* cost_table, uint8_t opcode) {
     uint32_t cost;
+    uint32_t opcode_32 = opcode;
     
     asm volatile(
-        "movzbl %b[opcode], %%eax\n\t"        // Zero-extend opcode to 32-bit (use %b for byte)
-        "mov (%[table], %%rax, 4), %[cost]\n\t" // cost = table[opcode]
+        "mov (%[table], %[opcode], 4), %[cost]\n\t" // cost = table[opcode]
         : [cost]"=r"(cost)
-        : [table]"r"(cost_table), [opcode]"q"(opcode)
-        : "eax"
+        : [table]"r"(cost_table), [opcode]"r"(opcode_32)
+        :
     );
     
     return cost;
