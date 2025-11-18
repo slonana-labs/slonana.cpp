@@ -541,7 +541,7 @@ add_executable(benchmark_asm_bpf
 )
 target_link_libraries(benchmark_asm_bpf slonana_core pthread)
 target_include_directories(benchmark_asm_bpf PRIVATE "${CMAKE_SOURCE_DIR}/tests")
-target_compile_options(benchmark_asm_bpf PRIVATE -O3 -mavx2 -march=native -fno-strict-aliasing -masm=intel)
+target_compile_options(benchmark_asm_bpf PRIVATE -O3 -mavx2 -march=native -fno-strict-aliasing)
 
 # SVM Syscalls Tests - Cryptographic Operations
 add_executable(slonana_syscalls_crypto_tests
