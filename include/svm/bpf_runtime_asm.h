@@ -148,10 +148,10 @@ inline uint32_t asm_cost_lookup(const uint32_t* cost_table, uint8_t opcode) {
     uint32_t opcode_32 = opcode;
     
     asm volatile(
-        "mov (%[table], %[opcode], 4), %[cost]\n\t" // cost = table[opcode]
-        : [cost]"=r"(cost)
-        : [table]"r"(cost_table), [opcode]"r"(opcode_32)
-        :
+        "mov (%1, %2, 4), %0\n\t" // cost = table[opcode]
+        : "=r"(cost)
+        : "r"(cost_table), "r"(opcode_32)
+        : "memory"
     );
     
     return cost;
