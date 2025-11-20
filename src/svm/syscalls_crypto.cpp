@@ -314,3 +314,86 @@ uint64_t sol_curve25519_ristretto_multiply(
 
 } // namespace svm
 } // namespace slonana
+
+// Extern "C" wrappers for C linkage (required by tests and external callers)
+extern "C" {
+
+uint64_t sol_alt_bn128_addition(
+    const uint8_t* input,
+    uint64_t input_len,
+    uint8_t* output,
+    uint64_t* output_len)
+{
+    return slonana::svm::sol_alt_bn128_addition(input, input_len, output, output_len);
+}
+
+uint64_t sol_alt_bn128_multiplication(
+    const uint8_t* input,
+    uint64_t input_len,
+    uint8_t* output,
+    uint64_t* output_len)
+{
+    return slonana::svm::sol_alt_bn128_multiplication(input, input_len, output, output_len);
+}
+
+uint64_t sol_alt_bn128_pairing(
+    const uint8_t* input,
+    uint64_t input_len,
+    uint8_t* output,
+    uint64_t* output_len)
+{
+    return slonana::svm::sol_alt_bn128_pairing(input, input_len, output, output_len);
+}
+
+uint64_t sol_blake3(
+    const uint8_t* input,
+    uint64_t input_len,
+    uint8_t* output,
+    uint64_t* output_len)
+{
+    return slonana::svm::sol_blake3(input, input_len, output, output_len);
+}
+
+uint64_t sol_poseidon(
+    const uint8_t* input,
+    uint64_t input_len,
+    uint64_t num_hashes,
+    uint8_t* output,
+    uint64_t* output_len)
+{
+    return slonana::svm::sol_poseidon(input, input_len, num_hashes, output, output_len);
+}
+
+uint64_t sol_curve25519_ristretto_add(
+    const uint8_t* left_point,
+    const uint8_t* right_point,
+    uint8_t* result)
+{
+    return slonana::svm::sol_curve25519_ristretto_add(left_point, right_point, result);
+}
+
+uint64_t sol_curve25519_ristretto_subtract(
+    const uint8_t* left_point,
+    const uint8_t* right_point,
+    uint8_t* result)
+{
+    return slonana::svm::sol_curve25519_ristretto_subtract(left_point, right_point, result);
+}
+
+uint64_t sol_curve25519_ristretto_multiply(
+    const uint8_t* scalar,
+    const uint8_t* point,
+    uint8_t* result)
+{
+    return slonana::svm::sol_curve25519_ristretto_multiply(scalar, point, result);
+}
+
+uint64_t sol_get_epoch_stake(
+    const uint8_t* vote_pubkey,
+    uint8_t* stake_out,
+    uint64_t* stake_len)
+{
+    return slonana::svm::sol_get_epoch_stake(vote_pubkey, stake_out, stake_len);
+}
+
+} // extern "C"
