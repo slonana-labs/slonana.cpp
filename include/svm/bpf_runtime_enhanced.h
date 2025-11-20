@@ -96,9 +96,14 @@ public:
     
     /**
      * Get memory region containing address (alias for get_region)
+     * Returns optional containing region info if found
      */
-    const MemoryRegion* get_memory_region(uintptr_t addr) const {
-        return get_region(addr);
+    std::optional<MemoryRegion> get_memory_region(uintptr_t addr) const {
+        const MemoryRegion* region = get_region(addr);
+        if (region) {
+            return *region;
+        }
+        return std::nullopt;
     }
     
     /**

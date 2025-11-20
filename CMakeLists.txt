@@ -99,6 +99,16 @@ target_link_libraries(slonana_validator slonana_core)
 # Enable testing
 enable_testing()
 
+# Fetch GoogleTest for unit testing
+include(FetchContent)
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/refs/tags/release-1.12.1.zip
+)
+# Prevent overriding the parent project's compiler/linker settings
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
 # Comprehensive test suite
 set(COMPREHENSIVE_TEST_SOURCES
     "${CMAKE_SOURCE_DIR}/tests/test_comprehensive.cpp"
@@ -581,7 +591,7 @@ add_test(NAME syscalls_crypto_extended_tests COMMAND slonana_syscalls_crypto_ext
 add_executable(slonana_syscalls_sysvar_extended_tests
     "${CMAKE_SOURCE_DIR}/tests/test_syscalls_sysvar_extended.cpp"
 )
-target_link_libraries(slonana_syscalls_sysvar_extended_tests slonana_core)
+target_link_libraries(slonana_syscalls_sysvar_extended_tests slonana_core gtest_main)
 target_include_directories(slonana_syscalls_sysvar_extended_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 add_test(NAME syscalls_sysvar_extended_tests COMMAND slonana_syscalls_sysvar_extended_tests)
 
@@ -589,7 +599,7 @@ add_test(NAME syscalls_sysvar_extended_tests COMMAND slonana_syscalls_sysvar_ext
 add_executable(slonana_bpf_runtime_extended_tests
     "${CMAKE_SOURCE_DIR}/tests/test_bpf_runtime_extended.cpp"
 )
-target_link_libraries(slonana_bpf_runtime_extended_tests slonana_core)
+target_link_libraries(slonana_bpf_runtime_extended_tests slonana_core gtest_main)
 target_include_directories(slonana_bpf_runtime_extended_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 add_test(NAME bpf_runtime_extended_tests COMMAND slonana_bpf_runtime_extended_tests)
 
@@ -597,7 +607,7 @@ add_test(NAME bpf_runtime_extended_tests COMMAND slonana_bpf_runtime_extended_te
 add_executable(slonana_adversarial_syscalls_tests
     "${CMAKE_SOURCE_DIR}/tests/test_adversarial_syscalls.cpp"
 )
-target_link_libraries(slonana_adversarial_syscalls_tests slonana_core)
+target_link_libraries(slonana_adversarial_syscalls_tests slonana_core gtest_main)
 target_include_directories(slonana_adversarial_syscalls_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 add_test(NAME adversarial_syscalls_tests COMMAND slonana_adversarial_syscalls_tests)
 
@@ -605,7 +615,7 @@ add_test(NAME adversarial_syscalls_tests COMMAND slonana_adversarial_syscalls_te
 add_executable(slonana_fuzzing_bpf_runtime_tests
     "${CMAKE_SOURCE_DIR}/tests/test_fuzzing_bpf_runtime.cpp"
 )
-target_link_libraries(slonana_fuzzing_bpf_runtime_tests slonana_core)
+target_link_libraries(slonana_fuzzing_bpf_runtime_tests slonana_core gtest_main)
 target_include_directories(slonana_fuzzing_bpf_runtime_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 add_test(NAME fuzzing_bpf_runtime_tests COMMAND slonana_fuzzing_bpf_runtime_tests)
 
