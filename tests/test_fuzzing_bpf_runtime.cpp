@@ -9,7 +9,7 @@
 #include <atomic>
 #include <chrono>
 
-using namespace svm;
+using namespace slonana::svm;
 
 class FuzzingBPFRuntimeTest : public ::testing::Test {
 protected:
