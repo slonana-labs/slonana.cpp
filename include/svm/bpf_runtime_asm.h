@@ -145,12 +145,12 @@ inline bool asm_cas_uint64(uint64_t* ptr, uint64_t expected, uint64_t desired) {
  */
 inline uint32_t asm_cost_lookup(const uint32_t* cost_table, uint8_t opcode) {
     uint32_t cost;
-    uint32_t opcode_32 = opcode;
+    uint64_t opcode_64 = opcode;  // Use 64-bit to ensure index register is 64-bit
     
     asm volatile(
         "mov (%1, %2, 4), %0\n\t" // cost = table[opcode]
         : "=r"(cost)
-        : "r"(cost_table), "r"(opcode_32)
+        : "r"(cost_table), "r"(opcode_64)
         : "memory"
     );
     
