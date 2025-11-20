@@ -2,6 +2,7 @@
 
 #include "bpf_runtime.h"
 #include <map>
+#include <optional>
 #include <vector>
 
 namespace slonana {
@@ -94,6 +95,13 @@ public:
     const MemoryRegion* get_region(uintptr_t addr) const;
     
     /**
+     * Get memory region containing address (alias for get_region)
+     */
+    const MemoryRegion* get_memory_region(uintptr_t addr) const {
+        return get_region(addr);
+    }
+    
+    /**
      * Clear all memory regions
      */
     void clear_regions();
@@ -161,10 +169,11 @@ struct StackFrame {
     uintptr_t return_address;
     uint64_t frame_pointer;
     uint64_t compute_units_at_entry;
+    uint64_t compute_units_used;  // Add this field for test compatibility
     
     StackFrame(uintptr_t ret, uint64_t fp, uint64_t cu)
         : return_address(ret), frame_pointer(fp), 
-          compute_units_at_entry(cu) {}
+          compute_units_at_entry(cu), compute_units_used(cu) {}
 };
 
 /**
@@ -186,9 +195,19 @@ public:
     bool pop_frame(StackFrame& frame);
     
     /**
+     * Pop the top stack frame (returns optional)
+     */
+    std::optional<StackFrame> pop_frame();
+    
+    /**
      * Get current call depth
      */
     size_t get_depth() const { return frames_.size(); }
+    
+    /**
+     * Alias for get_depth (for backward compatibility with tests)
+     */
+    size_t get_current_depth() const { return get_depth(); }
     
     /**
      * Check if max depth exceeded

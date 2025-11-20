@@ -155,5 +155,15 @@ bool StackFrameManager::pop_frame(StackFrame& frame) {
     return true;
 }
 
+std::optional<StackFrame> StackFrameManager::pop_frame() {
+    if (frames_.empty()) {
+        return std::nullopt;
+    }
+    
+    StackFrame frame = frames_.back();
+    frames_.pop_back();
+    return frame;
+}
+
 } // namespace svm
 } // namespace slonana
