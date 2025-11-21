@@ -13,7 +13,7 @@ using namespace slonana::svm;
 
 class FuzzingBPFRuntimeTest : public ::testing::Test {
 protected:
-    EnhancedBPFRuntime runtime;
+    EnhancedBpfRuntime runtime;
     std::mt19937_64 rng{std::random_device{}()};
     
     uint64_t random_address() {

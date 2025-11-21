@@ -189,6 +189,11 @@ public:
     StackFrameManager() : max_depth_(64) {}
     
     /**
+     * Constructor with custom max depth
+     */
+    explicit StackFrameManager(size_t max_depth) : max_depth_(max_depth) {}
+    
+    /**
      * Push a new stack frame
      */
     bool push_frame(uintptr_t return_addr, uint64_t frame_pointer, 
