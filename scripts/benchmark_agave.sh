@@ -388,10 +388,12 @@ start_validator() {
     log_verbose "  Gossip Port: $GOSSIP_PORT"
 
     # Start test validator in background (much simpler than agave-validator)
+    # Enable transaction history and logging for validation error visibility
     "$VALIDATOR_BIN" \
         --ledger "$LEDGER_DIR" \
         --rpc-port "$RPC_PORT" \
-        --quiet \
+        --rpc-transaction-history \
+        --log \
         --reset &
 
     VALIDATOR_PID=$!
@@ -580,6 +582,10 @@ test_transaction_throughput() {
     # Add timeout protection for the entire transaction loop
     local loop_timeout=$((start_time + TEST_DURATION + 5))  # Extra 5s buffer
     local end_time=$((start_time + TEST_DURATION))
+    local failed_validation_count=0
+    
+    # Clear validation errors file
+    > "$RESULTS_DIR/validation_errors.txt"
     
     while [[ $(date +%s) -lt $end_time ]]; do
         # Safety check to prevent infinite loops
@@ -588,13 +594,30 @@ test_transaction_throughput() {
             break
         fi
         
-        # Single transaction per iteration in CI to avoid overload
-        if timeout 3s solana transfer "$recipient_pubkey" 0.001 \
+        # Capture transaction signature for validation checking
+        local sig
+        sig=$(timeout 3s solana transfer "$recipient_pubkey" 0.001 \
             --keypair "$sender_keypair" \
             --allow-unfunded-recipient \
             --fee-payer "$sender_keypair" \
-            --no-wait > /dev/null 2>&1; then
-            ((success_count++))
+            --output json 2>&1 | jq -r '.signature // empty' 2>/dev/null || echo "")
+        
+        if [[ -n "$sig" ]]; then
+            # Check transaction validation status
+            if timeout 3s solana confirm "$sig" --commitment confirmed 2>&1 | grep -q "Transaction executed successfully"; then
+                ((success_count++))
+            else
+                # Transaction failed validation - capture error
+                local error
+                error=$(timeout 2s solana confirm "$sig" 2>&1 | grep -oP 'Error:.*' || echo "Unknown validation error")
+                ((failed_validation_count++))
+                
+                # Log first 5 validation errors for diagnostics
+                if [[ $failed_validation_count -le 5 ]]; then
+                    echo "Transaction $sig: $error" >> "$RESULTS_DIR/validation_errors.txt"
+                    log_verbose "Validation failed: $error"
+                fi
+            fi
         fi
         ((txn_count++))
         
@@ -614,11 +637,21 @@ test_transaction_throughput() {
     echo "$effective_tps" > "$RESULTS_DIR/effective_tps.txt"
     echo "$success_count" > "$RESULTS_DIR/successful_transactions.txt"
     echo "$txn_count" > "$RESULTS_DIR/submitted_requests.txt"
+    echo "$failed_validation_count" > "$RESULTS_DIR/failed_validation_count.txt"
 
     log_success "Transaction throughput test completed"
     log_info "Effective TPS: $effective_tps"
     log_info "Successful transactions: $success_count"
+    log_info "Failed validations: $failed_validation_count"
     log_info "Total submitted: $txn_count"
+    
+    # Show sample validation errors if any
+    if [[ $failed_validation_count -gt 0 && -f "$RESULTS_DIR/validation_errors.txt" ]]; then
+        log_warning "Sample validation errors (first 5):"
+        head -n 5 "$RESULTS_DIR/validation_errors.txt" | while read -r line; do
+            log_warning "  $line"
+        done
+    fi
 }
 
 # Generate comprehensive results summary
