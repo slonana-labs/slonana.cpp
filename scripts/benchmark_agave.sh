@@ -388,12 +388,9 @@ start_validator() {
     log_verbose "  Gossip Port: $GOSSIP_PORT"
 
     # Start test validator in background (much simpler than agave-validator)
-    # Enable transaction history and logging for validation error visibility
     "$VALIDATOR_BIN" \
         --ledger "$LEDGER_DIR" \
         --rpc-port "$RPC_PORT" \
-        --rpc-transaction-history \
-        --log \
         --reset &
 
     VALIDATOR_PID=$!
