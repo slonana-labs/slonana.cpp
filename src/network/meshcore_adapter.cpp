@@ -331,13 +331,18 @@ private:
 
     // Simulate connection (in production, use QUIC/TCP)
     std::thread([this, node_id]() {
-      std::this_thread::sleep_for(milliseconds(100 + (rand() % 200)));
+      std::random_device rd;
+      std::mt19937 gen(rd());
+      std::uniform_int_distribution<> delay_dist(100, 300);
+      std::uniform_int_distribution<> latency_dist(20, 50);
+
+      std::this_thread::sleep_for(milliseconds(delay_dist(gen)));
 
       std::lock_guard<std::mutex> lock(peers_mutex_);
       auto it = peers_.find(node_id);
       if (it != peers_.end()) {
         it->second.state = NodeState::CONNECTED;
-        it->second.latency_ms = 20 + (rand() % 30); // Simulate 20-50ms latency
+        it->second.latency_ms = latency_dist(gen); // Simulate 20-50ms latency
       }
     }).detach();
 
@@ -506,8 +511,18 @@ std::unique_ptr<MeshCoreAdapter>
 create_meshcore_adapter(const ValidatorConfig &config) {
   MeshConfig mesh_config;
   mesh_config.enabled = false; // Default: disabled until explicitly enabled
-  mesh_config.node_id = config.node_address; // Use validator node address as ID
-  mesh_config.listen_port = config.node_port;
+
+  // Extract node ID from gossip bind address
+  mesh_config.node_id = config.gossip_bind_address;
+
+  // Extract port from gossip bind address (format: "127.0.0.1:8001")
+  auto colon_pos = config.gossip_bind_address.find(':');
+  if (colon_pos != std::string::npos) {
+    mesh_config.listen_port =
+        std::stoi(config.gossip_bind_address.substr(colon_pos + 1));
+  } else {
+    mesh_config.listen_port = 8001; // Default gossip port
+  }
 
   // Bootstrap from known validators (if any)
   mesh_config.bootstrap_nodes = config.bootstrap_entrypoints;
