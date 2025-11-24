@@ -19,6 +19,7 @@ Slonana.cpp is a battle-tested native C++ validator that delivers exceptional pe
 - **✅ Zero Mocks** - Real implementations throughout, no mock objects or test stubs
 - **🛡️ Battle-Tested** - 6 critical bugs fixed, 88% test pass rate (14/16 tests)
 - **📊 Hardware Integration** - Real Ledger/Trezor device support with cryptographic operations
+- **🕸️ MeshCore Networking** - Decentralized mesh networking with automatic peer discovery and healing
 
 ## 📚 Documentation
 
@@ -32,6 +33,7 @@ Slonana.cpp is a battle-tested native C++ validator that delivers exceptional pe
 | **[Deployment Guide](docs/DEPLOYMENT.md)** | Production deployment and configuration |
 | **[Testing Guide](TESTING.md)** | Testing framework and procedures |
 | **[Benchmarking Guide](BENCHMARKING.md)** | Performance analysis and comparisons |
+| **[MeshCore Guide](docs/MESHCORE.md)** | Mesh networking integration and usage |
 | **[Phase 2 Plan](PHASE2_PLAN.md)** | Comprehensive roadmap for production readiness |
 
 ### Agave Compatibility
