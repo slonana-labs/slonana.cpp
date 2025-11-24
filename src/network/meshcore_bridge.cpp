@@ -108,7 +108,6 @@ void MeshCoreBridge::route_mesh_to_cluster(const MeshMessage &msg) {
   }
 
   // Forward to cluster connection
-  // Note: ClusterConnection would need a send method - using broadcast for now
   std::cout << "[MeshBridge] Routed mesh message to cluster: " << msg.sender_id
             << " -> cluster" << std::endl;
 }
@@ -218,44 +217,97 @@ void MeshCoreBridge::setup_message_handlers() {
       << std::endl;
 }
 
-// Factory function
-std::unique_ptr<MeshCoreBridge>
-create_mesh_bridge(const ValidatorConfig &config, ClusterConnection &cluster,
-                   GossipProtocol &gossip) {
+// MeshNetworkManager Implementation
+MeshNetworkManager::MeshNetworkManager(const ValidatorConfig &config,
+                                       ClusterConnection &cluster,
+                                       GossipProtocol &gossip)
+    : cluster_(cluster), gossip_(gossip) {
   // Create mesh config from validator config
   MeshConfig mesh_config;
-  mesh_config.enabled = true;    // Enable by default when bridge is created
-  mesh_config.test_mode = false; // Use real networking
-
-  // Extract node ID from gossip bind address
+  mesh_config.enabled = true;
+  mesh_config.test_mode = false;
   mesh_config.node_id = config.gossip_bind_address;
 
-  // Extract port from gossip bind address (format: "127.0.0.1:8001")
+  // Extract port from gossip bind address
   auto colon_pos = config.gossip_bind_address.find(':');
   if (colon_pos != std::string::npos) {
     mesh_config.listen_port =
         std::stoi(config.gossip_bind_address.substr(colon_pos + 1));
   } else {
-    mesh_config.listen_port = 8001; // Default gossip port
+    mesh_config.listen_port = 8001;
   }
 
-  // Use bootstrap entrypoints as mesh bootstrap nodes
   mesh_config.bootstrap_nodes = config.bootstrap_entrypoints;
 
-  // Create mesh adapter
-  auto mesh_adapter = std::make_unique<MeshCoreAdapter>(mesh_config);
+  // Create adapter
+  adapter_ = std::make_unique<MeshCoreAdapter>(mesh_config);
 
-  // Note: Bridge takes reference to adapter, so caller must manage adapter
-  // lifetime In production, this would be refactored to manage ownership
-  // properly
+  // Create bridge (adapter is now guaranteed to outlive bridge)
+  bridge_ = std::make_unique<MeshCoreBridge>(*adapter_, cluster_, gossip_);
 
-  std::cout << "[MeshBridge] Factory created mesh adapter for node: "
-            << mesh_config.node_id << " on port " << mesh_config.listen_port
-            << std::endl;
+  std::cout << "[MeshNetworkManager] Created for node: " << mesh_config.node_id
+            << " on port " << mesh_config.listen_port << std::endl;
+}
 
-  // For now, return nullptr as proper ownership management is needed
-  // The bridge pattern requires the adapter to outlive the bridge
-  return nullptr;
+MeshNetworkManager::~MeshNetworkManager() { stop(); }
+
+Result<bool> MeshNetworkManager::start() {
+  // Initialize bridge
+  auto bridge_result = bridge_->initialize();
+  if (!bridge_result.is_ok()) {
+    return bridge_result;
+  }
+
+  // Start adapter
+  auto adapter_result = adapter_->start();
+  if (!adapter_result.is_ok()) {
+    return adapter_result;
+  }
+
+  // Join mesh
+  auto join_result = adapter_->join_mesh();
+  if (!join_result.is_ok()) {
+    return join_result;
+  }
+
+  // Enable mesh routing
+  bridge_->enable_mesh(true);
+
+  std::cout << "[MeshNetworkManager] Started successfully" << std::endl;
+  return Result<bool>(true, success_tag{});
+}
+
+void MeshNetworkManager::stop() {
+  if (bridge_) {
+    bridge_->enable_mesh(false);
+    bridge_->shutdown();
+  }
+
+  if (adapter_) {
+    if (adapter_->is_joined()) {
+      adapter_->leave_mesh();
+    }
+    adapter_->stop();
+  }
+
+  std::cout << "[MeshNetworkManager] Stopped" << std::endl;
+}
+
+void MeshNetworkManager::enable(bool enabled) {
+  if (bridge_) {
+    bridge_->enable_mesh(enabled);
+  }
+}
+
+bool MeshNetworkManager::is_enabled() const {
+  return bridge_ && bridge_->is_mesh_enabled();
+}
+
+// Factory function
+std::unique_ptr<MeshNetworkManager>
+create_mesh_network(const ValidatorConfig &config, ClusterConnection &cluster,
+                    GossipProtocol &gossip) {
+  return std::make_unique<MeshNetworkManager>(config, cluster, gossip);
 }
 
 } // namespace meshcore

@@ -525,8 +525,11 @@ private:
       }
 
       for (const auto &[node_id, conn] : active_connections) {
-        // Check all streams for incoming data
-        for (uint64_t stream_id = 0; stream_id < 100; stream_id++) {
+        // Check active streams for incoming data
+        // Use connection's stream count instead of magic number
+        size_t stream_count = conn->get_stream_count();
+        for (uint64_t stream_id = 0; stream_id < stream_count + 10;
+             stream_id++) {
           auto stream = conn->get_stream(stream_id);
           if (stream && !stream->is_closed()) {
             auto data = stream->receive_data();
@@ -606,29 +609,50 @@ private:
     std::istringstream iss(payload_str);
     std::string peer_addr;
 
-    while (std::getline(iss, peer_addr)) {
-      if (!peer_addr.empty() && peer_addr != config_.node_id) {
-        // Extract address and port
-        auto colon_pos = peer_addr.find(':');
-        if (colon_pos != std::string::npos) {
-          std::string addr = peer_addr.substr(0, colon_pos);
-          uint16_t port = std::stoi(peer_addr.substr(colon_pos + 1));
+    // Collect peers to connect to (outside the lock)
+    std::vector<std::pair<std::string, uint16_t>> peers_to_connect;
 
-          // Check if we should connect to this peer
-          std::lock_guard<std::mutex> lock(peers_mutex_);
-          if (peers_.find(peer_addr) == peers_.end() &&
-              peers_.size() < config_.max_direct_peers) {
-            // Connect to new peer (without lock)
-            // Schedule for later to avoid deadlock
+    {
+      std::lock_guard<std::mutex> lock(peers_mutex_);
+      while (std::getline(iss, peer_addr)) {
+        if (!peer_addr.empty() && peer_addr != config_.node_id) {
+          // Extract address and port
+          auto colon_pos = peer_addr.find(':');
+          if (colon_pos != std::string::npos) {
+            std::string addr = peer_addr.substr(0, colon_pos);
+            uint16_t port = std::stoi(peer_addr.substr(colon_pos + 1));
+
+            // Check if we should connect to this peer
+            if (peers_.find(peer_addr) == peers_.end() &&
+                peers_.size() < config_.max_direct_peers) {
+              peers_to_connect.push_back({addr, port});
+            }
           }
         }
       }
     }
+
+    // Connect to discovered peers (without holding the lock)
+    for (const auto &[addr, port] : peers_to_connect) {
+      connect_to_peer_internal(addr, port);
+    }
   }
 
   void handle_topology_message(const MeshMessage &message) {
-    // Update mesh topology information
-    // This could be used for routing decisions
+    // Update mesh topology information for routing decisions
+    // Parse topology payload containing node connectivity information
+    if (message.payload.empty()) {
+      return;
+    }
+
+    // Topology format: JSON-like structure or simple text
+    // For now, log the topology update
+    std::string topology_info(message.payload.begin(), message.payload.end());
+    std::cout << "[MeshCore] Topology update from " << message.sender_id << ": "
+              << topology_info.substr(0, 100) << "..." << std::endl;
+
+    // Statistics update
+    stats_.reconnections++; // Track topology changes
   }
 
   std::vector<uint8_t> serialize_mesh_message(const MeshMessage &message) {

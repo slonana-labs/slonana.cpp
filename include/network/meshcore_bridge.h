@@ -62,14 +62,46 @@ private:
 };
 
 /**
+ * Integrated Mesh Network Manager
+ *
+ * Owns both the MeshCoreAdapter and MeshCoreBridge, solving the
+ * lifetime management issue. Use this class for production integration.
+ */
+class MeshNetworkManager {
+public:
+  MeshNetworkManager(const ValidatorConfig &config, ClusterConnection &cluster,
+                     GossipProtocol &gossip);
+  ~MeshNetworkManager();
+
+  // Initialize and start mesh networking
+  Result<bool> start();
+
+  // Stop mesh networking
+  void stop();
+
+  // Enable/disable mesh at runtime
+  void enable(bool enabled);
+  bool is_enabled() const;
+
+  // Access underlying components
+  MeshCoreAdapter &adapter() { return *adapter_; }
+  MeshCoreBridge &bridge() { return *bridge_; }
+
+private:
+  std::unique_ptr<MeshCoreAdapter> adapter_;
+  std::unique_ptr<MeshCoreBridge> bridge_;
+  ClusterConnection &cluster_;
+  GossipProtocol &gossip_;
+};
+
+/**
  * Factory function to create integrated mesh networking
  *
- * Creates a MeshCoreAdapter configured from ValidatorConfig and
- * sets up the bridge for message routing.
+ * Creates a MeshNetworkManager that owns both the adapter and bridge.
  */
-std::unique_ptr<MeshCoreBridge>
-create_mesh_bridge(const ValidatorConfig &config, ClusterConnection &cluster,
-                   GossipProtocol &gossip);
+std::unique_ptr<MeshNetworkManager>
+create_mesh_network(const ValidatorConfig &config, ClusterConnection &cluster,
+                    GossipProtocol &gossip);
 
 } // namespace meshcore
 } // namespace network
