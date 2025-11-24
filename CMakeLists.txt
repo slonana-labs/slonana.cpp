@@ -99,6 +99,16 @@ target_link_libraries(slonana_validator slonana_core)
 # Enable testing
 enable_testing()
 
+# Fetch GoogleTest for unit testing
+include(FetchContent)
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/refs/tags/release-1.12.1.zip
+)
+# Prevent overriding the parent project's compiler/linker settings
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
 # Comprehensive test suite
 set(COMPREHENSIVE_TEST_SOURCES
     "${CMAKE_SOURCE_DIR}/tests/test_comprehensive.cpp"
@@ -511,6 +521,103 @@ add_executable(benchmark_networking
 )
 target_link_libraries(benchmark_networking slonana_core)
 target_include_directories(benchmark_networking PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+
+# BPF Runtime performance benchmarks
+add_executable(benchmark_bpf_runtime
+    "${CMAKE_SOURCE_DIR}/tests/benchmark_bpf_runtime.cpp"
+)
+target_link_libraries(benchmark_bpf_runtime slonana_core)
+target_include_directories(benchmark_bpf_runtime PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+
+# Lock-free BPF Runtime benchmarks with SIMD optimizations
+add_executable(benchmark_lockfree_bpf
+    "${CMAKE_SOURCE_DIR}/tests/benchmark_lockfree_bpf.cpp"
+)
+target_link_libraries(benchmark_lockfree_bpf slonana_core pthread)
+target_include_directories(benchmark_lockfree_bpf PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_options(benchmark_lockfree_bpf PRIVATE -mavx2 -march=native)
+
+# Ultra-optimized BPF Runtime benchmarks (branchless, multi-level cache, prefetch)
+add_executable(benchmark_ultra_bpf
+    "${CMAKE_SOURCE_DIR}/tests/benchmark_ultra_bpf.cpp"
+)
+target_link_libraries(benchmark_ultra_bpf slonana_core pthread)
+target_include_directories(benchmark_ultra_bpf PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_options(benchmark_ultra_bpf PRIVATE -O3 -mavx2 -march=native -fno-strict-aliasing)
+
+# Assembly hand-tuned BPF Runtime benchmarks (ultimate performance)
+add_executable(benchmark_asm_bpf
+    "${CMAKE_SOURCE_DIR}/tests/benchmark_asm_bpf.cpp"
+)
+target_link_libraries(benchmark_asm_bpf slonana_core pthread)
+target_include_directories(benchmark_asm_bpf PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_options(benchmark_asm_bpf PRIVATE -O3 -mavx2 -march=native -fno-strict-aliasing)
+
+# SVM Syscalls Tests - Cryptographic Operations
+add_executable(slonana_syscalls_crypto_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_syscalls_crypto.cpp"
+)
+target_link_libraries(slonana_syscalls_crypto_tests slonana_core)
+target_include_directories(slonana_syscalls_crypto_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME syscalls_crypto_tests COMMAND slonana_syscalls_crypto_tests)
+
+# SVM Syscalls Tests - Sysvar Access
+add_executable(slonana_syscalls_sysvar_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_syscalls_sysvar.cpp"
+)
+target_link_libraries(slonana_syscalls_sysvar_tests slonana_core)
+target_include_directories(slonana_syscalls_sysvar_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME syscalls_sysvar_tests COMMAND slonana_syscalls_sysvar_tests)
+
+# Enhanced BPF Runtime Tests
+add_executable(slonana_bpf_enhanced_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_bpf_runtime_enhanced.cpp"
+)
+target_link_libraries(slonana_bpf_enhanced_tests slonana_core)
+target_include_directories(slonana_bpf_enhanced_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME bpf_enhanced_tests COMMAND slonana_bpf_enhanced_tests)
+
+# Extended Test Suites for Improved Coverage
+
+# SVM Syscalls Extended Tests - Cryptographic Operations (Edge Cases)
+add_executable(slonana_syscalls_crypto_extended_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_syscalls_crypto_extended.cpp"
+)
+target_link_libraries(slonana_syscalls_crypto_extended_tests slonana_core)
+target_include_directories(slonana_syscalls_crypto_extended_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME syscalls_crypto_extended_tests COMMAND slonana_syscalls_crypto_extended_tests)
+
+# SVM Syscalls Extended Tests - Sysvar Access (Edge Cases)
+add_executable(slonana_syscalls_sysvar_extended_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_syscalls_sysvar_extended.cpp"
+)
+target_link_libraries(slonana_syscalls_sysvar_extended_tests slonana_core gtest_main)
+target_include_directories(slonana_syscalls_sysvar_extended_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME syscalls_sysvar_extended_tests COMMAND slonana_syscalls_sysvar_extended_tests)
+
+# Enhanced BPF Runtime Extended Tests (Stress, Concurrency, Integration)
+add_executable(slonana_bpf_runtime_extended_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_bpf_runtime_extended.cpp"
+)
+target_link_libraries(slonana_bpf_runtime_extended_tests slonana_core gtest_main)
+target_include_directories(slonana_bpf_runtime_extended_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME bpf_runtime_extended_tests COMMAND slonana_bpf_runtime_extended_tests)
+
+# Adversarial Syscall Tests (Bug Discovery)
+add_executable(slonana_adversarial_syscalls_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_adversarial_syscalls.cpp"
+)
+target_link_libraries(slonana_adversarial_syscalls_tests slonana_core gtest_main)
+target_include_directories(slonana_adversarial_syscalls_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME adversarial_syscalls_tests COMMAND slonana_adversarial_syscalls_tests)
+
+# Fuzzing BPF Runtime Tests (Bug Discovery)
+add_executable(slonana_fuzzing_bpf_runtime_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_fuzzing_bpf_runtime.cpp"
+)
+target_link_libraries(slonana_fuzzing_bpf_runtime_tests slonana_core gtest_main)
+target_include_directories(slonana_fuzzing_bpf_runtime_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME fuzzing_bpf_runtime_tests COMMAND slonana_fuzzing_bpf_runtime_tests)
 
 
 # Genesis CLI tool

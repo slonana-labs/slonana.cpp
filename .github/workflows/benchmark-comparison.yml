@@ -63,8 +63,9 @@ jobs:
 
     - name: Install Solana CLI
       run: |
-        echo "🔍 Installing Solana CLI..."
-        sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+        echo "🔍 Installing Solana CLI with full tool suite..."
+        # Pin to specific version for reproducibility and to ensure all tools are available
+        sh -c "$(curl -sSfL https://release.anza.xyz/v1.18.22/install)"
         echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
         
@@ -72,10 +73,12 @@ jobs:
         echo "🔍 Verifying Solana CLI installation..."
         which solana || { echo "❌ Solana CLI install failed"; exit 1; }
         which solana-keygen || { echo "❌ solana-keygen not found"; exit 1; }
+        which solana-genesis || { echo "❌ solana-genesis not found"; exit 1; }
         
         echo "✅ Solana CLI installed successfully"
         solana --version
         solana-keygen --version
+        solana-genesis --version
 
     - name: Ensure Solana/Agave binaries available for all steps
       run: |
@@ -132,12 +135,14 @@ jobs:
         echo "🔍 Checking required binaries..."
         which solana || { echo "❌ solana not found"; exit 1; }
         which solana-keygen || { echo "❌ solana-keygen not found"; exit 1; }
+        which solana-genesis || { echo "❌ solana-genesis not found"; exit 1; }
         which solana-test-validator || { echo "❌ solana-test-validator not found"; exit 1; }
         which agave-ledger-tool || { echo "❌ agave-ledger-tool not found"; exit 1; }
         
         echo "✅ All required binaries found:"
         echo "  solana: $(which solana)"
         echo "  solana-keygen: $(which solana-keygen)"
+        echo "  solana-genesis: $(which solana-genesis)"
         echo "  solana-test-validator: $(which solana-test-validator)"
         echo "  agave-ledger-tool: $(which agave-ledger-tool)"
         echo ""
@@ -154,6 +159,7 @@ jobs:
         # Version validation
         echo "🔍 Version information:"
         solana --version
+        solana-genesis --version
         solana-test-validator --version
         echo ""
         

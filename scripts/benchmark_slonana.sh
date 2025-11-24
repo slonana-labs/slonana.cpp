@@ -2132,19 +2132,35 @@ EOF
     actual_duration=${actual_duration:-1}  # Prevent division by zero
     
     # Ensure we don't divide by zero and handle arithmetic safely
+    # Use bc for floating point division to get accurate TPS
     local effective_tps=0
+    local effective_tps_float="0.00"
     if [[ $actual_duration -gt 0 ]] && [[ $success_count -ge 0 ]]; then
-        effective_tps=$(( success_count / actual_duration )) 2>/dev/null || effective_tps=0
+        # Calculate with bc for floating point precision
+        effective_tps_float=$(echo "scale=2; $success_count / $actual_duration" | bc -l 2>/dev/null || echo "0.00")
+        # Keep integer for backwards compatibility
+        effective_tps=$(echo "$effective_tps_float" | cut -d. -f1)
     fi
 
-    # Save results
+    # Save results with both formats
     echo "$effective_tps" > "$RESULTS_DIR/effective_tps.txt"
+    echo "$effective_tps_float" > "$RESULTS_DIR/effective_tps_float.txt"
     echo "$success_count" > "$RESULTS_DIR/successful_transactions.txt"
     echo "$txn_count" > "$RESULTS_DIR/submitted_requests.txt"
+    echo "$actual_duration" > "$RESULTS_DIR/test_duration_seconds.txt"
 
     log_success "Transaction throughput test completed"
-    log_info "Effective TPS: $effective_tps"
-    log_info "Successful transactions: $success_count"
+    log_info "📊 Transaction statistics:"
+    log_info "   • Total transactions submitted: $txn_count"
+    log_info "   • Successful transactions: $success_count"
+    log_info "   • Test duration: ${actual_duration}s"
+    log_info "   • Effective TPS: $effective_tps_float (${effective_tps} rounded)"
+    
+    # Warn if TPS is suspiciously low
+    if [[ $success_count -gt 0 ]] && (( $(echo "$effective_tps_float < 1.0" | bc -l 2>/dev/null || echo "1") )); then
+        log_warning "⚠️  Low TPS detected: Only $success_count successful transactions in ${actual_duration}s"
+        log_warning "   Consider checking validator logs at: $RESULTS_DIR/validator.log"
+    fi
 }
 
 # Generate emergency results if benchmark is interrupted
@@ -2209,8 +2225,10 @@ generate_results_summary() {
     # Read metrics
     local rpc_latency_ms=$(cat "$RESULTS_DIR/rpc_latency_ms.txt" 2>/dev/null || echo "0")
     local effective_tps=$(cat "$RESULTS_DIR/effective_tps.txt" 2>/dev/null || echo "0")
+    local effective_tps_float=$(cat "$RESULTS_DIR/effective_tps_float.txt" 2>/dev/null || echo "0.00")
     local successful_transactions=$(cat "$RESULTS_DIR/successful_transactions.txt" 2>/dev/null || echo "0")
     local submitted_requests=$(cat "$RESULTS_DIR/submitted_requests.txt" 2>/dev/null || echo "0")
+    local test_duration_seconds=$(cat "$RESULTS_DIR/test_duration_seconds.txt" 2>/dev/null || echo "$TEST_DURATION")
 
     # Get resource usage
     local memory_usage_mb="0"
@@ -2234,9 +2252,10 @@ generate_results_summary() {
 {
   "validator_type": "slonana",
   "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "test_duration_seconds": $TEST_DURATION,
+  "test_duration_seconds": $test_duration_seconds,
   "rpc_latency_ms": $rpc_latency_ms,
   "effective_tps": $effective_tps,
+  "effective_tps_float": $effective_tps_float,
   "submitted_requests": $submitted_requests,
   "successful_transactions": $successful_transactions,
   "memory_usage_mb": $memory_usage_mb,
@@ -2256,9 +2275,11 @@ EOF
     echo ""
     echo "=== Slonana Validator Benchmark Results ==="
     echo "Environment: $(if [[ "$is_isolated_env" == true ]]; then echo "Isolated Local Dev"; else echo "Connected Network"; fi)"
+    echo "Test Duration: ${test_duration_seconds}s"
     echo "RPC Latency: ${rpc_latency_ms}ms"
-    echo "Effective TPS: $effective_tps"
+    echo "Effective TPS: ${effective_tps_float} (${effective_tps} tx/s)"
     echo "Successful Transactions: $successful_transactions"
+    echo "Submitted Requests: $submitted_requests"
     echo "Memory Usage: ${memory_usage_mb}MB"
     echo "CPU Usage: ${cpu_usage}%"
     if [[ "$is_isolated_env" == true ]]; then

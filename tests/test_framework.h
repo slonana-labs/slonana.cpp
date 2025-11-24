@@ -290,3 +290,16 @@ public:
   } catch (...) {                                                              \
     throw std::runtime_error("Assertion failed: unexpected exception thrown"); \
   }
+
+// Simple test runner macro for extended test suites
+#define RUN_TEST(test_func)                                                    \
+  do {                                                                         \
+    std::cout << "Running " #test_func << "... " << std::flush;                \
+    try {                                                                      \
+      test_func();                                                             \
+      std::cout << "PASSED" << std::endl;                                      \
+    } catch (const std::exception &e) {                                        \
+      std::cout << "FAILED: " << e.what() << std::endl;                        \
+      return 1;                                                                \
+    }                                                                          \
+  } while (0)
