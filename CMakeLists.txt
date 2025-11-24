@@ -17,6 +17,7 @@ option(ENABLE_COMPREHENSIVE_TESTING "Enable comprehensive testing features" OFF)
 option(ENABLE_CHAOS_TESTING "Enable chaos testing features" OFF)
 option(ENABLE_TSAN "Enable ThreadSanitizer for race detection" OFF)
 option(ENABLE_ASAN "Enable AddressSanitizer for memory error detection" OFF)
+option(ENABLE_MESHCORE "Enable MeshCore mesh networking support" OFF)
 
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)
@@ -90,6 +91,11 @@ endif()
 if(ENABLE_CHAOS_TESTING)
     target_compile_definitions(slonana_core PUBLIC ENABLE_CHAOS_TESTING)
     message(STATUS "Chaos testing features enabled")
+endif()
+
+if(ENABLE_MESHCORE)
+    target_compile_definitions(slonana_core PUBLIC ENABLE_MESHCORE)
+    message(STATUS "MeshCore mesh networking features enabled")
 endif()
 
 # Main executable
@@ -514,6 +520,14 @@ add_executable(slonana_networking_enhancements_tests
 target_link_libraries(slonana_networking_enhancements_tests slonana_core)
 target_include_directories(slonana_networking_enhancements_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 add_test(NAME networking_enhancements_tests COMMAND slonana_networking_enhancements_tests)
+
+# MeshCore adapter tests
+add_executable(slonana_meshcore_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_meshcore_adapter.cpp"
+)
+target_link_libraries(slonana_meshcore_tests slonana_core gtest_main)
+target_include_directories(slonana_meshcore_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME meshcore_tests COMMAND slonana_meshcore_tests)
 
 # Networking performance benchmarks
 add_executable(benchmark_networking
