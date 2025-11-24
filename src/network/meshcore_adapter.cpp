@@ -7,6 +7,7 @@
 
 #include "network/meshcore_adapter.h"
 #include "network/cluster_connection.h"
+#include "network/quic_server.h"
 #include <algorithm>
 #include <chrono>
 #include <condition_variable>
@@ -36,6 +37,11 @@ public:
       std::uniform_int_distribution<> dis(0, 0xFFFFFFFF);
       config_.node_id = "node_" + std::to_string(dis(gen));
     }
+
+    // Initialize QUIC listener if port is configured
+    if (config_.listen_port > 0) {
+      quic_listener_ = std::make_unique<QuicListener>(config_.listen_port);
+    }
   }
 
   ~Impl() { stop(); }
@@ -49,15 +55,22 @@ public:
       return Result<bool>("MeshCore is disabled in configuration");
     }
 
+    // Start QUIC listener if configured
+    if (quic_listener_ && !quic_listener_->start()) {
+      return Result<bool>("Failed to start QUIC listener on port " +
+                          std::to_string(config_.listen_port));
+    }
+
     running_ = true;
     start_time_ = steady_clock::now();
 
     // Start background threads
     heartbeat_thread_ = std::thread(&Impl::heartbeat_loop, this);
     discovery_thread_ = std::thread(&Impl::discovery_loop, this);
+    network_io_thread_ = std::thread(&Impl::network_io_loop, this);
 
     std::cout << "[MeshCore] Started mesh adapter for node: " << config_.node_id
-              << std::endl;
+              << " on port: " << config_.listen_port << std::endl;
     return Result<bool>(true, success_tag{});
   }
 
@@ -69,6 +82,11 @@ public:
     running_ = false;
     joined_ = false;
 
+    // Stop QUIC listener
+    if (quic_listener_) {
+      quic_listener_->stop();
+    }
+
     // Wait for threads to finish
     cv_.notify_all();
     if (heartbeat_thread_.joinable()) {
@@ -77,10 +95,18 @@ public:
     if (discovery_thread_.joinable()) {
       discovery_thread_.join();
     }
+    if (network_io_thread_.joinable()) {
+      network_io_thread_.join();
+    }
 
-    // Clear all peers
+    // Clear all peers and connections
     {
       std::lock_guard<std::mutex> lock(peers_mutex_);
+      for (auto &[id, node] : peers_) {
+        if (node.connection) {
+          node.connection->disconnect();
+        }
+      }
       peers_.clear();
     }
 
@@ -162,15 +188,43 @@ public:
       return Result<bool>("Peer not found: " + message.receiver_id);
     }
 
-    // Send message (simplified - in production would use QUIC/TCP)
-    stats_.messages_sent++;
-    stats_.bytes_sent += message.payload.size();
-    it->second.messages_sent++;
+    if (it->second.state != NodeState::CONNECTED) {
+      return Result<bool>("Peer not connected: " + message.receiver_id);
+    }
 
-    // Call registered handlers
-    auto handler_it = message_handlers_.find(message.type);
-    if (handler_it != message_handlers_.end()) {
-      handler_it->second(message);
+    // Serialize message
+    std::vector<uint8_t> serialized = serialize_mesh_message(message);
+
+    if (!config_.test_mode) {
+      // Real QUIC send
+      if (!it->second.connection) {
+        return Result<bool>("No connection to: " + message.receiver_id);
+      }
+
+      // Send via QUIC stream
+      auto stream = it->second.connection->create_stream();
+      if (!stream) {
+        return Result<bool>("Failed to create stream to: " +
+                            message.receiver_id);
+      }
+
+      if (!stream->send_data(serialized)) {
+        return Result<bool>("Failed to send data to: " + message.receiver_id);
+      }
+    }
+
+    // Update statistics
+    stats_.messages_sent++;
+    stats_.bytes_sent += serialized.size();
+    it->second.messages_sent++;
+    it->second.last_seen = steady_clock::now();
+
+    // Call registered handlers (for test mode)
+    if (config_.test_mode) {
+      auto handler_it = message_handlers_.find(message.type);
+      if (handler_it != message_handlers_.end()) {
+        handler_it->second(message);
+      }
     }
 
     return Result<bool>(true, success_tag{});
@@ -327,22 +381,49 @@ private:
     node.latency_ms = 0;
     node.is_direct_peer = true;
 
+    // Create actual QUIC connection (unless in test mode)
+    if (!config_.test_mode) {
+      node.connection = std::make_shared<QuicConnection>(address, port);
+    }
+
     peers_[node_id] = node;
 
-    // Simulate connection (in production, use QUIC/TCP)
+    // Connect asynchronously
     std::thread([this, node_id]() {
-      std::random_device rd;
-      std::mt19937 gen(rd());
-      std::uniform_int_distribution<> delay_dist(100, 300);
-      std::uniform_int_distribution<> latency_dist(20, 50);
-
-      std::this_thread::sleep_for(milliseconds(delay_dist(gen)));
-
       std::lock_guard<std::mutex> lock(peers_mutex_);
       auto it = peers_.find(node_id);
       if (it != peers_.end()) {
-        it->second.state = NodeState::CONNECTED;
-        it->second.latency_ms = latency_dist(gen); // Simulate 20-50ms latency
+        if (config_.test_mode) {
+          // Simulate connection for testing
+          std::random_device rd;
+          std::mt19937 gen(rd());
+          std::uniform_int_distribution<> latency_dist(20, 50);
+
+          it->second.state = NodeState::CONNECTED;
+          it->second.latency_ms = latency_dist(gen);
+          std::cout << "[MeshCore] Simulated connection to " << node_id
+                    << " (test mode, latency: " << it->second.latency_ms
+                    << "ms)" << std::endl;
+        } else {
+          // Attempt real QUIC connection
+          auto start_time = steady_clock::now();
+          bool connected =
+              it->second.connection && it->second.connection->connect();
+
+          if (connected) {
+            it->second.state = NodeState::CONNECTED;
+            auto connect_time = steady_clock::now() - start_time;
+            it->second.latency_ms =
+                duration_cast<milliseconds>(connect_time).count();
+            std::cout << "[MeshCore] Connected to " << node_id
+                      << " via QUIC (latency: " << it->second.latency_ms
+                      << "ms)" << std::endl;
+          } else {
+            it->second.state = NodeState::FAILED;
+            std::cerr << "[MeshCore] Failed to connect to " << node_id
+                      << std::endl;
+          }
+        }
       }
     }).detach();
 
@@ -423,10 +504,131 @@ private:
     }
   }
 
+  void network_io_loop() {
+    while (running_) {
+      std::this_thread::sleep_for(milliseconds(100));
+
+      if (!running_)
+        break;
+
+      // Process incoming messages from all peers
+      std::vector<std::pair<std::string, std::shared_ptr<QuicConnection>>>
+          active_connections;
+      {
+        std::lock_guard<std::mutex> lock(peers_mutex_);
+        for (const auto &[id, node] : peers_) {
+          if (node.state == NodeState::CONNECTED && node.connection) {
+            active_connections.push_back({id, node.connection});
+          }
+        }
+      }
+
+      for (const auto &[node_id, conn] : active_connections) {
+        // TODO: Check for incoming data on streams
+        // For now, this is a placeholder for receiving data
+        // In full implementation, would poll streams for data
+      }
+    }
+  }
+
+  std::vector<uint8_t> serialize_mesh_message(const MeshMessage &message) {
+    std::vector<uint8_t> data;
+
+    // Simple serialization format:
+    // [1 byte: type][8 bytes: timestamp][4 bytes: ttl][2 bytes:
+    // sender_id_len][sender_id][2 bytes: receiver_id_len][receiver_id][4 bytes:
+    // payload_len][payload]
+
+    data.push_back(static_cast<uint8_t>(message.type));
+
+    // Timestamp (8 bytes)
+    for (int i = 7; i >= 0; i--) {
+      data.push_back((message.timestamp >> (i * 8)) & 0xFF);
+    }
+
+    // TTL (4 bytes)
+    for (int i = 3; i >= 0; i--) {
+      data.push_back((message.ttl >> (i * 8)) & 0xFF);
+    }
+
+    // Sender ID
+    uint16_t sender_len = message.sender_id.length();
+    data.push_back((sender_len >> 8) & 0xFF);
+    data.push_back(sender_len & 0xFF);
+    data.insert(data.end(), message.sender_id.begin(), message.sender_id.end());
+
+    // Receiver ID
+    uint16_t receiver_len = message.receiver_id.length();
+    data.push_back((receiver_len >> 8) & 0xFF);
+    data.push_back(receiver_len & 0xFF);
+    data.insert(data.end(), message.receiver_id.begin(),
+                message.receiver_id.end());
+
+    // Payload
+    uint32_t payload_len = message.payload.size();
+    for (int i = 3; i >= 0; i--) {
+      data.push_back((payload_len >> (i * 8)) & 0xFF);
+    }
+    data.insert(data.end(), message.payload.begin(), message.payload.end());
+
+    return data;
+  }
+
+  MeshMessage deserialize_mesh_message(const std::vector<uint8_t> &data) {
+    MeshMessage message;
+    size_t pos = 0;
+
+    if (data.size() < 15) { // Minimum size
+      return message;
+    }
+
+    // Type
+    message.type = static_cast<MeshMessageType>(data[pos++]);
+
+    // Timestamp
+    message.timestamp = 0;
+    for (int i = 0; i < 8; i++) {
+      message.timestamp = (message.timestamp << 8) | data[pos++];
+    }
+
+    // TTL
+    message.ttl = 0;
+    for (int i = 0; i < 4; i++) {
+      message.ttl = (message.ttl << 8) | data[pos++];
+    }
+
+    // Sender ID
+    uint16_t sender_len = (data[pos] << 8) | data[pos + 1];
+    pos += 2;
+    message.sender_id =
+        std::string(data.begin() + pos, data.begin() + pos + sender_len);
+    pos += sender_len;
+
+    // Receiver ID
+    uint16_t receiver_len = (data[pos] << 8) | data[pos + 1];
+    pos += 2;
+    message.receiver_id =
+        std::string(data.begin() + pos, data.begin() + pos + receiver_len);
+    pos += receiver_len;
+
+    // Payload
+    uint32_t payload_len = 0;
+    for (int i = 0; i < 4; i++) {
+      payload_len = (payload_len << 8) | data[pos++];
+    }
+    message.payload = std::vector<uint8_t>(data.begin() + pos,
+                                           data.begin() + pos + payload_len);
+
+    return message;
+  }
+
   MeshConfig config_;
   std::atomic<bool> running_;
   std::atomic<bool> joined_;
   steady_clock::time_point start_time_;
+
+  // QUIC listener for incoming connections
+  std::unique_ptr<QuicListener> quic_listener_;
 
   // Peers
   mutable std::mutex peers_mutex_;
@@ -443,6 +645,7 @@ private:
   // Threads
   std::thread heartbeat_thread_;
   std::thread discovery_thread_;
+  std::thread network_io_thread_;
   std::mutex cv_mutex_;
   std::condition_variable cv_;
 };

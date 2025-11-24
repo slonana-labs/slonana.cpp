@@ -17,6 +17,7 @@ protected:
   void SetUp() override {
     // Create default config
     config_.enabled = true;
+    config_.test_mode = true; // Enable simulated connections for unit tests
     config_.node_id = "test_node_1";
     config_.listen_port = 9000;
     config_.heartbeat_interval_ms = 1000;

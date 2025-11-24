@@ -67,6 +67,7 @@ struct MeshNode {
   uint64_t messages_received;
   uint32_t latency_ms;
   bool is_direct_peer; // true if direct connection, false if multi-hop
+  std::shared_ptr<QuicConnection> connection; // Actual QUIC connection
 };
 
 /**
@@ -115,7 +116,8 @@ struct MeshStats {
  * Mesh configuration
  */
 struct MeshConfig {
-  bool enabled = false; // Feature toggle
+  bool enabled = false;   // Feature toggle
+  bool test_mode = false; // Enable simulated connections for testing
   std::string node_id;
   std::vector<std::string> bootstrap_nodes; // Initial peers to connect
   uint16_t listen_port = 0;                 // 0 = auto-assign
