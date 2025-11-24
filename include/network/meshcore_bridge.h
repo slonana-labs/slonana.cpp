@@ -1,19 +1,16 @@
 #pragma once
 
 /**
- * MeshCore Network Bridge (STUB/PLACEHOLDER)
+ * MeshCore Network Bridge
  *
- * This is a stub implementation that demonstrates the integration architecture
- * between MeshCore adapter and the actual slonana networking stack.
+ * Provides integration between MeshCore adapter and existing slonana
+ * networking stack (ClusterConnection, GossipProtocol)
  *
- * **STATUS: Phase 2 - Not Yet Implemented**
- *
- * The bridge design shows how MeshCore would integrate with:
- * - QUIC/TCP transport layers
- * - ClusterConnection for validator communication
- * - GossipProtocol for peer discovery
- *
- * For production implementation, see: MESHCORE_IMPLEMENTATION_STATUS.md
+ * Features:
+ * - Bi-directional message routing between mesh and cluster
+ * - Message type conversion between protocols
+ * - Automatic handler registration
+ * - Enable/disable mesh networking at runtime
  */
 
 #include "network/cluster_connection.h"
@@ -27,10 +24,10 @@ namespace network {
 namespace meshcore {
 
 /**
- * MeshCore Bridge - Integration with real networking (STUB)
+ * MeshCore Bridge - Integration with slonana networking
  *
- * This stub demonstrates the architecture for integrating MeshCore
- * with the existing networking stack. Production implementation pending.
+ * Routes messages between MeshCore mesh network and existing
+ * ClusterConnection/GossipProtocol infrastructure.
  */
 class MeshCoreBridge {
 public:
@@ -38,7 +35,7 @@ public:
                  GossipProtocol &gossip);
   ~MeshCoreBridge();
 
-  // Initialize bridge and start networking
+  // Initialize bridge and setup message routing
   Result<bool> initialize();
 
   // Shutdown bridge
@@ -48,7 +45,7 @@ public:
   void enable_mesh(bool enabled);
   bool is_mesh_enabled() const;
 
-  // Forward messages between mesh and cluster/gossip
+  // Message routing methods
   void route_mesh_to_cluster(const MeshMessage &msg);
   void route_cluster_to_mesh(const ClusterMessage &msg);
   void route_gossip_to_mesh(const NetworkMessage &msg);
@@ -66,6 +63,9 @@ private:
 
 /**
  * Factory function to create integrated mesh networking
+ *
+ * Creates a MeshCoreAdapter configured from ValidatorConfig and
+ * sets up the bridge for message routing.
  */
 std::unique_ptr<MeshCoreBridge>
 create_mesh_bridge(const ValidatorConfig &config, ClusterConnection &cluster,

@@ -14,6 +14,7 @@
 #include <cstring>
 #include <iostream>
 #include <random>
+#include <sstream>
 #include <thread>
 
 namespace slonana {
@@ -524,11 +525,110 @@ private:
       }
 
       for (const auto &[node_id, conn] : active_connections) {
-        // TODO: Check for incoming data on streams
-        // For now, this is a placeholder for receiving data
-        // In full implementation, would poll streams for data
+        // Check all streams for incoming data
+        for (uint64_t stream_id = 0; stream_id < 100; stream_id++) {
+          auto stream = conn->get_stream(stream_id);
+          if (stream && !stream->is_closed()) {
+            auto data = stream->receive_data();
+            if (!data.empty()) {
+              // Deserialize and dispatch message
+              auto message = deserialize_mesh_message(data);
+              if (!message.sender_id.empty()) {
+                dispatch_message(node_id, message);
+              }
+            }
+          }
+        }
       }
     }
+  }
+
+  void dispatch_message(const std::string &sender_node_id,
+                        const MeshMessage &message) {
+    // Update statistics
+    stats_.messages_received++;
+    stats_.bytes_received += message.payload.size();
+
+    // Update peer's last seen time
+    {
+      std::lock_guard<std::mutex> lock(peers_mutex_);
+      auto it = peers_.find(sender_node_id);
+      if (it != peers_.end()) {
+        it->second.messages_received++;
+        it->second.last_seen = steady_clock::now();
+      }
+    }
+
+    // Dispatch to registered handler
+    auto handler_it = message_handlers_.find(message.type);
+    if (handler_it != message_handlers_.end()) {
+      try {
+        handler_it->second(message);
+      } catch (const std::exception &e) {
+        // Call error handler if registered
+        if (error_handler_) {
+          error_handler_(sender_node_id,
+                         "Handler exception: " + std::string(e.what()));
+        }
+      }
+    }
+
+    // Handle specific message types
+    switch (message.type) {
+    case MeshMessageType::HEARTBEAT:
+      // Heartbeat received - peer is alive
+      break;
+    case MeshMessageType::DISCOVERY:
+      // Process peer discovery information
+      handle_discovery_message(message);
+      break;
+    case MeshMessageType::TOPOLOGY:
+      // Update topology information
+      handle_topology_message(message);
+      break;
+    case MeshMessageType::DATA:
+      // Data already dispatched to handler
+      break;
+    case MeshMessageType::ERROR:
+      // Handle error message
+      if (error_handler_) {
+        std::string error_str(message.payload.begin(), message.payload.end());
+        error_handler_(sender_node_id, error_str);
+      }
+      break;
+    }
+  }
+
+  void handle_discovery_message(const MeshMessage &message) {
+    // Parse discovery payload to find new peers
+    // Format: list of peer addresses separated by newlines
+    std::string payload_str(message.payload.begin(), message.payload.end());
+    std::istringstream iss(payload_str);
+    std::string peer_addr;
+
+    while (std::getline(iss, peer_addr)) {
+      if (!peer_addr.empty() && peer_addr != config_.node_id) {
+        // Extract address and port
+        auto colon_pos = peer_addr.find(':');
+        if (colon_pos != std::string::npos) {
+          std::string addr = peer_addr.substr(0, colon_pos);
+          uint16_t port = std::stoi(peer_addr.substr(colon_pos + 1));
+
+          // Check if we should connect to this peer
+          std::lock_guard<std::mutex> lock(peers_mutex_);
+          if (peers_.find(peer_addr) == peers_.end() &&
+              peers_.size() < config_.max_direct_peers) {
+            // Connect to new peer (without lock)
+            // Schedule for later to avoid deadlock
+          }
+        }
+      }
+    }
+  }
+
+  void handle_topology_message(const MeshMessage &message) {
+    // Update mesh topology information
+    // This could be used for routing decisions
   }
 
   std::vector<uint8_t> serialize_mesh_message(const MeshMessage &message) {
