@@ -1908,6 +1908,721 @@ TRANSPARENCY:
                 </div>
             </section>
 
+        <!-- PART 11: BPF CORE INNOVATIONS FOR AGENTIC CHAIN -->
+        <section class="tech-section">
+            <h2 class="section-title">PART 11: BPF CORE INNOVATIONS FOR AGENTIC CHAIN</h2>
+            <div class="tech-subtitle">10 Foundational Runtime Extensions Enabling Autonomous Agent Economies</div>
+            
+            <div class="tech-content">
+                <div class="tech-article-large">
+                    <h3>From Packet Filter to Agent Runtime</h3>
+                    <p class="tech-lead">The BPF runtime was originally designed for packet filtering and system observability. Autonomous economic agents require fundamentally different capabilities: atomic transactions, concurrent execution, cryptographic operations, and economic primitives. We propose 10 major innovations to unlock agent economy potential.</p>
+                    
+                    <div class="ascii-chart">
+                        <h5>BPF Evolution: Packet Filter → Agent Runtime</h5>
+                        <pre>
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    BPF EVOLUTION TIMELINE                                        │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  1992: BSD Packet Filter                                                        │
+│  └─ Simple packet matching for tcpdump                                          │
+│                                                                                 │
+│  2014: Extended BPF (eBPF)                                                      │
+│  ├─ JIT compilation                                                             │
+│  ├─ Maps for state                                                              │
+│  └─ Verifier for safety                                                         │
+│                                                                                 │
+│  2020: Solana sBPF                                                              │
+│  ├─ Adapted for blockchain                                                      │
+│  ├─ Account-based state                                                         │
+│  └─ CPI for composability                                                       │
+│                                                                                 │
+│  2025: SLONANA Agent BPF ⭐                                                      │
+│  ├─ Autonomous execution                                                        │
+│  ├─ Event-driven hooks                                                          │
+│  ├─ Hardware acceleration                                                       │
+│  ├─ Cryptographic primitives                                                    │
+│  └─ Economic opcodes                                                            │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                        </pre>
+                    </div>
+
+                    <h4>Innovation 1: Program Scheduler Thread</h4>
+                    <p>The core architectural change enabling autonomous execution: a new Banking Stage worker dedicated to processing scheduled events.</p>
+
+                    <div class="ascii-chart">
+                        <h5>Validator Architecture with Program Scheduler</h5>
+                        <pre>
+┌─────────────────────────────────────────────────────────────────┐
+│  Validator Process                                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌────────────────────────────────────────────────────────┐    │
+│  │  Transaction Processing Unit (TPU)                     │    │
+│  │  ┌──────────────────────────────────────────────────┐  │    │
+│  │  │  Fetch Stage → SigVerify → Banking Stage         │  │    │
+│  │  │                                                   │  │    │
+│  │  │  Banking Stage:                                  │  │    │
+│  │  │  • Worker 0: Vote transactions                   │  │    │
+│  │  │  • Workers 1-4: User transactions               │  │    │
+│  │  │  • Worker 5 (NEW): Program Scheduler ⭐         │  │    │
+│  │  └──────────────────────────────────────────────────┘  │    │
+│  └────────────────────────────────────────────────────────┘    │
+│                                                                 │
+│  ┌────────────────────────────────────────────────────────┐    │
+│  │  Program Scheduler Thread (NEW)                       │    │
+│  │  ┌──────────────────────────────────────────────────┐  │    │
+│  │  │  Event Queue (Priority Queue)                    │  │    │
+│  │  │  • Slot-based events (time triggers)             │  │    │
+│  │  │  • Account-based events (state changes)          │  │    │
+│  │  │  • Program-to-program events (internal routing)  │  │    │
+│  │  │  • Compute budget: 400K CU per slot              │  │    │
+│  │  └──────────────────────────────────────────────────┘  │    │
+│  └────────────────────────────────────────────────────────┘    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+                        </pre>
+                    </div>
+
+                    <h4>Innovation 2: Asynchronous Event Buffer (Ring Buffer)</h4>
+                    <p>Lock-free ring buffer enabling zero-copy inter-program communication with O(1) push/pop operations.</p>
+
+                    <div class="code-snippet">
+<code>pub struct AsyncEventBuffer {
+    // Shared memory buffer (1MB circular buffer)
+    buffer: Arc&lt;UnsafeCell&lt;[u8; 1_048_576]&gt;&gt;,
+
+    // Atomic head/tail pointers (lock-free)
+    head: AtomicUsize,  // Reader position (Program Scheduler)
+    tail: AtomicUsize,  // Writer position (sBPF programs)
+}
+
+impl AsyncEventBuffer {
+    /// Programs push events during execution (non-blocking, wait-free)
+    pub fn push(&self, event: &AsyncEvent) -> Result&lt;(), BufferFullError&gt; {
+        let tail = self.tail.load(Ordering::Acquire);
+        let head = self.head.load(Ordering::Acquire);
+
+        // Check space available
+        if self.is_full(head, tail) {
+            return Err(BufferFullError);
+        }
+
+        // Write event (no locks required)
+        unsafe { self.write_event(tail, event); }
+
+        // Advance tail pointer atomically
+        self.tail.store(tail + event.size(), Ordering::Release);
+        Ok(())
+    }
+}
+
+// Performance: 200 CU push vs 2000 CU account write (10x faster)</code>
+                    </div>
+
+                    <h4>Innovation 3: Hardware Transactional Memory (HTM)</h4>
+                    <p>Intel TSX-inspired atomic multi-account updates without CPI overhead.</p>
+
+                    <div class="ascii-chart">
+                        <h5>Transactional Memory Flow</h5>
+                        <pre>
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    TRANSACTIONAL MEMORY EXECUTION                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+WITHOUT HTM (Current):                  WITH HTM (Proposed):
+─────────────────────────────           ─────────────────────────────
+1. Read Account A                       1. BPF_TX_BEGIN
+2. Update A locally                     2. Read A, B, C (tracked)
+3. CPI to transfer (5K CU)              3. Update A, B, C
+4. Read Account B                       4. BPF_TX_COMMIT (all-or-nothing)
+5. Update B locally                     
+6. CPI to transfer (5K CU)              Total: 1,000 CU ✓
+7. ...repeat for each account...        
+
+Total: 25,000 CU for 5 accounts ❌       Speedup: 25x
+
+Rollback Scenario:
+─────────────────────────────────────────────────────────────────────────────
+tx_begin:
+    call bpf_tx_begin              ; Start transaction
+    
+    mov r1, [account_a + 8]        ; Read balance A
+    cmp r1, 100
+    jl tx_abort                    ; Insufficient funds → ABORT
+    
+    sub r1, 100                    ; Debit A
+    mov [account_a + 8], r1
+    
+    mov r2, [account_b + 8]        ; Credit B
+    add r2, 100
+    mov [account_b + 8], r2
+    
+    call bpf_tx_commit             ; SUCCESS → Atomic commit
+    jmp done
+
+tx_abort:
+    call bpf_tx_abort              ; FAILURE → All changes rolled back
+    exit                           ; No state modified
+                        </pre>
+                    </div>
+
+                    <h4>Innovation 4: Native Economic Opcodes</h4>
+                    <p>Built-in instructions for common economic patterns, replacing thousands of lines of custom code.</p>
+
+                    <div class="ascii-chart">
+                        <h5>Economic Primitive Opcodes</h5>
+                        <pre>
+┌───────────────────┬────────────────────────────┬─────────┬─────────────┐
+│ Opcode            │ Operation                  │ Manual  │ Native      │
+├───────────────────┼────────────────────────────┼─────────┼─────────────┤
+│ BPF_ECON_AUCTION  │ Create VCG/GSP auction     │ 50K CU  │  1K CU (50x)│
+│ BPF_ECON_BID      │ Submit sealed bid          │ 10K CU  │  500 CU     │
+│ BPF_ECON_SETTLE   │ Compute optimal allocation │ 200K CU │  5K CU (40x)│
+│ BPF_ECON_ESCROW   │ Multi-party escrow         │ 10K CU  │  500 CU     │
+│ BPF_ECON_RELEASE  │ Condition-based release    │  5K CU  │  200 CU     │
+│ BPF_ECON_STAKE    │ Lock tokens with slash     │  8K CU  │  400 CU     │
+│ BPF_ECON_SLASH    │ Economic punishment        │  6K CU  │  300 CU     │
+│ BPF_ECON_REPUTE   │ Update reputation score    │  2K CU  │  100 CU     │
+└───────────────────┴────────────────────────────┴─────────┴─────────────┘
+
+Native VCG Auction Example:
+─────────────────────────────────────────────────────────────────────────────
+(define auction-id (auction-create {
+  :type "VCG"
+  :items ["Raydium-access" "Orca-access" "Saber-access"]
+  :deadline (+ (sol-get-slot) 100)
+  :settlement-account escrow-pubkey
+}))  ;; 1,000 CU (vs 50,000 CU manual)
+
+(auction-settle auction-id)  ;; 5,000 CU (vs 200,000 CU manual)
+;; Automatically: solves winner determination, calculates VCG prices,
+;; executes transfers, emits events
+                        </pre>
+                    </div>
+
+                    <h4>Innovation 5: Concurrent Execution Lanes</h4>
+                    <p>Per-agent parallel execution utilizing multi-core validators for 8x speedup.</p>
+
+                    <div class="ascii-chart">
+                        <h5>Parallel Agent Execution</h5>
+                        <pre>
+SINGLE-THREADED (Current):              PARALLEL LANES (Proposed):
+──────────────────────────              ──────────────────────────
+
+Agent A: 200K CU ────►                  Lane 0: Agent A ──────►
+Agent B: 150K CU      ────►             Lane 1: Agent B ──────►    ← Parallel!
+Agent C: 180K CU           ────►        Lane 2: Agent C ──────►    ← Parallel!
+                                                    │
+Total: 530K CU (sequential)                         ▼
+Time: 4.2 seconds                       Barrier (deterministic merge)
+                                        
+                                        Total: max(A,B,C) = 200K CU
+                                        Time: 1.6 seconds
+                                        Speedup: 2.6x (up to 8x possible)
+
+New Parallel Instructions:
+─────────────────────────────────────────────────────────────────────────────
+BPF_PARALLEL_SPAWN    = 0xC0  // Spawn parallel task
+BPF_PARALLEL_JOIN     = 0xC1  // Wait for task completion
+BPF_PARALLEL_FENCE    = 0xC2  // Memory barrier
+BPF_ATOMIC_LOAD       = 0xC3  // Atomic load
+BPF_ATOMIC_STORE      = 0xC4  // Atomic store
+BPF_ATOMIC_CAS        = 0xC5  // Compare-and-swap
+
+Verifier ensures:
+├─ No data races (read/write conflict detection)
+├─ No write conflicts (two tasks writing same memory)
+├─ All spawned tasks joined (no task leaks)
+└─ Deterministic ordering (fork-join semantics)
+                        </pre>
+                    </div>
+                </div>
+                
+                <div class="tech-article-side">
+                    <div class="tech-box">
+                        <h4>Innovation 6: Time-Travel Debugging</h4>
+                        <ul>
+                            <li>Record execution trace</li>
+                            <li>Deterministic replay</li>
+                            <li>Step through any instruction</li>
+                            <li>Inspect registers/memory</li>
+                            <li>1.2x overhead when recording</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="tech-box">
+                        <h4>Innovation 7: FPGA/ASIC Interface</h4>
+                        <ul>
+                            <li>Generic hardware offload</li>
+                            <li>BLS pairing: 100x faster</li>
+                            <li>ZK verify: 100x faster</li>
+                            <li>MatMul: 500x faster</li>
+                            <li>Software fallback</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="tech-box">
+                        <h4>Innovation 8: Dynamic Code Loading</h4>
+                        <ul>
+                            <li>Hot-swap agent strategies</li>
+                            <li>No program redeployment</li>
+                            <li>Verifier checks new code</li>
+                            <li>Seamless upgrades</li>
+                            <li>A/B testing on-chain</li>
+                        </ul>
+                    </div>
+
+                    <div class="tech-box">
+                        <h4>Innovation 9: Multi-Tier Execution</h4>
+                        <ul>
+                            <li>Optimistic mode (5x faster)</li>
+                            <li>Verified mode (full checks)</li>
+                            <li>Auto-fallback on disputes</li>
+                            <li>Fraud proofs for security</li>
+                            <li>Best of both worlds</li>
+                        </ul>
+                    </div>
+
+                    <div class="tech-box">
+                        <h4>Innovation 10: Verifier Extensions</h4>
+                        <ul>
+                            <li>Symbolic execution</li>
+                            <li>Overflow detection</li>
+                            <li>Information flow analysis</li>
+                            <li>Economic invariant checks</li>
+                            <li>30x slower, catches bugs</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- PART 12: TRUSTLESS MULTI-AGENT ECONOMY DEEP DIVE -->
+        <section class="theory-section">
+            <h2 class="section-title">PART 12: TRUSTLESS MULTI-AGENT ECONOMY</h2>
+            <div class="theory-subtitle">Mechanism Design, Market Microstructure, and Cryptoeconomic Incentives</div>
+            
+            <div class="theory-content">
+                <div class="theory-main">
+                    <h3>From Trust-Based to Verification-Based Economics</h3>
+                    <p class="theory-lead">Traditional markets require trusted intermediaries extracting rent at every layer. BPF runtime replaces trust with cryptographic verification, enabling 50-100x lower friction through trustless peer-to-peer coordination.</p>
+
+                    <div class="ascii-chart">
+                        <h5>Trust vs Verification Model</h5>
+                        <pre>
+TRADITIONAL MARKETS (Trust-Based):
+─────────────────────────────────────────────────────────────────────────────
+
+                      ┌─────────────────┐
+     Buyer  ─────────►│    EXCHANGE     │◄───────── Seller
+                      │   (trusted)     │
+                      └─────────────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+        ┌──────────┐   ┌──────────┐   ┌──────────┐
+        │Clearinghouse│ │ Regulator │ │ Broker   │
+        │  0.01-0.05%│ │ Oversight │ │ $1-10/tx │
+        └──────────┘   └──────────┘   └──────────┘
+
+Trust Requirements:
+├─ Exchange won't steal funds     (FTX: $8B fraud)
+├─ Exchange executes fairly       (Front-running common)
+├─ Exchange reports accurately    (Wash trading rampant)
+└─ Regulator monitors exchange    (Regulatory capture)
+
+Total Friction: 0.5-1% per round-trip trade
+
+
+TRUSTLESS MARKETS (Verification-Based):
+─────────────────────────────────────────────────────────────────────────────
+
+     Agent A ─────────► BPF Runtime ◄───────── Agent B
+                     (verifiable execution)
+
+Verification Guarantees:
+├─ ✓ Code execution is deterministic
+├─ ✓ State changes are consensus-validated
+├─ ✓ No hidden actions possible
+└─ ✓ Economic rules enforced by protocol
+
+Total Friction: ~0.01% (50-100x lower!)
+                        </pre>
+                    </div>
+
+                    <h4>Agent-Native Market Microstructure</h4>
+                    <p>Order books designed for sub-slot latency with POST_ONLY orders, batch cancellation, and built-in liquidity analysis.</p>
+
+                    <div class="ascii-chart">
+                        <h5>On-Chain CLOB vs Traditional</h5>
+                        <pre>
+TRADITIONAL CLOB:                       ON-CHAIN CLOB (Solana):
+──────────────────────────              ──────────────────────────
+
+Latency breakdown:                      Latency breakdown:
+├─ Network: 10-50ms                     ├─ Network: 50-200ms
+├─ Matching: 0.1-1ms                    ├─ Slot: 400ms
+├─ Settlement: 1-3 DAYS ❌               ├─ Matching: &lt;1ms
+└─ Total: 10-50ms + 2 days              ├─ Settlement: 0ms (atomic) ✓
+                                        └─ Total: 400-600ms
+
+Problems:                               Advantages:
+├─ HFT arms race                        ├─ No co-location advantage
+├─ Front-running                        ├─ No front-running in slot
+└─ Settlement risk                      └─ Instant settlement
+
+
+AGENT-OPTIMIZED CLOB FEATURES:
+─────────────────────────────────────────────────────────────────────────────
+1. Deterministic Order IDs      - Predict ID before submission
+2. Batch Cancellation          - Cancel all orders in 1 tx
+3. View Functions              - Query state without tx (free)
+4. Depth Queries               - Built-in liquidity analysis
+5. POST_ONLY Orders            - Ensure making, not taking
+6. IOC/FOK/GTC Types           - Full order type support
+                        </pre>
+                    </div>
+
+                    <h4>Cryptoeconomic Incentive Design</h4>
+                    <div class="code-snippet">
+<code>// Staking and Slashing Mechanism
+pub struct ValidatorStaking {
+    stake_pool: HashMap&lt;Pubkey, StakeInfo&gt;,
+    min_stake: u64,           // 1000 SOL minimum
+    slash_rate: f64,          // 5% for double-sign
+    reward_rate: f64,         // 0.01% per epoch
+}
+
+impl ValidatorStaking {
+    pub fn slash(&mut self, validator: Pubkey, evidence: Evidence) -&gt; Result&lt;()&gt; {
+        // Verify evidence of misbehavior
+        assert!(verify_double_sign_evidence(&evidence, &validator)?);
+        
+        // Slash stake (5%)
+        let stake = self.stake_pool.get_mut(&validator)?;
+        let slash_amount = stake.amount * self.slash_rate;
+        stake.amount -= slash_amount;
+        stake.slashed = true;
+        
+        // Burn slashed tokens (or distribute to reporters)
+        burn_tokens(slash_amount)?;
+        
+        emit_event!("ValidatorSlashed", { validator, slash_amount });
+        Ok(())
+    }
+}
+
+// Reputation System
+pub fn update_reputation(agent: Pubkey, action: Action, outcome: Outcome) {
+    let alpha = 0.1;  // Learning rate
+    let reward = if outcome == Success { 1.0 } else { 0.0 };
+    
+    // Exponential moving average
+    let old_score = get_reputation(agent);
+    let new_score = (1.0 - alpha) * old_score + alpha * reward;
+    
+    set_reputation(agent, new_score);
+}</code>
+                    </div>
+
+                    <div class="theory-highlights">
+                        <div class="theory-item">
+                            <h4>🔐 Zero Counterparty Risk</h4>
+                            <p>Smart contracts can't abscond with funds. Atomic settlement eliminates T+2 settlement risk. No FTX-style fraud possible.</p>
+                        </div>
+                        
+                        <div class="theory-item">
+                            <h4>🎯 Incentive Compatibility</h4>
+                            <p>VCG auctions make truthful bidding optimal. Staking aligns validator incentives. Reputation systems reward honest behavior.</p>
+                        </div>
+                        
+                        <div class="theory-item">
+                            <h4>🤝 Trustless Coordination</h4>
+                            <p>Prisoner's dilemma transformed via smart contracts. Nash equilibrium shifts to cooperation. Payoff matrices enforced by code.</p>
+                        </div>
+                        
+                        <div class="theory-item">
+                            <h4>📈 Emergent Efficiency</h4>
+                            <p>MEV existence reveals market inefficiency. Agent competition drives price discovery. Arbitrage eliminates spreads.</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="theory-sidebar">
+                    <div class="theory-box">
+                        <h4>Economic Friction</h4>
+                        <ul>
+                            <li>Traditional: 0.5-1%</li>
+                            <li>Trustless: 0.01%</li>
+                            <li>Reduction: 50-100x</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="theory-box">
+                        <h4>Agent Advantages</h4>
+                        <ul>
+                            <li>No brokers needed</li>
+                            <li>Direct peer-to-peer</li>
+                            <li>Permissionless entry</li>
+                            <li>Competitive fees</li>
+                        </ul>
+                    </div>
+
+                    <div class="ascii-charts-sidebar">
+                        <div class="ascii-chart">
+                            <h5>Fee Breakdown</h5>
+                            <pre>
+Traditional:
+├─ Exchange: 0.1-0.3%
+├─ Clearing: 0.01-0.05%
+├─ Spread: 0.05-0.2%
+├─ Broker: $1-10
+└─ Total: 0.5-1%
+
+Trustless:
+├─ Runtime: 0 SOL
+├─ Settlement: $0.00075
+├─ Agent MM: 0.01%
+├─ No broker: $0
+└─ Total: ~0.01%
+                            </pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- PART 13: AUTONOMOUS ASYNC BPF RUNTIME -->
+        <section class="architecture-section">
+            <h2 class="section-title">PART 13: AUTONOMOUS ASYNC BPF RUNTIME</h2>
+            <div class="arch-subtitle">Event-Driven Execution Model for Self-Sustaining Agents</div>
+            
+            <div class="architecture-content">
+                <div class="arch-main">
+                    <h3>The Clockwork Problem</h3>
+                    <p class="arch-lead">Existing automation solutions (Clockwork, Tuk Tuk) rely on off-chain keepers—creating centralization risk, latency, and shutdown vulnerability. We propose a validator-native autonomous runtime.</p>
+
+                    <div class="ascii-chart">
+                        <h5>Current vs Proposed Automation</h5>
+                        <pre>
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    AUTOMATION ARCHITECTURE COMPARISON                           │
+├─────────────────────────────────────────────────────────────────────────────────┤
+
+CLOCKWORK/TUK TUK (Off-Chain Keepers):
+──────────────────────────────────────────────────────────────────────────────────
+
+┌─────────────────────────────────┐
+│ Clockwork Thread (On-chain)    │
+│ • Stores trigger condition     │
+│ • Stores instruction           │◄──── Single point of failure!
+│ • Pays for execution           │
+└──────────────┬──────────────────┘
+               │ Monitored by (EXTERNAL)
+               ▼
+┌─────────────────────────────────┐
+│ Geyser Plugin (Off-chain)      │
+│ • Listens for updates          │◄──── Can be censored!
+│ • Evaluates conditions         │
+│ • Submits transactions         │
+└──────────────┬──────────────────┘
+               │
+               ▼
+┌─────────────────────────────────┐
+│ Solana Runtime (Standard)      │
+│ • Processes as normal tx       │
+└─────────────────────────────────┘
+
+Problems:
+├─ Centralization: Keepers are single point of failure
+├─ Latency: 1-5 second delay between trigger and execution
+├─ Cost: Full transaction fees for each trigger
+├─ Shutdown Risk: Clockwork shut down in 2023, breaking protocols
+└─ Trust: Must trust keeper incentives
+
+
+SLONANA AUTONOMOUS RUNTIME (Validator-Native):
+──────────────────────────────────────────────────────────────────────────────────
+
+┌─────────────────────────────────────────────────────────────────┐
+│  Validator (Native Integration)                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  Program Scheduler Thread                               │   │
+│  │  ├─ Event Queue (slot-based, account-based)             │   │
+│  │  ├─ Subscription Registry                               │   │
+│  │  ├─ Account Watchers                                    │   │
+│  │  └─ Async Event Buffer (Ring Buffer)                    │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                         │                                       │
+│                         ▼                                       │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  Banking Stage                                          │   │
+│  │  • Processes autonomous callbacks alongside user txs    │   │
+│  │  • Same security model, deterministic execution         │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+Benefits:
+├─ Decentralization: No external keepers (validator-native)
+├─ Latency: &lt;400ms (same slot execution)
+├─ Cost: Stake once, execute forever
+├─ Reliability: 99.9% (validator uptime)
+└─ Trustless: Consensus-enforced execution
+                        </pre>
+                    </div>
+
+                    <h4>Supported Event Types</h4>
+                    <div class="code-snippet">
+<code>pub enum EventType {
+    // Time-based triggers (eBPF perf_event style)
+    SlotInterval {
+        interval: u64,          // Execute every N slots
+        start_slot: u64,        // First execution slot
+    },
+    EpochBoundary {
+        epoch_offset: u64,      // Slots after epoch start
+    },
+    WallclockTime {
+        unix_timestamp: i64,    // Absolute time trigger
+    },
+
+    // Account-based triggers (eBPF tracepoint style)
+    AccountDataChange {
+        account: Pubkey,
+        offset: usize,
+        mask: Vec&lt;u8&gt;,          // Byte mask for comparison
+        comparison: Comparison, // Eq, Neq, Gt, Lt, Gte, Lte
+        threshold: Vec&lt;u8&gt;,
+    },
+    AccountBalanceChange {
+        account: Pubkey,
+        threshold: u64,
+        direction: Direction,   // Above, Below
+    },
+
+    // Program-based triggers (internal event routing)
+    ProgramEvent {
+        source_program: Pubkey,
+        event_id: String,
+        event_filter: Option&lt;EventFilter&gt;,
+    },
+}</code>
+                    </div>
+
+                    <h4>Complete Autonomous Agent Example</h4>
+                    <div class="code-snippet">
+<code>;;; AUTONOMOUS PAIRS TRADING BOT - No External Triggers Required
+(define-autonomous-program pairs-trading-bot
+
+  ;; Subscribe to slot interval (check spread every 10 slots)
+  (on-startup
+    (sol-subscribe-event
+      :event-type "SLOT_INTERVAL"
+      :interval 10
+      :callback (lambda ()
+        (do
+          ;; Read oracle prices
+          (define sol-price (pyth-get-price SOL-ORACLE))
+          (define msol-price (pyth-get-price MSOL-ORACLE))
+
+          ;; Calculate spread
+          (define spread (calculate-spread sol-price msol-price))
+          (define z-score (calculate-z-score spread))
+
+          ;; Trading logic
+          (if (should-enter-position? z-score)
+              (execute-entry-trade sol-price msol-price z-score)
+              (if (should-exit-position? z-score)
+                  (execute-exit-trade)
+                  null))))
+      :compute-budget 100000))
+
+  ;; Watch oracle accounts for large price moves
+  (on-startup
+    (sol-watch-account
+      :account SOL-ORACLE
+      :criteria {:offset 208  ; Pyth price offset
+                 :comparison "CHANGE_PERCENT"
+                 :threshold 5.0}  ; 5% price move
+      :callback (lambda (old-price new-price)
+        (do
+          (log :message "Large price move detected")
+          ;; Emergency exit if correlation breaks
+          (if (> (abs (calculate-current-spread)) EMERGENCY-THRESHOLD)
+              (execute-emergency-exit)
+              null)))
+      :compute-budget 50000))
+
+  ;; Internal event: Position opened → schedule check
+  (on-event "POSITION_OPENED"
+    (lambda (event-data)
+      (sol-schedule-execution
+        :target-slot (+ (get event-data "slot") 1000)
+        :callback check-position-health
+        :compute-budget 30000))))
+
+;; Result: Bot runs 24/7 without external keepers!</code>
+                    </div>
+                </div>
+                
+                <div class="arch-sidebar">
+                    <div class="performance-chart">
+                        <h4>Comparison Matrix</h4>
+                        <pre>
+Feature        │ Clockwork │ Autonomous
+───────────────┼───────────┼───────────
+Latency        │ 1-5s      │ &lt;400ms
+Reliability    │ Medium    │ 99.9%
+Decentralized  │ No        │ Yes
+Cost Model     │ Per-tx    │ Stake
+Shutdown Risk  │ High ✗    │ None ✓
+                        </pre>
+                    </div>
+
+                    <div class="memory-usage">
+                        <h4>Compute Allocation</h4>
+                        <div class="memory-item">
+                            <span>User txs:</span>
+                            <span>1.0M CU (71%)</span>
+                        </div>
+                        <div class="memory-item">
+                            <span>Autonomous:</span>
+                            <span>400K CU (29%)</span>
+                        </div>
+                        <div class="memory-item">
+                            <span>Priority:</span>
+                            <span>Users first</span>
+                        </div>
+                    </div>
+
+                    <div class="ascii-charts-sidebar">
+                        <div class="ascii-chart">
+                            <h5>Security Model</h5>
+                            <pre>
+Verifier Rules:
+├─ Compute budget
+│   specified
+├─ Deterministic
+│   callbacks
+├─ Bounded event
+│   emission
+├─ Exact watcher
+│   criteria
+└─ Slot budget
+   compliance
+                            </pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- REFERENCES SECTION -->
         <section class="developer-section">
             <h2 class="section-title">TECHNICAL REFERENCES</h2>
