@@ -177,6 +177,75 @@ sol_ring_buffer_push(buffer, data) → Result
 sol_ring_buffer_pop(buffer) → Option&lt;Data&gt;</code>
                             </div>
                         </div>
+
+                        <h4>Supported Event Types</h4>
+                        <div class="ascii-chart">
+                            <h5>Event Trigger Mechanisms</h5>
+                            <pre>
+┌────────────────────────────────────────────────────────────────────────────┐
+│                         EVENT TYPE CATALOG                                 │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│  TIME-BASED TRIGGERS (eBPF perf_event style)                               │
+│  ├─ SlotInterval    { interval: 100, start_slot: 12345 }                   │
+│  ├─ EpochBoundary   { epoch_offset: 0 }  // Start of epoch                 │
+│  └─ WallclockTime   { unix_timestamp: 1700000000 }                         │
+│                                                                            │
+│  ACCOUNT-BASED TRIGGERS (eBPF tracepoint style)                            │
+│  ├─ AccountDataChange   { account, offset, mask, threshold }               │
+│  ├─ AccountBalanceChange { account, threshold, direction }                 │
+│  └─ AccountOwnerChange   { account, new_owner }                            │
+│                                                                            │
+│  PROGRAM-BASED TRIGGERS (internal event routing)                           │
+│  ├─ ProgramEvent    { source_program, event_id, filter }                   │
+│  └─ CPIReturn       { callee_program, return_data_filter }                 │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+                            </pre>
+                        </div>
+
+                        <h4>Program Scheduler Thread Implementation</h4>
+                        <div class="code-snippet">
+<code>impl ProgramScheduler {
+    /// Process events for current slot
+    pub fn process_slot(&mut self, slot: u64) -> Result&lt;()&gt; {
+        let mut compute_used = 0u64;
+
+        // 1. Process slot-based events (timers)
+        while let Some(event) = self.event_queue.peek() {
+            if event.target_slot > slot { break; }
+            
+            if compute_used + event.compute_budget > 1_400_000 {
+                log::warn!("Slot compute budget exhausted at {} CU", compute_used);
+                break;
+            }
+
+            let event = self.event_queue.pop().unwrap();
+            match self.execute_autonomous_instruction(&event.instruction) {
+                Ok(result) => compute_used += result.compute_units_consumed,
+                Err(e) => log::error!("Autonomous execution failed: {:?}", e),
+            }
+        }
+
+        // 2. Process account watcher callbacks
+        for (account, watchers) in &self.account_watchers {
+            let account_data = self.bank.get_account(account)?;
+            for watcher in watchers {
+                if watcher.criteria.matches(&account_data) {
+                    self.execute_autonomous_instruction(&watcher.callback)?;
+                }
+            }
+        }
+
+        // 3. Process async event buffer (ring buffer)
+        while let Some(async_event) = self.async_event_buffer.pop() {
+            self.route_async_event(async_event)?;
+        }
+
+        Ok(())
+    }
+}</code>
+                        </div>
                     </div>
                     
                     <div class="theory-sidebar">
@@ -211,6 +280,41 @@ Banking Stage (6 threads)
     └─ Work queue
                                 </pre>
                             </div>
+                            
+                            <div class="ascii-chart">
+                                <h5>Ring Buffer</h5>
+                                <pre>
+1MB Circular Buffer
+├─ Lock-free FIFO
+├─ Multi-producer
+├─ Single-consumer
+└─ Zero-copy push
+
+Head: ──────────────────►
+Tail: ─────────►
+      [Event1][Event2][...]
+                                </pre>
+                            </div>
+                        </div>
+
+                        <div class="theory-box">
+                            <h4>Security Guarantees</h4>
+                            <ul>
+                                <li>Rate-limited callbacks</li>
+                                <li>Compute-budgeted</li>
+                                <li>Fee-paid from escrow</li>
+                                <li>Non-voting (no vote bloat)</li>
+                            </ul>
+                        </div>
+
+                        <div class="theory-box">
+                            <h4>Failsafe Mechanisms</h4>
+                            <ul>
+                                <li>Circuit breaker (10 failures)</li>
+                                <li>Cooldown (100 slots)</li>
+                                <li>Dead letter queue</li>
+                                <li>Retry with backoff</li>
+                            </ul>
                         </div>
                     </div>
                 </div>
@@ -280,6 +384,86 @@ With Hardware Acceleration (Intel AMX):
 ───────────────────┼─────────────┼────────────────┼─────────
 MatMul 64×64       │   410,000   │     4,200      │  97.60x
 MatMul 128×128     │ 3,300,000 ❌ │    15,000      │ 220.00x
+                        </pre>
+                    </div>
+
+                    <h4>Fixed-Point Arithmetic Implementation</h4>
+                    <div class="code-snippet">
+<code>// Represent 0.7654 as integer
+const SCALE: i32 = 10000;
+let weight: i32 = 7654;  // 0.7654 * 10000
+
+// Multiply with scale adjustment
+let input: i32 = 5000;  // 0.5 * 10000
+let output: i32 = (input * weight) / SCALE;  // 3827 = 0.3827 * 10000
+
+// Sigmoid approximation via lookup table
+static SIGMOID_LUT: [i32; 256] = [ /* precomputed values */ ];
+
+fn sigmoid_approx(x: i32) -> i32 {
+    let index = ((x + 32768) >> 8) & 0xFF;
+    SIGMOID_LUT[index as usize]
+}
+
+// Bounded loop for tree traversal (verifier-safe)
+#define MAX_DEPTH 20
+
+fn classify(tree: &DecisionTree, input: &[i32]) -> i32 {
+    let mut node = 0;
+    
+    #pragma unroll
+    for depth in 0..MAX_DEPTH {
+        let feature = tree.features[node];
+        let threshold = tree.thresholds[node];
+        
+        if input[feature] <= threshold {
+            node = tree.left_child[node];
+        } else {
+            node = tree.right_child[node];
+        }
+        
+        if node < 0 {
+            return tree.leaf_values[-node - 1];
+        }
+    }
+    0  // Default if max depth exceeded
+}</code>
+                    </div>
+
+                    <div class="ascii-chart">
+                        <h5>TinyML Compression Pipeline</h5>
+                        <pre>
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         MODEL COMPRESSION PIPELINE                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+STEP 1: Train Full Model
+├─ Large architecture (ResNet, Transformer)
+├─ Full precision (FP32)
+└─ Result: 100 MB, 95% accuracy
+                ↓
+STEP 2: Knowledge Distillation
+├─ MobileNet or custom tiny architecture
+├─ Teacher → Student transfer
+└─ Result: 10 MB, 92% accuracy
+                ↓
+STEP 3: Quantization (FP32 → INT8)
+├─ ONNX static quantization
+├─ Calibration with 1000 samples
+└─ Result: 2.5 MB, 91.5% accuracy
+                ↓
+STEP 4: Pruning (50%)
+├─ L1 magnitude pruning
+├─ Fine-tune after pruning
+└─ Result: 1.25 MB dense, 0.6 MB sparse
+                ↓
+STEP 5: eBPF Conversion
+├─ Fixed-point arithmetic (INT16/INT32)
+├─ Array-based weight storage
+├─ Bounded loops for inference
+└─ Result: 0.8 MB, 90.5% accuracy ✓
+
+TARGET: &lt;100KB model suitable for eBPF deployment
                         </pre>
                     </div>
 
@@ -637,6 +821,133 @@ Agent A  Cooperate (+1.5,+1.5) (-1,+2)
              New Nash = (Cooperate, Cooperate) ✓
                             </pre>
                         </div>
+
+                        <h4>VCG Auction Implementation</h4>
+                        <div class="code-snippet">
+<code>;;; VCG auction for cross-DEX arbitrage rights
+(define-program vcg-auction
+  (entrypoint (accounts instruction-data)
+    ;; Items: {Raydium-access, Orca-access, Saber-access}
+    ;; Agents bid for COMBINATIONS (e.g., Raydium+Orca)
+
+    (define bids [
+      {:agent "A" :items ["Raydium" "Orca"] :value 100}
+      {:agent "B" :items ["Raydium"] :value 60}
+      {:agent "C" :items ["Orca" "Saber"] :value 80}
+    ])
+
+    ;; VCG: Maximize social welfare
+    (define optimal-allocation (solve-winner-determination bids))
+    ;; Result: {A: [Raydium, Orca], C: [Saber]}
+    ;; Total value: 100 + 80 = 180
+
+    ;; VCG pricing: Each winner pays "harm to others"
+    (for (winner optimal-allocation)
+      ;; Compute best allocation WITHOUT this winner
+      (define counterfactual-allocation
+        (solve-winner-determination (remove bids winner)))
+
+      ;; Payment = Value lost by excluding this winner
+      (define payment
+        (- (total-value counterfactual-allocation)
+           (- (total-value optimal-allocation) (get winner "value"))))
+
+      (charge-winner winner payment))))
+
+;; VCG Properties:
+;; ✓ Truthful: Bidding true value always optimal
+;; ✓ Efficient: Maximizes total welfare
+;; ✓ Individual Rationality: Winners never overpay</code>
+                        </div>
+
+                        <h4>Flash Loan Arbitrage Flow</h4>
+                        <div class="ascii-chart">
+                            <h5>Flash Loan Protocol</h5>
+                            <pre>
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          FLASH LOAN ARBITRAGE                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+STEP 1: Borrow
+├─ Request 1,000,000 USDC from flash loan pool
+├─ No collateral required (atomic transaction)
+└─ Pool transfers funds to borrower
+
+STEP 2: Execute Arbitrage
+├─ Buy SOL on Raydium at $102.00
+├─ Sell SOL on Orca at $102.50
+└─ Profit: 0.5% = $5,000 gross
+
+STEP 3: Repay
+├─ Repay 1,000,000 USDC + 0.09% fee ($900)
+└─ Net profit: $4,100
+
+STEP 4: Validation
+├─ IF balance_after >= balance_before + fee
+│   → Transaction succeeds, profit captured ✓
+├─ ELSE
+│   → ENTIRE TRANSACTION REVERTS ❌
+│   → Zero loss, zero risk
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  SECURITY PROPERTIES                                                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ✓ Zero Risk: If unprofitable, tx reverts (no loss)                        │
+│  ✓ No Collateral: Atomicity guarantees repayment                            │
+│  ✓ Capital Efficiency: Borrow millions with 0 SOL                          │
+│  ✓ Permissionless: Anyone can execute flash loans                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+                            </pre>
+                        </div>
+
+                        <h4>Frequent Batch Auctions (FBA)</h4>
+                        <div class="code-snippet">
+<code>;;; Frequent batch auction (10-slot batches)
+;;; Eliminates front-running and sandwich attacks
+(define-program fba-exchange
+  (define batch-interval 10)
+  (define current-batch-orders (get accounts 0))
+
+  (entrypoint (accounts instruction-data)
+    (define current-slot (sol-get-clock-slot))
+    (define slot-in-batch (% current-slot batch-interval))
+
+    ;; Phase 1: ORDER COLLECTION (slots 0-8)
+    (if (< slot-in-batch 9)
+        (do
+          (define order (parse-order instruction-data))
+          
+          ;; Deterministic priority (randomized by hash)
+          (define priority (sol-sha256 (concat order current-slot)))
+          (append-order! current-batch-orders (assoc order :priority priority))
+          
+          (log :message "📝 Order submitted to batch"))
+        null)
+
+    ;; Phase 2: MARKET CLEARING (slot 9)
+    (if (= slot-in-batch 9)
+        (do
+          (define orders (get-batch-orders current-batch-orders))
+          (define sorted-orders (sort orders by-priority))
+          
+          ;; Single clearing price maximizes volume
+          (define clearing-result (uniform-price-clearing sorted-orders))
+          (define clearing-price (get clearing-result "price"))
+          
+          ;; Execute ALL trades at same price
+          (for (execution (get clearing-result "executions"))
+            (settle-trade execution clearing-price))
+          
+          (clear-batch! current-batch-orders)
+          (log :message "✅ Batch auction cleared"))
+        null)))
+
+;; FBA Benefits:
+;; ✓ No front-running: Speed doesn't matter within batch
+;; ✓ Fair ordering: Deterministic priority function
+;; ✓ Single price: All trades execute at same clearing price
+;; ✓ MEV resistance: Can't profit from order within batch</code>
+                        </div>
                     </div>
                     
                     <div class="theory-sidebar">
@@ -910,6 +1221,666 @@ TOTAL MONTHLY                                     │  $600-1200
                 </div>
             </section>
 
+            <!-- PART 7: KFUNCS AND SBPFUNCS DEEP DIVE -->
+            <section class="theory-section">
+                <h2 class="section-title">PART 7: KFUNCS & SBPFUNCS DEEP DIVE</h2>
+                <div class="theory-subtitle">Extensible Path to ML in Kernel Space and Blockchain Runtimes</div>
+                
+                <div class="theory-content">
+                    <div class="theory-main">
+                        <h3>The KFuncs Revolution in Linux eBPF</h3>
+                        <p class="theory-lead">KFuncs (Kernel Functions) are the game-changer for AI inference in eBPF. Unlike helper functions (frozen API), KFuncs are dynamically extensible, type-safe via BTF, and can be added via kernel modules without recompilation.</p>
+                        
+                        <div class="ascii-chart">
+                            <h5>KFuncs vs Helper Functions</h5>
+                            <pre>
+┌──────────────────┬────────────────────────┬────────────────────────┐
+│     Aspect       │    Helper Functions    │        KFuncs          │
+├──────────────────┼────────────────────────┼────────────────────────┤
+│ API Stability    │ UAPI stable (permanent)│ No guarantees          │
+│ Addition Process │ Kernel patch + review  │ Kernel module (dynamic)│
+│ Type Safety      │ Manual verification    │ BTF auto-verification  │
+│ Documentation    │ Required, strict       │ Derived from BTF       │
+│ Removal          │ Never (ABI lock)       │ With deprecation period│
+│ Performance      │ Good                   │ Better (JIT-optimized) │
+│ Extensibility    │ Kernel-only            │ Kernel + modules       │
+│ Architecture     │ All arches             │ JIT-only (x86, ARM64)  │
+└──────────────────┴────────────────────────┴────────────────────────┘
+
+Key Insight: Linux kernel NO LONGER accepts new helpers, only KFuncs!
+                            </pre>
+                        </div>
+
+                        <h4>BTF: Type Safety Magic</h4>
+                        <p>BTF (BPF Type Format) auto-generates type information, enabling the verifier to automatically check bounds without manual verification code:</p>
+
+                        <div class="code-snippet">
+<code>// KFunc with BTF annotations
+__bpf_kfunc int bpf_ml_matmul(
+    int *output,           // Output array
+    const int *input_a,    // Input A
+    const int *input_b,    // Input B
+    u32 m, u32 k, u32 n,   // Dimensions
+    int __sz *output,      // Size annotation (BTF magic!)
+    int __sz *input_a,     // Verifier auto-checks bounds
+    int __sz *input_b      // No manual verification needed!
+)
+
+BTF Annotations:
+├─ __sz   → Memory size pair (bounds-checked)
+├─ __k    → Known constant (compile-time)
+├─ __uninit → Output param (not read)
+├─ __opt  → Optional (may be NULL)
+├─ __str  → Constant string
+└─ __prog → Reference to calling BPF program</code>
+                        </div>
+
+                        <h4>Proposed ML-Specific KFuncs</h4>
+                        <div class="code-snippet">
+<code>__bpf_kfunc_start_defs();
+
+/// Matrix multiplication: C = A × B (fixed-point INT32)
+__bpf_kfunc int bpf_ml_matmul(
+    int *output, const int *input_a, const int *input_b,
+    u32 m, u32 k, u32 n, u32 scale,
+    int __sz *output, int __sz *input_a, int __sz *input_b
+) __ksym;
+
+/// Intel AMX accelerated version
+__bpf_kfunc int bpf_ml_matmul_amx(...) __ksym;
+
+/// Apply activation function in-place
+__bpf_kfunc int bpf_ml_activation(
+    int *data, u32 size, u32 activation_type, // 0=ReLU, 1=Sigmoid, 2=Tanh
+    int __sz *data
+) __ksym;
+
+/// Quantization helpers
+__bpf_kfunc int bpf_ml_quantize_int8(s8 *output, const int *input, ...) __ksym;
+__bpf_kfunc int bpf_ml_dequantize_int8(int *output, const s8 *input, ...) __ksym;
+
+/// Full model inference
+__bpf_kfunc int bpf_ml_forward(
+    int *output, const int *input, const void *model,
+    u32 input_size, u32 output_size,
+    int __sz *output, int __sz *input
+) __ksym;
+
+__bpf_kfunc_end_defs();</code>
+                        </div>
+
+                        <div class="theory-highlights">
+                            <div class="theory-item">
+                                <h4>🔧 Module-Based</h4>
+                                <p>KFuncs can be added via kernel modules without core kernel patches. Load with <code>insmod ml_kfuncs.ko</code> and users have new capabilities instantly.</p>
+                            </div>
+                            
+                            <div class="theory-item">
+                                <h4>⚡ Hardware Accelerated</h4>
+                                <p>KFunc implementations can use Intel AMX (10-100x for large matrices), AVX-512 SIMD (8x parallelism), and other hardware features transparently.</p>
+                            </div>
+                            
+                            <div class="theory-item">
+                                <h4>🛡️ Security Guaranteed</h4>
+                                <p>BTF provides automatic bounds checking, the verifier ensures memory safety, and <code>kernel_fpu_begin()/end()</code> properly context-switches FPU state.</p>
+                            </div>
+                            
+                            <div class="theory-item">
+                                <h4>🔄 Future-Proof</h4>
+                                <p>Linux's new standard - no more helpers accepted upstream. All new eBPF functionality goes through KFuncs, making this the path forward.</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="theory-sidebar">
+                        <div class="theory-box">
+                            <h4>SBPFuncs for Solana</h4>
+                            <p>Same pattern adapted to Solana:</p>
+                            <ul>
+                                <li>Runtime-loadable modules</li>
+                                <li>Governance-controlled activation</li>
+                                <li>Community extensibility</li>
+                                <li>Backward compatible</li>
+                                <li>No core changes needed</li>
+                            </ul>
+                        </div>
+
+                        <div class="ascii-charts-sidebar">
+                            <div class="ascii-chart">
+                                <h5>Intel AMX Integration</h5>
+                                <pre>
+kernel_fpu_begin();
+
+// Configure AMX tiles
+ldtilecfg cfg;
+
+// Load matrices into tiles
+tileloadd tmm0, input_a
+tileloadd tmm1, input_b
+
+// Matrix multiply
+tdpbssd tmm0, tmm1, tmm2
+
+// Store result
+tilestored tmm2, output
+
+kernel_fpu_end();
+
+Performance: 10-100x faster
+                                </pre>
+                            </div>
+                        </div>
+
+                        <div class="theory-box">
+                            <h4>Deployment Flow</h4>
+                            <ol>
+                                <li>Compile kernel module</li>
+                                <li><code>sudo insmod ml_kfuncs.ko</code></li>
+                                <li>Compile eBPF program</li>
+                                <li>Load with bpftool</li>
+                                <li>Attach to hook point</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- PART 8: ADVANCED VERIFIER CAPABILITIES -->
+            <section class="tech-section">
+                <h2 class="section-title">PART 8: ADVANCED VERIFIER CAPABILITIES</h2>
+                <div class="tech-subtitle">Symbolic Execution, Formal Verification, and Economic Safety</div>
+                
+                <div class="tech-content">
+                    <div class="tech-article-large">
+                        <h3>Beyond Basic Control Flow Analysis</h3>
+                        <p class="tech-lead">Current eBPF verifiers check for bounded loops, memory safety, and variable initialization. We propose extending the verifier with symbolic execution, economic invariant checking, and information flow analysis.</p>
+
+                        <div class="ascii-chart">
+                            <h5>Current vs Proposed Verifier Capabilities</h5>
+                            <pre>
+┌───────────────────────────┬──────────────────┬───────────────────┬───────────┐
+│    Verification Type      │ Current Verifier │ Symbolic Verifier │  Overhead │
+├───────────────────────────┼──────────────────┼───────────────────┼───────────┤
+│ Control flow              │ 10ms ✓           │ 10ms ✓            │    0%     │
+│ Memory safety             │ 5ms ✓            │ 5ms ✓             │    0%     │
+│ Overflow detection        │ ❌ Not checked   │ 100ms ✓           │    NEW    │
+│ Economic invariants       │ ❌ Not checked   │ 200ms ✓           │    NEW    │
+│ Information flow          │ ❌ Not checked   │ 150ms ✓           │    NEW    │
+├───────────────────────────┼──────────────────┼───────────────────┼───────────┤
+│ TOTAL                     │ 15ms             │ 465ms             │   30x     │
+└───────────────────────────┴──────────────────┴───────────────────┴───────────┘
+
+Trade-off: 30x slower verification, but catches critical bugs!
+                            </pre>
+                        </div>
+
+                        <h4>Symbolic Execution for Overflow Detection</h4>
+                        <div class="code-snippet">
+<code>// Example: Agent trade calculation
+int agent_trade(int balance, int price) {
+    int shares;
+    
+    if (balance > 1000) {
+        shares = balance / price;  // Path 1
+    } else {
+        shares = 10;               // Path 2
+    }
+    
+    return shares * price;  // Potential overflow!
+}
+
+// Symbolic Execution Analysis:
+// - Path 1: shares = balance / price
+//          return = (balance / price) * price = balance ✓
+// - Path 2: shares = 10
+//          return = 10 * price
+//          IF price > MAX_INT / 10 → OVERFLOW! ❌
+
+// Verifier automatically finds the bug!</code>
+                        </div>
+
+                        <h4>Economic Invariant Verification</h4>
+                        <div class="code-snippet">
+<code>// Specify invariant: "total_balance_before == total_balance_after"
+pub fn verify_economic_invariant(program: &[Instruction], invariant: &str) {
+    for path in cfg.all_paths() {
+        let mut symbolic_state = SymbolicState::new();
+        
+        // Symbolic variable for initial balance
+        let balance_before = solver.declare_int("balance_before");
+        
+        // Execute path symbolically
+        execute_symbolically(&path, &mut symbolic_state)?;
+        
+        // Get final balance
+        let balance_after = symbolic_state.get_balance();
+        
+        // Check invariant holds for ALL possible inputs
+        let invariant_violated = solver.ne(balance_before, balance_after);
+        
+        if solver.is_satisfiable(invariant_violated) {
+            return Err(VerifierError::InvariantViolation {
+                invariant: invariant.to_string(),
+                path: path.id,
+            });
+        }
+    }
+}</code>
+                        </div>
+
+                        <h4>Information Flow Analysis (Taint Tracking)</h4>
+                        <p>Prevents private data leaks through return values or logs:</p>
+
+                        <div class="ascii-chart">
+                            <h5>Taint Propagation Example</h5>
+                            <pre>
+// Agent has private_balance, public asks for recommendation
+int trading_agent(int private_balance, int price) {
+    // BUG: Leaks private_balance through return value!
+    if (private_balance > 1000000) {
+        return 1;  // "BUY" 
+    } else {
+        return 0;  // "HOLD"
+    }
+    // Attacker can binary search to learn exact balance!
+}
+
+Taint Analysis Flow:
+─────────────────────────────────────────────────────────────
+private_balance (tainted) ──► if condition (tainted)
+                                      │
+                              ┌───────┴───────┐
+                              ▼               ▼
+                         return 1        return 0
+                              │               │
+                              └───────┬───────┘
+                                      ▼
+                               r0 (return value)
+                                   TAINTED!
+                                      │
+                                      ▼
+                            ❌ INFORMATION LEAK DETECTED
+                            </pre>
+                        </div>
+                    </div>
+                    
+                    <div class="tech-article-side">
+                        <div class="tech-box">
+                            <h4>Transaction Safety</h4>
+                            <ul>
+                                <li>No nested transactions</li>
+                                <li>All paths commit/abort</li>
+                                <li>No resource leaks</li>
+                                <li>Isolation level enforced</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="tech-box">
+                            <h4>Parallel Safety</h4>
+                            <ul>
+                                <li>No data races verified</li>
+                                <li>No write conflicts</li>
+                                <li>All tasks joined</li>
+                                <li>Deterministic ordering</li>
+                            </ul>
+                        </div>
+
+                        <div class="tech-box">
+                            <h4>Autonomous Safety</h4>
+                            <ul>
+                                <li>Compute budget specified</li>
+                                <li>Callbacks deterministic</li>
+                                <li>Event emission bounded</li>
+                                <li>Watcher criteria exact</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- PART 9: PRODUCTION USE CASES -->
+            <section class="architecture-section">
+                <h2 class="section-title">PART 9: PRODUCTION USE CASES</h2>
+                <div class="arch-subtitle">Fully Autonomous Trading Bots, MEV Extraction, Market Making</div>
+                
+                <div class="architecture-content">
+                    <div class="arch-main">
+                        <h3>Complete Autonomous Trading Bot Architecture</h3>
+
+                        <div class="ascii-chart">
+                            <h5>Production Agent System Architecture</h5>
+                            <pre>
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    ON-CHAIN COMPONENTS (sBPF Programs)                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  MAIN BOT (Orchestrator)                                            │   │
+│  │  ├─ Uses: Block timers for heartbeat (every 10 slots)               │   │
+│  │  ├─ Uses: Account watchers for oracle updates                       │   │
+│  │  └─ Uses: ML inference for trading decisions                        │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│           │                │                │                               │
+│           ▼                ▼                ▼                               │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                      │
+│  │   PRICE      │  │  STRATEGY    │  │    RISK      │                      │
+│  │   ORACLE     │  │  EXECUTION   │  │  MANAGEMENT  │                      │
+│  │  ──────────  │  │  ──────────  │  │  ──────────  │                      │
+│  │  • Pyth      │  │  • Pairs     │  │  • Position  │                      │
+│  │  • Switchbd  │  │  • Momentum  │  │  • Stop-loss │                      │
+│  │  • Chainlink │  │  • Vol-arb   │  │  • Breaker   │                      │
+│  └──────────────┘  └──────────────┘  └──────────────┘                      │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                         EXECUTION FLOW
+─────────────────────────────────────────────────────────────────────────────
+
+1. INITIALIZE
+   ├─ sol_timer_start(heartbeat, 10, 10)  // Every 10 slots
+   ├─ sol_watch_account(sol_oracle)       // Watch Pyth
+   └─ sol_watch_account(msol_oracle)      // Watch mSOL
+
+2. HEARTBEAT (periodic)
+   ├─ Check position health
+   ├─ Verify stop-loss levels
+   └─ Report status
+
+3. ON_PRICE_UPDATE (event-driven)
+   ├─ PERCEPTION: Gather 12 features
+   ├─ REASONING: ML inference (2 layers)
+   └─ ACTION: Execute trade if confidence > 75%
+
+4. RISK_CHECK (continuous)
+   ├─ Position limits enforced
+   ├─ Max drawdown monitored
+   └─ Circuit breaker armed
+                            </pre>
+                        </div>
+
+                        <h4>Complete OVSM Agent Implementation</h4>
+                        <div class="code-snippet">
+<code>;;; AUTONOMOUS TRADING BOT - PRODUCTION IMPLEMENTATION
+(define-program trading-bot-main
+  ;; STATE
+  (define bot-state (get accounts 0))
+  (define ml-weights (get accounts 1))
+  (define layer1 (get-account-data ml-weights "layer1"))  ;; 12×8
+  (define layer2 (get-account-data ml-weights "layer2"))  ;; 8×3
+
+  (entrypoint (accounts instruction-data)
+    (match (get instruction-data "action")
+
+      ("initialize" (do
+        ;; Setup heartbeat timer (every 10 slots = ~4 seconds)
+        (sol-timer-init heartbeat-timer program-id 0)
+        (sol-timer-start heartbeat-timer 10 10)
+        
+        ;; Watch oracles for price updates
+        (sol-watch-account sol-oracle program-id WatchCondition::DataChanged)
+        (sol-watch-account msol-oracle program-id WatchCondition::DataChanged)
+        
+        ;; Initialize state
+        (set-state! bot-state "positions" [])
+        (set-state! bot-state "equity" 100000000000)  ;; 100 SOL
+        (log :message "✅ Bot initialized")))
+
+      ("heartbeat" (do
+        (define current-slot (sol-get-clock-slot))
+        (log :message "💓 Heartbeat" :slot current-slot)
+        
+        ;; Check positions for stop-loss
+        (for (position positions)
+          (define pnl (calculate-pnl position))
+          (if (< pnl (* (get position "entry-value") -0.05))
+              (do
+                (log :message "🚨 Stop-loss triggered")
+                (close-position accounts position))
+              null))))
+
+      ("on-price-update" (do
+        ;; Run ML inference
+        (define decision (run-ml-inference accounts))
+        
+        ;; Execute if confident
+        (if (> (get decision "confidence") 0.75)
+            (execute-decision accounts decision)
+            (log :message "⏸️ Low confidence")))))))
+
+;;; ML INFERENCE FUNCTION
+(define (run-ml-inference accounts)
+  ;; 1. PERCEPTION (280K CU budget)
+  (define features [
+    (get-pyth-price sol-oracle)         ;; Feature 0
+    (get-pyth-price msol-oracle)        ;; Feature 1
+    (get-spread "SOL" "mSOL")           ;; Feature 2
+    (get-volume-24h "SOL")              ;; Feature 3
+    (get-volatility-7d "SOL")           ;; Feature 4
+    (get-ma-50 "SOL")                   ;; Feature 5
+    (get-ma-200 "SOL")                  ;; Feature 6
+    (get-rsi-14 "SOL")                  ;; Feature 7
+    (get-macd "SOL")                    ;; Feature 8
+    (get-bollinger-upper "SOL")         ;; Feature 9
+    (get-bollinger-lower "SOL")         ;; Feature 10
+    (get-obv "SOL")                     ;; Feature 11
+  ])
+  
+  ;; Normalize to fixed-point
+  (define features-fixed (map features (lambda (x) (* x 10000))))
+
+  ;; 2. REASONING (700K CU budget)
+  (define hidden (array 8))
+  (sol-ml-matmul hidden features-fixed layer1 1 12 8 10000)
+  (sol-ml-activation hidden ActivationType::ReLU 10000)
+
+  (define output (array 3))
+  (sol-ml-matmul output hidden layer2 1 8 3 10000)
+  (sol-ml-activation output ActivationType::Softmax 10000)
+
+  ;; Get decision
+  (define action (sol-ml-argmax output))  ;; 0=BUY, 1=HOLD, 2=SELL
+  (define confidence (/ (get output action) 10000))
+  
+  {:action action :confidence confidence})</code>
+                        </div>
+
+                        <h4>MEV Bot with Autonomous Monitoring</h4>
+                        <div class="ascii-chart">
+                            <h5>MEV Extraction Flow</h5>
+                            <pre>
+┌────────────────────────────────────────────────────────────────┐
+│                      MEV BOT ARCHITECTURE                      │
+└────────────────────────────────────────────────────────────────┘
+
+1. WATCH MEMPOOL
+   ├─ Register watcher on DEX programs
+   └─ Trigger on large swap detection
+
+2. ANALYZE OPPORTUNITY
+   ├─ Calculate backrun profit potential
+   ├─ Estimate gas costs
+   └─ Check profitability threshold
+
+3. EXECUTE (if profitable)
+   ├─ Bundle transaction with target
+   ├─ Submit to block builder
+   └─ Capture MEV profit
+
+Flash Loan Arbitrage Example:
+─────────────────────────────────────────────────────────────────
+ Borrow      Buy SOL        Sell SOL       Repay
+1M USDC ──► on Raydium ──► on Orca   ──► + Fee
+   │        (cheaper)      (more $)        │
+   │                                       │
+   └───────────────────────────────────────┘
+              SINGLE ATOMIC TRANSACTION
+              
+              If Unprofitable → ENTIRE TX REVERTS
+              Zero Risk! ✓
+                            </pre>
+                        </div>
+                    </div>
+                    
+                    <div class="arch-sidebar">
+                        <div class="performance-chart">
+                            <h4>Bot Performance</h4>
+                            <div class="platform-item">Heartbeat: Every 4 seconds</div>
+                            <div class="platform-item">Oracle latency: &lt;400ms</div>
+                            <div class="platform-item">Inference time: 93ns</div>
+                            <div class="platform-item">CU per cycle: ~50K</div>
+                            <div class="platform-item">Cost: $25/month</div>
+                        </div>
+
+                        <div class="memory-usage">
+                            <h4>Market Maker Bot</h4>
+                            <div class="memory-item">
+                                <span>Rebalance:</span>
+                                <span>Every 50 slots</span>
+                            </div>
+                            <div class="memory-item">
+                                <span>ML spread:</span>
+                                <span>Predicted optimal</span>
+                            </div>
+                            <div class="memory-item">
+                                <span>Inventory:</span>
+                                <span>Risk-managed</span>
+                            </div>
+                        </div>
+
+                        <div class="ascii-charts-sidebar">
+                            <div class="ascii-chart">
+                                <h5>Agent Swarm</h5>
+                                <pre>
+20 particles searching
+parameter space:
+
+Particle i:
+├─ Evaluate fitness
+├─ Update personal best
+├─ Share global best
+└─ PSO velocity update
+
+Result: Optimal strategy
+params discovered
+collectively
+                                </pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- PART 10: FUTURE RESEARCH DIRECTIONS -->
+            <section class="roadmap-section">
+                <h2 class="section-title">PART 10: FUTURE RESEARCH DIRECTIONS</h2>
+                <div class="roadmap-subtitle">Neuro-Symbolic Agents, Cross-Chain Coordination, LLMs On-Chain</div>
+                
+                <div class="roadmap-content">
+                    <div class="roadmap-phase">
+                        <h3>Reinforcement Learning Agents</h3>
+                        <ul>
+                            <li><strong>Beyond Supervised:</strong> Agents that learn from trading outcomes</li>
+                            <li><strong>Online Learning:</strong> Update model weights incrementally on-chain</li>
+                            <li><strong>Q-Learning:</strong> State-action value table updated from experience</li>
+                            <li><strong>Hybrid Approach:</strong> Pre-train offline, fine-tune on-chain</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="roadmap-phase">
+                        <h3>Multi-Agent Coordination</h3>
+                        <ul>
+                            <li><strong>Agent Ensembles:</strong> Multiple specialists voting on decisions</li>
+                            <li><strong>Swarm Intelligence:</strong> PSO for collaborative parameter search</li>
+                            <li><strong>Agent DAOs:</strong> Governance by autonomous code, not humans</li>
+                            <li><strong>Anti-Cartel Mechanisms:</strong> VRF-based rotation prevents collusion</li>
+                        </ul>
+                    </div>
+
+                    <div class="roadmap-phase">
+                        <h3>Cross-Chain Agent Systems</h3>
+                        <ul>
+                            <li><strong>Multi-Chain Arbitrage:</strong> Solana + Ethereum coordination</li>
+                            <li><strong>Bridge Monitoring:</strong> Agents watching for inefficiencies</li>
+                            <li><strong>ZK Proofs:</strong> Verify cross-chain inference correctness</li>
+                            <li><strong>Atomic Swaps:</strong> Trustless multi-chain execution</li>
+                        </ul>
+                    </div>
+
+                    <div class="roadmap-phase">
+                        <h3>Large Language Models</h3>
+                        <ul>
+                            <li><strong>Challenge:</strong> LLMs too large (billions of params)</li>
+                            <li><strong>Approach:</strong> Embeddings on-chain, inference off-chain + ZK</li>
+                            <li><strong>TinyLLaMA:</strong> Distilled 100M params still too large</li>
+                            <li><strong>Future:</strong> Hardware advances may enable on-chain LLMs</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="technical-innovation">
+                    <div class="ascii-chart">
+                        <h5>Neuro-Symbolic Hybrid Architecture</h5>
+                        <pre>
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         NEURO-SYMBOLIC AGENT                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  NEURAL COMPONENT                                                   │   │
+│  │  ├─ Pattern recognition (market regimes)                            │   │
+│  │  ├─ Feature extraction (price embeddings)                           │   │
+│  │  └─ Confidence estimation (prediction uncertainty)                  │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                        │
+│                                    ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  SYMBOLIC COMPONENT                                                 │   │
+│  │  ├─ Logic rules: "IF stop_loss_hit THEN close_position"             │   │
+│  │  ├─ Constraints: "position_size <= max_allowed"                     │   │
+│  │  ├─ Invariants: "total_balance >= 0 ALWAYS"                         │   │
+│  │  └─ VERIFY NN decisions don't violate rules                         │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                        │
+│                                    ▼                                        │
+│                          SAFE TRADING DECISION                              │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Benefits:
+├─ Neural: Pattern recognition, generalization
+├─ Symbolic: Explainability, safety guarantees
+└─ Hybrid: Best of both worlds
+                        </pre>
+                    </div>
+
+                    <div class="ascii-chart">
+                        <h5>Constitutional AI for Agents</h5>
+                        <pre>
+CONSTITUTIONAL AGENT CONSTRAINTS
+─────────────────────────────────────────────────────────────────
+
+HARD CONSTRAINTS (Verified by Runtime):
+├─ No market manipulation
+├─ No front-running user transactions
+├─ No sandwich attacks
+└─ Position limits enforced
+
+SOFT CONSTRAINTS (Incentivized):
+├─ Prefer socially beneficial trades
+├─ Minimize market impact
+├─ Provide liquidity during stress
+└─ Report suspicious activity
+
+TRANSPARENCY:
+├─ All decisions logged on-chain
+├─ Reasoning trace available
+├─ Post-execution audit trail
+└─ DAO can review and update constraints
+                        </pre>
+                    </div>
+                </div>
+            </section>
+
             <!-- CONCLUSION -->
             <section class="bottom-stories">
                 <div class="story-grid">
@@ -935,6 +1906,94 @@ TOTAL MONTHLY                                     │  $600-1200
                 </div>
             </section>
 
+        <!-- REFERENCES SECTION -->
+        <section class="developer-section">
+            <h2 class="section-title">TECHNICAL REFERENCES</h2>
+            <div class="developer-content">
+                <div class="developer-story">
+                    <h3>Research Sources</h3>
+                    
+                    <div class="ascii-chart">
+                        <h5>Primary Research Documents</h5>
+                        <pre>
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          RESEARCH BIBLIOGRAPHY                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  AUTONOMOUS RUNTIME                                                         │
+│  ├─ "Autonomous Async BPF Runtime for Solana" (openSVM, 2025)               │
+│  ├─ "Autonomous Agent Runtime Architecture" (openSVM, 2025)                 │
+│  └─ Linux eBPF Timer Documentation (kernel.org)                             │
+│                                                                             │
+│  AI INFERENCE                                                               │
+│  ├─ "AI Inference in eBPF Runtime" (openSVM, 2025)                          │
+│  ├─ "ML Inference in eBPF: 1453x Speedup" (arXiv:2409.06452)                │
+│  └─ "KFuncs for AI Inference" (openSVM, 2025)                               │
+│                                                                             │
+│  BPF INNOVATIONS                                                            │
+│  ├─ "BPF Runtime Innovations" (openSVM, 2025)                               │
+│  ├─ "eBPF Innovations for SVM" (openSVM, 2025)                              │
+│  └─ Linux KFuncs Documentation (kernel.org/bpf/kfuncs.html)                 │
+│                                                                             │
+│  ECONOMICS                                                                  │
+│  ├─ "Trustless Multi-Agent Economy" (openSVM, 2025)                         │
+│  ├─ Mechanism Design Theory (Hurwicz, Maskin, Myerson - Nobel 2007)         │
+│  └─ "The High-Frequency Trading Arms Race" (Budish, Cramton, Shim 2015)     │
+│                                                                             │
+│  SOLANA                                                                     │
+│  ├─ Solana sBPF Documentation (docs.solana.com)                             │
+│  ├─ Sealevel Whitepaper (Yakovenko, 2019)                                   │
+│  └─ RBPF JIT Compiler (github.com/solana-labs/rbpf)                         │
+│                                                                             │
+│  ACADEMIC                                                                   │
+│  ├─ "Intelligent Agents: Theory and Practice" (Wooldridge & Jennings, 1995) │
+│  ├─ "Reinforcement Learning" (Sutton & Barto, 2018)                         │
+│  └─ "Multiagent Systems" (Shoham & Leyton-Brown, 2009)                      │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                        </pre>
+                    </div>
+
+                    <h4>Hardware References</h4>
+                    <ul>
+                        <li><strong>Intel AMX:</strong> Advanced Matrix Extensions Programming Guide (intel.com)</li>
+                        <li><strong>AVX-512:</strong> Intel Intrinsics Guide</li>
+                        <li><strong>BLS12-381:</strong> Pairing-friendly curves for cryptographic applications</li>
+                    </ul>
+
+                    <h4>Implementation Sources</h4>
+                    <ul>
+                        <li><strong>eBPF Docs:</strong> docs.ebpf.io - Comprehensive eBPF documentation</li>
+                        <li><strong>BTF:</strong> BPF Type Format specification (kernel.org/doc/html/latest/bpf/btf.html)</li>
+                        <li><strong>TinyML:</strong> "Quantization and Training of Neural Networks" (arXiv:1712.05877)</li>
+                    </ul>
+                </div>
+                
+                <div class="developer-sidebar">
+                    <div class="dev-tip-box">
+                        <h4>Key Metrics Cited</h4>
+                        <ul>
+                            <li>93ns inference latency</li>
+                            <li>7.1x faster than C</li>
+                            <li>1453x faster than Python</li>
+                            <li>800K inferences/sec</li>
+                            <li>100-1000x combined gains</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="dev-tip-box">
+                        <h4>Source Repositories</h4>
+                        <ul>
+                            <li>openSVM/osvm-cli</li>
+                            <li>solana-labs/rbpf</li>
+                            <li>CN-TU/ml-in-ebpf</li>
+                            <li>docs.ebpf.io</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <footer class="newspaper-footer">
             <div class="footer-divider"></div>
             <div class="footer-content">
@@ -942,19 +2001,27 @@ TOTAL MONTHLY                                     │  $600-1200
                     <h5>Document Info</h5>
                     <p>Version: 2.0</p>
                     <p>Last Updated: November 2025</p>
+                    <p>Word Count: ~25,000</p>
                 </div>
                 <div class="footer-section">
-                    <h5>References</h5>
+                    <h5>Technical References</h5>
                     <p>eBPF Documentation (docs.ebpf.io)</p>
                     <p>Solana sBPF Specification</p>
+                    <p>Intel AMX Programming Guide</p>
                 </div>
                 <div class="footer-section">
                     <h5>Research Sources</h5>
                     <p>openSVM/osvm-cli Research</p>
                     <p>arXiv:2409.06452 (ML in eBPF)</p>
+                    <p>Linux KFuncs Documentation</p>
+                </div>
+                <div class="footer-section">
+                    <h5>Links</h5>
+                    <p><a href="index.html">← Back to Home</a></p>
+                    <p><a href="svm-consensus-theory.html">SVM Consensus Theory</a></p>
                 </div>
             </div>
-            <div class="copyright">Slonana Whitepaper - Technical Specification for Autonomous Agent Runtime</div>
+            <div class="copyright">Slonana Whitepaper v2.0 - Comprehensive Technical Specification for Autonomous Agent Runtime</div>
         </footer>
     </div>
 </body>
