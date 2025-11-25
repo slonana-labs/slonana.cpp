@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Slonana Whitepaper - The Autonomous Agent Runtime</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script>
+      MathJax = {
+        tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']],
+          displayMath: [['$$', '$$'], ['\\[', '\\]']],
+          processEscapes: true,
+          processEnvironments: true
+        },
+        options: {
+          skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre']
+        }
+      };
+    </script>
+</head>
+<body>
+    <div class="newspaper">
+        <header class="masthead">
+            <div class="publication-info">
+                <div class="date">Technical Whitepaper v2.0 - November 2025</div>
+                <a href="index.html" class="buy-slonana-btn">← Back to Home</a>
+                <div class="price">SLONANA: The Agent Economy Infrastructure</div>
+            </div>
+            <h1 class="newspaper-title">SLONANA WHITEPAPER</h1>
+            <div class="tagline">Autonomous Agent Runtime: BPF Innovations for Trustless Multi-Agent Economies</div>
+            <div class="divider"></div>
+        </header>
+
+        <main class="content">
+            <!-- EXECUTIVE SUMMARY -->
+            <section class="headline-section" style="grid-template-columns: 1fr;">
+                <article class="main-story">
+                    <h2 class="headline">Executive Summary</h2>
+                    <h3 class="subheading">Building the Infrastructure Layer for Million-Agent Economies</h3>
+                    
+                    <div class="story-content">
+                        <p class="lead">Slonana proposes a comprehensive suite of innovations for the Solana Virtual Machine (SVM) enabling fully autonomous AI agents to operate on-chain with millisecond latency, trustless coordination, and hardware-accelerated inference capabilities.</p>
+                        
+                        <p>Traditional blockchains optimize for human users with their transaction speeds, confirmation times, and interface designs. The agent economy demands something fundamentally different: sub-millisecond decision cycles, massive concurrent transaction volumes, programmatic composability, and trustless coordination between independent autonomous systems.</p>
+
+                        <p>This whitepaper synthesizes cutting-edge research from eBPF kernel architecture, Solana's sBPF runtime, and existing automation solutions to propose a novel autonomous async BPF runtime that enables Solana programs to execute continuously, trigger each other via internal event routing, maintain persistent event loops, schedule deferred execution, and preserve Solana's parallel execution model.</p>
+                    </div>
+
+                    <div class="ascii-chart">
+                        <h5>System Architecture Overview</h5>
+                        <pre>
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    SLONANA AUTONOMOUS AGENT RUNTIME                     │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐         │
+│  │  PERCEPTION     │  │   REASONING     │  │    ACTION       │         │
+│  │  ────────────── │  │  ────────────── │  │  ────────────── │         │
+│  │  • Oracle Data  │  │  • ML Inference │  │  • Trade Exec   │         │
+│  │  • Account Watch│──│  • Decision Tree│──│  • CPI Calls    │         │
+│  │  • Event Stream │  │  • Neural Net   │  │  • State Update │         │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘         │
+│           │                   │                    │                    │
+│           └───────────────────┼────────────────────┘                    │
+│                               ▼                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │              AUTONOMOUS EXECUTION LAYER                          │   │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐             │   │
+│  │  │ Block Timers │ │ Acct Watcher │ │ Ring Buffers │             │   │
+│  │  │ (10 slots)   │ │ (On Change)  │ │ (Async Msg)  │             │   │
+│  │  └──────────────┘ └──────────────┘ └──────────────┘             │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                               │                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │              HARDWARE ACCELERATION LAYER                         │   │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐             │   │
+│  │  │ SIMD/AVX-512 │ │  Intel AMX   │ │ Crypto Accel │             │   │
+│  │  │  (ML Ops)    │ │  (MatMul)    │ │ (BLS/ZK)     │             │   │
+│  │  └──────────────┘ └──────────────┘ └──────────────┘             │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+                        </pre>
+                    </div>
+                </article>
+            </section>
+
+            <!-- PART 1: AUTONOMOUS RUNTIME -->
+            <section class="theory-section">
+                <h2 class="section-title">PART 1: AUTONOMOUS RUNTIME ARCHITECTURE</h2>
+                <div class="theory-subtitle">Event-Driven Execution Without External Triggers</div>
+                
+                <div class="theory-content">
+                    <div class="theory-main">
+                        <h3>The Problem with Transaction-Driven Execution</h3>
+                        <p class="theory-lead">Current Solana programs only execute when external transactions invoke them. This limitation prevents autonomous agent behavior, requiring expensive off-chain infrastructure for automation.</p>
+                        
+                        <div class="ascii-chart">
+                            <h5>Current Model (Transaction-Driven)</h5>
+                            <pre>
+  External    Transaction    Banking     sBPF      State
+  Trigger  ──► Processing ──► Stage ──► Execute ──► Commit
+     │                                              │
+     └──────────────────────────────────────────────┘
+                    REQUIRES USER ACTION
+                            </pre>
+                        </div>
+
+                        <div class="ascii-chart">
+                            <h5>Proposed Model (Event-Driven)</h5>
+                            <pre>
+  ┌──────────────────────────────────────────────────────┐
+  │         PROGRAM SCHEDULER THREAD (NEW)               │
+  │                                                      │
+  │  ┌─────────┐  ┌─────────┐  ┌─────────┐             │
+  │  │ Timer   │  │ Account │  │ Ring    │             │
+  │  │ Queue   │  │ Watcher │  │ Buffer  │             │
+  │  └────┬────┘  └────┬────┘  └────┬────┘             │
+  │       │            │            │                   │
+  │       └────────────┼────────────┘                   │
+  │                    ▼                                │
+  │            ┌───────────────┐                        │
+  │            │ Auto-Generate │                        │
+  │            │  Transaction  │                        │
+  │            └───────────────┘                        │
+  │                    │                                │
+  └────────────────────┼────────────────────────────────┘
+                       ▼
+               Banking Stage ──► Execute ──► Commit
+                            </pre>
+                        </div>
+
+                        <div class="theory-highlights">
+                            <div class="theory-item">
+                                <h4>🕐 Block-Based Timers</h4>
+                                <p>Programs self-schedule execution at future slots. Timer callbacks auto-generated by validators, eliminating need for external keepers.</p>
+                            </div>
+                            
+                            <div class="theory-item">
+                                <h4>👁️ Account Watchers</h4>
+                                <p>Programs register to be invoked when specific accounts change state. Oracle price updates, balance changes, ownership transfers trigger immediate execution.</p>
+                            </div>
+                            
+                            <div class="theory-item">
+                                <h4>📬 Ring Buffers</h4>
+                                <p>Lock-free FIFO queues enable async cross-program communication. Multiple producers, multiple consumers with deterministic ordering.</p>
+                            </div>
+                            
+                            <div class="theory-item">
+                                <h4>⚡ Tail Calls</h4>
+                                <p>Programs chain execution without stack growth (max 33 depth). Enables modular agent architectures with specialized components.</p>
+                            </div>
+                        </div>
+
+                        <div class="key-results">
+                            <h4>New Syscalls for Autonomous Execution</h4>
+                            <div class="code-snippet">
+<code>// Timer Management
+sol_timer_init(timer, callback_program, flags) → Result
+sol_timer_start(timer, slot_offset, interval) → Result
+sol_timer_cancel(timer) → Result
+
+// Account Watching
+sol_watch_account(account, callback, condition) → WatcherId
+sol_unwatch_account(watcher_id) → Result
+
+// Async Events
+sol_emit_event(event_id, event_data) → Result
+sol_schedule_execution(target_slot, instruction) → ScheduleId
+
+// Ring Buffer Operations
+sol_ring_buffer_create(size) → RingBufferId
+sol_ring_buffer_push(buffer, data) → Result
+sol_ring_buffer_pop(buffer) → Option&lt;Data&gt;</code>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="theory-sidebar">
+                        <div class="theory-box">
+                            <h4>Performance Impact</h4>
+                            <ul>
+                                <li>Latency: &lt;400ms (same slot)</li>
+                                <li>vs Keepers: 1-5 seconds</li>
+                                <li>Reliability: 99.9% (validator-native)</li>
+                                <li>Cost: Stake-based (one-time)</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="theory-box">
+                            <h4>Comparison</h4>
+                            <ul>
+                                <li>Clockwork: Shut down 2023 ✗</li>
+                                <li>Tuk Tuk: Centralized keepers ✗</li>
+                                <li>Slonana: Validator-native ✓</li>
+                            </ul>
+                        </div>
+
+                        <div class="ascii-charts-sidebar">
+                            <div class="ascii-chart">
+                                <h5>Scheduler Thread</h5>
+                                <pre>
+Banking Stage (6 threads)
+├─ Thread 1-5: User txs
+└─ Thread 6: Scheduler ⭐
+    ├─ Timer callbacks
+    ├─ Watcher callbacks
+    └─ Work queue
+                                </pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- PART 2: AI INFERENCE -->
+            <section class="roadmap-section">
+                <h2 class="section-title">PART 2: ON-CHAIN AI INFERENCE</h2>
+                <div class="roadmap-subtitle">Machine Learning in sBPF: 93ns Inference, 100x Performance Gains</div>
+                
+                <div class="roadmap-content">
+                    <div class="roadmap-phase">
+                        <h3>The Challenge: ML Without Floating-Point</h3>
+                        <ul>
+                            <li><strong>eBPF/sBPF Constraint:</strong> No native floating-point support</li>
+                            <li><strong>Bounded Loops:</strong> Verifier requires compile-time bounds</li>
+                            <li><strong>Stack Limit:</strong> 512 bytes per function</li>
+                            <li><strong>Compute Budget:</strong> 200K-1.4M CU maximum</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="roadmap-phase">
+                        <h3>The Solution: Fixed-Point Arithmetic</h3>
+                        <ul>
+                            <li><strong>INT32 with Scale:</strong> 10000 = 4 decimal places</li>
+                            <li><strong>Accuracy Loss:</strong> &lt;1% vs floating-point</li>
+                            <li><strong>Sigmoid Approximation:</strong> Lookup table or piecewise linear</li>
+                            <li><strong>Softmax:</strong> Numerically stable fixed-point version</li>
+                        </ul>
+                    </div>
+
+                    <div class="roadmap-phase">
+                        <h3>Proven Performance Results</h3>
+                        <ul>
+                            <li><strong>Decision Tree:</strong> 7.1x faster than C, 1453x faster than Python</li>
+                            <li><strong>Neural Network:</strong> 4.8x faster than C, 431x faster than Python</li>
+                            <li><strong>Inference Latency:</strong> 93 nanoseconds (median)</li>
+                            <li><strong>Throughput:</strong> 800,000 inferences/second</li>
+                        </ul>
+                    </div>
+
+                    <div class="roadmap-phase">
+                        <h3>Model Compression Pipeline</h3>
+                        <ul>
+                            <li><strong>Step 1:</strong> Train full model (100MB, 95% accuracy)</li>
+                            <li><strong>Step 2:</strong> Knowledge distillation (10MB, 92%)</li>
+                            <li><strong>Step 3:</strong> INT8 quantization (2.5MB, 91.5%)</li>
+                            <li><strong>Step 4:</strong> Pruning 50% (0.8MB, 90.5%)</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="technical-innovation">
+                    <h4>ML Syscalls for Hardware Acceleration</h4>
+                    <div class="ascii-chart">
+                        <h5>Performance Comparison</h5>
+                        <pre>
+Operation          │ Naive (CU)  │ Optimized (CU) │ Speedup
+───────────────────┼─────────────┼────────────────┼─────────
+MatMul 12×8        │    15,000   │       800      │  18.75x
+ReLU (8 elem)      │     1,200   │        80      │  15.00x
+Softmax (3 elem)   │     3,500   │       250      │  14.00x
+───────────────────┼─────────────┼────────────────┼─────────
+Total Inference    │    19,700   │     1,130      │  17.40x
+
+With Hardware Acceleration (Intel AMX):
+───────────────────┼─────────────┼────────────────┼─────────
+MatMul 64×64       │   410,000   │     4,200      │  97.60x
+MatMul 128×128     │ 3,300,000 ❌ │    15,000      │ 220.00x
+                        </pre>
+                    </div>
+
+                    <div class="code-snippet">
+<code>// Proposed ML Syscalls
+sol_ml_matmul(output, input_a, input_b, m, k, n, scale) → Result
+sol_ml_activation(data, size, activation_type) → Result  // ReLU, Sigmoid, Tanh, Softmax
+sol_ml_argmax(data, size) → u32  // Find maximum element index
+sol_ml_forward(output, input, model_account, sizes) → Result  // Full inference
+
+// Hardware Detection & Optimization
+#[cfg(target_feature = "amx-int8")]  → Intel AMX tile multiply (10-100x)
+#[cfg(target_feature = "avx512")]    → AVX-512 SIMD (8-16x)
+#[cfg(default)]                       → Scalar fallback</code>
+                    </div>
+                </div>
+            </section>
+
+            <!-- PART 3: BPF RUNTIME INNOVATIONS -->
+            <section class="tech-section">
+                <h2 class="section-title">PART 3: BPF RUNTIME INNOVATIONS</h2>
+                <div class="tech-subtitle">10 Major Innovations for 100-1000x Performance Gains</div>
+                
+                <div class="tech-content">
+                    <div class="tech-article-large">
+                        <h3>Comprehensive Runtime Enhancements</h3>
+                        <p class="tech-lead">The current BPF/sBPF runtime was designed for packet filtering and system observability. Autonomous economic agents have fundamentally different requirements: atomic transactions, concurrent execution, cryptographic operations, and economic primitives.</p>
+                        
+                        <div class="ascii-chart">
+                            <h5>Innovation Performance Matrix</h5>
+                            <pre>
+┌────────────────────────────┬───────────────────┬────────────────────┬─────────┐
+│ Innovation                 │ Current Limit     │ Proposed Solution  │ Speedup │
+├────────────────────────────┼───────────────────┼────────────────────┼─────────┤
+│ Transactional Memory       │ Sequential CPIs   │ HTM Instructions   │  10x    │
+│ Crypto Accelerators        │ Software BLS 50K  │ Hardware BLS 500   │ 100x    │
+│ Economic Primitives        │ Manual 200K CU    │ Native Auctions    │  40x    │
+│ Concurrent Execution       │ Single-threaded   │ 8-way Parallel     │   8x    │
+│ Advanced Verifier          │ Basic CFG         │ Symbolic Execution │  NEW    │
+│ Message Passing            │ Account R/W 5K    │ Lock-free 200 CU   │  25x    │
+│ Time-Travel Debugging      │ None              │ Deterministic      │  NEW    │
+│ Hardware Acceleration      │ CPU Only          │ FPGA/ASIC Offload  │ 100x    │
+│ Dynamic Code Loading       │ Redeploy          │ Hot-swap           │  NEW    │
+│ Multi-Tier Execution       │ Full Verify       │ Optimistic Mode    │   5x    │
+├────────────────────────────┴───────────────────┴────────────────────┴─────────┤
+│                              COMBINED IMPACT: 100-1000x                       │
+└───────────────────────────────────────────────────────────────────────────────┘
+                            </pre>
+                        </div>
+
+                        <h4>1. Transactional Memory Instructions</h4>
+                        <div class="code-snippet">
+<code>; Atomic multi-account swap
+tx_begin:
+    mov r0, BPF_TX_BEGIN
+    call bpf_tx_begin          ; Start transaction
+
+    mov r1, [account_a + 8]    ; Load balance A
+    cmp r1, 100
+    jl tx_abort                ; Abort if insufficient
+
+    sub r1, 100                ; Debit A
+    mov [account_a + 8], r1
+
+    mov r2, [account_b + 8]    ; Credit B  
+    add r2, 100
+    mov [account_b + 8], r2
+
+    call bpf_tx_commit         ; All or nothing!
+    jmp done
+
+tx_abort:
+    call bpf_tx_abort          ; Rollback changes
+    exit</code>
+                        </div>
+
+                        <h4>2. Cryptographic Accelerators</h4>
+                        <div class="ascii-chart">
+                            <h5>Hardware Crypto Performance</h5>
+                            <pre>
+Operation            │ Software (CU) │ Hardware (CU) │ Speedup
+─────────────────────┼───────────────┼───────────────┼─────────
+BLS verify           │      50,000   │         500   │   100x
+BLS aggregate (10)   │     250,000   │       2,000   │   125x
+Groth16 ZK verify    │     500,000   │       5,000   │   100x
+PLONK ZK verify      │   1,000,000   │      10,000   │   100x
+Poseidon hash        │       5,000   │          50   │   100x
+                            </pre>
+                        </div>
+
+                        <h4>3. Native Economic Primitives</h4>
+                        <div class="code-snippet">
+<code>// Built-in auction, escrow, reputation opcodes
+BPF_ECON_AUCTION_CREATE     = 0xD0  // Create VCG/GSP auction
+BPF_ECON_AUCTION_BID        = 0xD1  // Submit sealed bid  
+BPF_ECON_AUCTION_SETTLE     = 0xD3  // Compute optimal allocation
+
+BPF_ECON_ESCROW_CREATE      = 0xD4  // Multi-party escrow
+BPF_ECON_ESCROW_RELEASE     = 0xD5  // Condition-based release
+
+BPF_ECON_REPUTATION_UPDATE  = 0xD7  // Track agent performance
+BPF_ECON_STAKE_SLASH        = 0xDA  // Economic punishment</code>
+                        </div>
+                    </div>
+                    
+                    <div class="tech-article-side">
+                        <div class="tech-box">
+                            <h4>Concurrent Execution</h4>
+                            <ul>
+                                <li>Per-agent parallel lanes</li>
+                                <li>Fork-join deterministic</li>
+                                <li>8-core: 7x speedup</li>
+                                <li>Verifier ensures no races</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="tech-box">
+                            <h4>Message Passing</h4>
+                            <ul>
+                                <li>Lock-free ring buffers</li>
+                                <li>Send: 200 CU (vs 2K)</li>
+                                <li>Receive: 100 CU (vs 1.5K)</li>
+                                <li>Same-slot latency</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="tech-box">
+                            <h4>Advanced Verifier</h4>
+                            <ul>
+                                <li>Symbolic execution</li>
+                                <li>Overflow detection</li>
+                                <li>Information flow</li>
+                                <li>Economic invariants</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- PART 4: SBPFUNCS EXTENSIBILITY -->
+            <section class="architecture-section">
+                <h2 class="section-title">PART 4: SBPFUNCS EXTENSIBILITY</h2>
+                <div class="arch-subtitle">Governance-Controlled Runtime Extensions</div>
+                
+                <div class="architecture-content">
+                    <div class="arch-main">
+                        <h3>The Problem with Current Syscall Model</h3>
+                        <p class="arch-lead">All sBPF syscalls are hardcoded in Solana's runtime. Adding new syscalls requires core protocol changes, months of governance, and backward compatibility forever. This is a centralized innovation bottleneck.</p>
+
+                        <div class="ascii-chart">
+                            <h5>SBPFuncs Architecture</h5>
+                            <pre>
+┌─────────────────────────────────────────────────────────────┐
+│                    SOLANA RUNTIME (Core)                    │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌───────────────────────────────────────────────────────┐ │
+│  │  Core Syscalls (Stable, Cannot Change)                │ │
+│  │  • sol_memcpy, sol_sha256, sol_invoke_signed          │ │
+│  └───────────────────────────────────────────────────────┘ │
+│                                                             │
+│  ┌───────────────────────────────────────────────────────┐ │
+│  │  SBPFuncs Registry (NEW - Dynamic)                    │ │
+│  │                                                        │ │
+│  │  ┌─────────────────┐  ┌─────────────────┐            │ │
+│  │  │   ML Module     │  │  DeFi Module    │            │ │
+│  │  │ • matmul        │  │ • get_pyth_price│            │ │
+│  │  │ • activation    │  │ • calc_swap     │            │ │
+│  │  │ • forward       │  │ • imperm_loss   │            │ │
+│  │  └─────────────────┘  └─────────────────┘            │ │
+│  │                                                        │ │
+│  │  ┌─────────────────┐  ┌─────────────────┐            │ │
+│  │  │ Crypto Module   │  │ DataStruct Mod  │            │ │
+│  │  │ • zk_verify     │  │ • ring_buffer   │            │ │
+│  │  │ • bls_pairing   │  │ • priority_queue│            │ │
+│  │  │ • poseidon_hash │  │ • bloom_filter  │            │ │
+│  │  └─────────────────┘  └─────────────────┘            │ │
+│  │                                                        │ │
+│  └───────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+                            </pre>
+                        </div>
+
+                        <div class="optimization-grid">
+                            <div class="optimization-item">
+                                <h4>Proposal</h4>
+                                <p>Developer submits SBPFunc implementation with code, tests, benchmarks, and security audit. Posted to governance forum for community review.</p>
+                            </div>
+                            
+                            <div class="optimization-item">
+                                <h4>Review (2 weeks)</h4>
+                                <p>Community reviews code, security researchers audit, validators benchmark. Check determinism across CPU architectures.</p>
+                            </div>
+                            
+                            <div class="optimization-item">
+                                <h4>Testnet (4 weeks)</h4>
+                                <p>Deploy to testnet, run fuzzing tests, monitor for consensus failures, measure actual CU costs vs declared.</p>
+                            </div>
+                            
+                            <div class="optimization-item">
+                                <h4>Governance Vote</h4>
+                                <p>Token holders vote with 66% supermajority required. Validators signal activation. Total: ~7 weeks (vs 6-12 months for core syscall).</p>
+                            </div>
+                        </div>
+
+                        <div class="key-results">
+                            <h4>SBPFunc Interface</h4>
+                            <div class="code-snippet">
+<code>pub trait SBPFunc: Send + Sync {
+    fn function_id(&self) -> u64;      // Unique hash identifier
+    fn name(&self) -> &str;            // Human-readable name
+    
+    fn execute(
+        &self,
+        args: &[u64],                  // sBPF registers r1-r5
+        memory: &MemoryMapping,
+        ctx: &mut InvokeContext,
+    ) -> Result<u64, EbpfError>;       // Return value in r0
+
+    fn compute_units(&self, args: &[u64]) -> u64;  // CU cost
+    fn security_level(&self) -> SecurityLevel;     // Safe/Moderate/Privileged
+}</code>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="arch-sidebar">
+                        <div class="performance-chart">
+                            <h4>Benefits</h4>
+                            <div class="platform-item">✓ No core changes needed</div>
+                            <div class="platform-item">✓ Community extensibility</div>
+                            <div class="platform-item">✓ Governance control</div>
+                            <div class="platform-item">✓ Backward compatible</div>
+                            <div class="platform-item">✓ Faster innovation</div>
+                        </div>
+                        
+                        <div class="memory-usage">
+                            <h4>Timeline Comparison</h4>
+                            <div class="memory-item">
+                                <span>Core Syscall:</span>
+                                <span>6-12 months</span>
+                            </div>
+                            <div class="memory-item">
+                                <span>SBPFunc:</span>
+                                <span>7 weeks</span>
+                            </div>
+                            <div class="memory-item">
+                                <span>Speedup:</span>
+                                <span>6-8x faster</span>
+                            </div>
+                        </div>
+
+                        <div class="ascii-charts-sidebar">
+                            <div class="ascii-chart">
+                                <h5>Security Checks</h5>
+                                <pre>
+✓ Determinism
+✓ Architecture consistency  
+✓ CU accuracy (±10%)
+✓ Memory safety (Miri)
+✓ No network/I/O
+                                </pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- PART 5: TRUSTLESS MULTI-AGENT ECONOMY -->
+            <section class="theory-section">
+                <h2 class="section-title">PART 5: TRUSTLESS MULTI-AGENT ECONOMY</h2>
+                <div class="theory-subtitle">Mechanism Design, Cryptoeconomics, and Emergent Market Dynamics</div>
+                
+                <div class="theory-content">
+                    <div class="theory-main">
+                        <h3>From Trust-Based to Verification-Based Economics</h3>
+                        <p class="theory-lead">Traditional markets require trusted intermediaries extracting rent at every layer. BPF runtime replaces trust with cryptographic verification, enabling 50-100x lower transaction costs through trustless peer-to-peer coordination.</p>
+
+                        <div class="ascii-chart">
+                            <h5>Economic Friction Comparison</h5>
+                            <pre>
+Traditional Finance (Per Round-Trip Trade)
+─────────────────────────────────────────────────────────
+Exchange fees           │  0.1-0.3%   │  ████████████
+Clearinghouse           │  0.01-0.05% │  ██
+Market maker spread     │  0.05-0.2%  │  ██████
+Broker fees             │  $1-10      │  ███
+─────────────────────────────────────────────────────────
+TOTAL FRICTION          │  0.5-1%     │  █████████████████
+
+
+Trustless Multi-Agent Economy
+─────────────────────────────────────────────────────────
+Runtime verification    │  0 SOL      │  
+Settlement              │  $0.00075   │  
+Agent market making     │  0.01%      │  █
+Direct peer-to-peer     │  $0         │  
+─────────────────────────────────────────────────────────
+TOTAL FRICTION          │  ~0.01%     │  █
+
+                         50-100x REDUCTION
+                            </pre>
+                        </div>
+
+                        <div class="theory-highlights">
+                            <div class="theory-item">
+                                <h4>🔐 Verifiable Execution</h4>
+                                <p>All agent actions deterministically reproducible. Zero counterparty risk through atomic settlement. Perfect transparency on-chain.</p>
+                            </div>
+                            
+                            <div class="theory-item">
+                                <h4>🎯 Incentive Compatibility</h4>
+                                <p>Mechanisms align self-interest with system goals. VCG auctions make truthful bidding optimal. Staking ensures skin in the game.</p>
+                            </div>
+                            
+                            <div class="theory-item">
+                                <h4>🤝 Trustless Coordination</h4>
+                                <p>Smart contracts enforce commitments cryptographically. No reputation or legal contracts needed. Code is law, execution guaranteed.</p>
+                            </div>
+                            
+                            <div class="theory-item">
+                                <h4>📈 Emergent Efficiency</h4>
+                                <p>Agent competition drives market efficiency. MEV extraction reveals price information. Arbitrage eliminates inefficiencies.</p>
+                            </div>
+                        </div>
+
+                        <div class="key-results">
+                            <h4>Mechanism Design Primitives</h4>
+                            <div class="math-formula">
+                                <strong>VCG Payment:</strong> Each winner pays "harm to others" - difference in social welfare
+                            </div>
+                            <div class="math-formula">
+                                <strong>Nash Equilibrium:</strong> No agent improves by unilateral deviation. Smart contracts change payoffs to align incentives.
+                            </div>
+                            <div class="math-formula">
+                                <strong>Walrasian Clearing:</strong> Supply equals demand at market-clearing price
+                            </div>
+                        </div>
+
+                        <div class="ascii-chart">
+                            <h5>Agent Coordination Game</h5>
+                            <pre>
+Without Mechanism (Prisoner's Dilemma):
+                    Agent B
+                 Cooperate   Defect
+Agent A  Cooperate  (3,3)     (0,5)
+         Defect     (5,0)     (1,1) ← Nash
+
+With Smart Contract Enforcement:
+                    Agent B
+                 Cooperate   Defect
+Agent A  Cooperate (+1.5,+1.5) (-1,+2)
+         Defect    (+2,-1)    (-1,-1)
+                     ↑
+             New Nash = (Cooperate, Cooperate) ✓
+                            </pre>
+                        </div>
+                    </div>
+                    
+                    <div class="theory-sidebar">
+                        <div class="theory-box">
+                            <h4>Market Primitives</h4>
+                            <ul>
+                                <li>Flash Loans (zero collateral)</li>
+                                <li>Agent-to-Agent Escrow</li>
+                                <li>Batch Auctions (FBA)</li>
+                                <li>Automated Market Makers</li>
+                                <li>On-chain Order Books</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="theory-box">
+                            <h4>Cryptoeconomic Tools</h4>
+                            <ul>
+                                <li>Staking (1-100 SOL min)</li>
+                                <li>Slashing (1-100%)</li>
+                                <li>Reputation Systems</li>
+                                <li>Fee Markets (EIP-1559)</li>
+                                <li>Oracle Aggregation</li>
+                            </ul>
+                        </div>
+
+                        <div class="ascii-charts-sidebar">
+                            <div class="ascii-chart">
+                                <h5>Flash Loan Flow</h5>
+                                <pre>
+Borrow ─► Execute ─► Repay
+  │          │         │
+  └──────────┴─────────┘
+    Single Atomic Tx
+    
+If Unprofitable:
+    ENTIRE TX REVERTS
+    Zero Loss ✓
+                                </pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- PART 6: AGENT ARCHITECTURES -->
+            <section class="roadmap-section">
+                <h2 class="section-title">PART 6: AUTONOMOUS AGENT ARCHITECTURES</h2>
+                <div class="roadmap-subtitle">Perception-Reasoning-Action Loop in sBPF</div>
+                
+                <div class="roadmap-content">
+                    <div class="roadmap-phase">
+                        <h3>Reactive Agents (Subsumption)</h3>
+                        <ul>
+                            <li><strong>Architecture:</strong> Direct stimulus → response mapping</li>
+                            <li><strong>No world model:</strong> No internal state between invocations</li>
+                            <li><strong>Use case:</strong> Simple arbitrage bots, packet filters</li>
+                            <li><strong>Performance:</strong> Fastest, lowest CU cost</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="roadmap-phase">
+                        <h3>Deliberative Agents (BDI)</h3>
+                        <ul>
+                            <li><strong>Architecture:</strong> Belief-Desire-Intention reasoning</li>
+                            <li><strong>World model:</strong> Maintains beliefs about market state</li>
+                            <li><strong>Use case:</strong> Complex trading strategies</li>
+                            <li><strong>Performance:</strong> Higher CU, more flexible</li>
+                        </ul>
+                    </div>
+
+                    <div class="roadmap-phase">
+                        <h3>Hybrid Agents (Layered)</h3>
+                        <ul>
+                            <li><strong>Layer 1:</strong> Reactive reflexes (stop-loss, circuit breaker)</li>
+                            <li><strong>Layer 2:</strong> Tactical sequencing (position sizing)</li>
+                            <li><strong>Layer 3:</strong> Deliberative planning (regime detection)</li>
+                            <li><strong>Best of both:</strong> Fast reactions + intelligent planning</li>
+                        </ul>
+                    </div>
+
+                    <div class="roadmap-phase">
+                        <h3>Learning Agents (RL)</h3>
+                        <ul>
+                            <li><strong>Online learning:</strong> Update weights incrementally</li>
+                            <li><strong>Q-Learning:</strong> Learn action values from experience</li>
+                            <li><strong>Meta-learning:</strong> Adapt strategy to market regime</li>
+                            <li><strong>Bounded rationality:</strong> CU limits force satisficing</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="technical-innovation">
+                    <div class="ascii-chart">
+                        <h5>Perception-Reasoning-Action Loop</h5>
+                        <pre>
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         ENVIRONMENT                                      │
+│  (Blockchain State: Accounts, Oracle Prices, Pool Reserves)             │
+└────────────────────┬────────────────────────────────▲────────────────────┘
+                     │                                │
+                     │ Sensors                        │ Actuators
+                     │ (Perception)                   │ (Action)
+                     ▼                                │
+    ┌────────────────────────────────────────────────┴───────┐
+    │                      AGENT                              │
+    │                                                         │
+    │  ┌─────────────────────────────────────────────────┐   │
+    │  │  1. PERCEPTION                                  │   │
+    │  │  • Read oracle prices (Pyth, Switchboard)       │   │
+    │  │  • Parse account data (balances, positions)     │   │
+    │  │  • Calculate features (MA, RSI, volatility)     │   │
+    │  │  • Update beliefs about market state            │   │
+    │  └───────────────────────┬─────────────────────────┘   │
+    │                          ▼                              │
+    │  ┌─────────────────────────────────────────────────┐   │
+    │  │  2. REASONING                                   │   │
+    │  │  • ML inference (neural net, decision tree)     │   │
+    │  │  • Rule evaluation (production system)          │   │
+    │  │  • Plan generation (BDI intentions)             │   │
+    │  │  • Confidence estimation                        │   │
+    │  └───────────────────────┬─────────────────────────┘   │
+    │                          ▼                              │
+    │  ┌─────────────────────────────────────────────────┐   │
+    │  │  3. ACTION                                      │   │
+    │  │  • Execute trades (CPI to DEX)                  │   │
+    │  │  • Update positions                             │   │
+    │  │  • Emit events (ring buffer)                    │   │
+    │  │  • Schedule next execution (timer)              │   │
+    │  └─────────────────────────────────────────────────┘   │
+    └─────────────────────────────────────────────────────────┘
+                        </pre>
+                    </div>
+
+                    <div class="ascii-chart">
+                        <h5>Resource Budget Allocation</h5>
+                        <pre>
+Total Budget: 1,400,000 CU
+─────────────────────────────────────────────────────────
+Perception (20%)    │ 280,000 CU  │ ████████
+                    │             │
+Reasoning (50%)     │ 700,000 CU  │ ████████████████████
+                    │             │
+Action (20%)        │ 280,000 CU  │ ████████
+                    │             │
+Reserve (10%)       │ 140,000 CU  │ ████
+                    │             │
+─────────────────────────────────────────────────────────
+                        </pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- IMPLEMENTATION ROADMAP -->
+            <section class="case-studies-section">
+                <h2 class="section-title">IMPLEMENTATION ROADMAP</h2>
+                <div class="case-studies-content">
+                    <div class="case-study large-case">
+                        <h3>Phase 1: Core Runtime Features (6 months)</h3>
+                        <h4>Foundation for Autonomous Execution</h4>
+                        
+                        <div class="case-details">
+                            <div class="case-metric">
+                                <strong>Milestone 1.1 - Block Timer System (2 months):</strong> Design timer syscall API, implement scheduler thread, add timer state to Bank, build registry and callback queue.
+                            </div>
+                            
+                            <div class="case-metric">
+                                <strong>Milestone 1.2 - Account Watchers (2 months):</strong> Design watcher syscall API, integrate with AccountsDB, implement trigger conditions, add debouncing and rate limiting.
+                            </div>
+                            
+                            <div class="case-metric">
+                                <strong>Milestone 1.3 - Program Scheduler Thread (2 months):</strong> Add 6th Banking Stage worker, implement work queue, fee payment from escrow, monitoring and load testing.
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="case-sidebar">
+                        <div class="case-study small-case">
+                            <h4>Phase 2: ML Inference (4 months)</h4>
+                            <p>Fixed-point ML syscalls, hardware acceleration (SIMD, AMX), model compression tooling, integration tests with real models.</p>
+                            <div class="case-stats">
+                                <span>Target: 93ns inference</span><br>
+                                <span>17-100x CU savings</span>
+                            </div>
+                        </div>
+                        
+                        <div class="case-study small-case">
+                            <h4>Phase 3: SBPFuncs (6 months)</h4>
+                            <p>SBPFunc interface design, function registry, governance integration, 20+ reference implementations (ML, DeFi, crypto).</p>
+                            <div class="case-stats">
+                                <span>7-week activation</span><br>
+                                <span>vs 6-12 months legacy</span>
+                            </div>
+                        </div>
+                        
+                        <div class="case-study small-case">
+                            <h4>Phase 4-5: Optimization (7 months)</h4>
+                            <p>JIT enhancements (20-50x), parallel execution (4-7x), tail calls, ring buffers, advanced map types.</p>
+                            <div class="case-stats">
+                                <span>Total: 23 months</span><br>
+                                <span>Q1 2025 - Q4 2026</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ECONOMIC MODEL -->
+            <section class="developer-section">
+                <h2 class="section-title">ECONOMIC MODEL</h2>
+                <div class="developer-content">
+                    <div class="developer-story">
+                        <h3>Cost Analysis: Autonomous Trading Bot</h3>
+                        <h4>On-Chain vs Off-Chain Infrastructure Comparison</h4>
+                        
+                        <div class="ascii-chart">
+                            <h5>Monthly Operating Costs</h5>
+                            <pre>
+SLONANA ON-CHAIN AGENT
+─────────────────────────────────────────────────────────────
+Heartbeat (every 4 seconds)
+├─ 21,600 callbacks/day × 30 days = 648,000 callbacks
+├─ 5,000 CU per callback = 3.24B CU
+├─ Cost: 3,240 txs × 0.000005 SOL = 0.0162 SOL    │  $2.43
+                                                  │
+Oracle callbacks (price updates)                  │
+├─ 1,000/day × 30 days = 30,000 callbacks        │
+├─ Cost: 30,000 × 0.000005 SOL = 0.15 SOL        │  $22.50
+                                                  │
+Trade executions (100/month)                      │
+├─ Cost: 100 × 0.000005 SOL = 0.0005 SOL         │  $0.075
+─────────────────────────────────────────────────────────────
+TOTAL MONTHLY                                     │  $25.50
+
+
+TRADITIONAL OFF-CHAIN INFRASTRUCTURE
+─────────────────────────────────────────────────────────────
+AWS Lambda (similar logic)                        │  $400-800
+Hetzner VPS                                       │  $50-100
+Keeper Network Fees                               │  $100-200
+Monitoring/Alerting                               │  $50-100
+─────────────────────────────────────────────────────────────
+TOTAL MONTHLY                                     │  $600-1200
+
+
+                SLONANA IS 20-50x CHEAPER
+                            </pre>
+                        </div>
+                    </div>
+                    
+                    <div class="developer-sidebar">
+                        <div class="dev-tip-box">
+                            <h4>Staking Economics</h4>
+                            <ul>
+                                <li>Stake 1 SOL = 1000 CU/slot</li>
+                                <li>Stake once, execute forever</li>
+                                <li>No ongoing transaction fees</li>
+                                <li>Validators earn staking yield</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="dev-tip-box">
+                            <h4>Slot Budget</h4>
+                            <ul>
+                                <li>User txs: 1.0M CU (71%)</li>
+                                <li>Autonomous: 400K CU (29%)</li>
+                                <li>Priority: User first</li>
+                                <li>Background: FIFO queue</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- CONCLUSION -->
+            <section class="bottom-stories">
+                <div class="story-grid">
+                    <article class="small-story">
+                        <h4>The Vision</h4>
+                        <p>Million-agent economies running on blockchain with performance exceeding centralized cloud infrastructure. Fully autonomous AI trading agents making real-time decisions with millisecond latency and zero off-chain dependencies.</p>
+                    </article>
+                    
+                    <article class="small-story">
+                        <h4>Key Innovations</h4>
+                        <p>Block timers, account watchers, ML syscalls, SBPFuncs extensibility, hardware acceleration, trustless coordination. Combined impact: 100-1000x performance improvement for agent workloads.</p>
+                    </article>
+                    
+                    <article class="small-story">
+                        <h4>Economic Impact</h4>
+                        <p>50-100x lower transaction friction vs traditional finance. $25/month agent operation vs $600-1200 cloud infrastructure. Permissionless entry, competitive fees, no intermediary rent extraction.</p>
+                    </article>
+                    
+                    <article class="small-story">
+                        <h4>Community-Owned</h4>
+                        <p>Fair-launched with no pre-mine. DAO-governed protocol parameters. Open source development. Economic incentives aligned with network health, not investor returns.</p>
+                    </article>
+                </div>
+            </section>
+
+        <footer class="newspaper-footer">
+            <div class="footer-divider"></div>
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h5>Document Info</h5>
+                    <p>Version: 2.0</p>
+                    <p>Last Updated: November 2025</p>
+                </div>
+                <div class="footer-section">
+                    <h5>References</h5>
+                    <p>eBPF Documentation (docs.ebpf.io)</p>
+                    <p>Solana sBPF Specification</p>
+                </div>
+                <div class="footer-section">
+                    <h5>Research Sources</h5>
+                    <p>openSVM/osvm-cli Research</p>
+                    <p>arXiv:2409.06452 (ML in eBPF)</p>
+                </div>
+            </div>
+            <div class="copyright">Slonana Whitepaper - Technical Specification for Autonomous Agent Runtime</div>
+        </footer>
+    </div>
+</body>
+</html>

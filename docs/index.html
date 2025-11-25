@@ -28,6 +28,7 @@
             <div class="publication-info">
                 <div class="date">Vol. 1, No. 1 - The Agent Economy Era</div>
                 <button class="buy-slonana-btn" onclick="window.open('https://axiom.trade/t/3C6S7LGiyzdr5j1ZB2WfadPPzbwE15VxntmdtGY3BAGS/@slonana', '_blank')">Buy $SLONANA</button>
+                <a href="whitepaper.html" class="buy-slonana-btn" style="text-decoration:none;">📖 Whitepaper</a>
                 <div class="price">1 $SLONANA = 0.1 $SLON ;</div>
             </div>
             <h1 class="newspaper-title">MULTIPOLAR CAPITAL MARKETS</h1>
@@ -172,6 +173,272 @@
                         <li><strong>Resilience:</strong> Infrastructure must operate without human intervention</li>
                     </ul>
                     <p>Slonana provides this foundation through proven SVM technology, community governance, and purpose-built agent infrastructure.</p>
+                </div>
+            </section>
+
+            <!-- AUTONOMOUS RUNTIME SECTION -->
+            <section class="theory-section">
+                <h2 class="section-title">AUTONOMOUS RUNTIME INNOVATIONS</h2>
+                <div class="theory-subtitle">BPF Runtime Enhancements for Event-Driven Execution</div>
+                
+                <div class="theory-content">
+                    <div class="theory-main">
+                        <h3>Next-Generation On-Chain Agent Infrastructure</h3>
+                        <p class="theory-lead">Slonana extends the Solana Virtual Machine with autonomous execution capabilities, enabling programs to run continuously without external triggers—eliminating the need for expensive off-chain keeper infrastructure.</p>
+                        
+                        <div class="theory-highlights">
+                            <div class="theory-item">
+                                <h4>🕐 Block-Based Timers</h4>
+                                <p>Programs self-schedule execution at future slots. Validators auto-generate callbacks. Heartbeat bots run for $2.43/month vs $400+ cloud infrastructure.</p>
+                            </div>
+                            
+                            <div class="theory-item">
+                                <h4>👁️ Account Watchers</h4>
+                                <p>Automatic triggers on state changes. React to oracle price updates, balance changes, or ownership transfers within same slot (&lt;400ms latency).</p>
+                            </div>
+                            
+                            <div class="theory-item">
+                                <h4>🧠 On-Chain ML Inference</h4>
+                                <p>Fixed-point neural networks run in sBPF. 93ns inference latency, 7.1x faster than C, 1453x faster than Python. Hardware acceleration via Intel AMX.</p>
+                            </div>
+                            
+                            <div class="theory-item">
+                                <h4>⚡ SBPFuncs Extensibility</h4>
+                                <p>Governance-controlled runtime extensions. Community adds new syscalls in 7 weeks vs 6-12 months. No core protocol changes needed.</p>
+                            </div>
+                        </div>
+                        
+                        <div class="ascii-charts">
+                            <h4>Autonomous Execution Architecture</h4>
+                            
+                            <div class="ascii-chart">
+                                <h5>Event-Driven Program Scheduler</h5>
+                                <pre>
+  ┌──────────────────────────────────────────────────────┐
+  │         PROGRAM SCHEDULER THREAD (NEW)               │
+  │                                                      │
+  │  ┌─────────┐  ┌─────────┐  ┌─────────┐             │
+  │  │ Timer   │  │ Account │  │ Ring    │             │
+  │  │ Queue   │  │ Watcher │  │ Buffer  │             │
+  │  └────┬────┘  └────┬────┘  └────┬────┘             │
+  │       │            │            │                   │
+  │       └────────────┼────────────┘                   │
+  │                    ▼                                │
+  │            ┌───────────────┐                        │
+  │            │ Auto-Generate │                        │
+  │            │  Transaction  │                        │
+  │            └───────────────┘                        │
+  └────────────────────┼────────────────────────────────┘
+                       ▼
+               Banking Stage ──► Execute ──► Commit
+                </pre>
+                            </div>
+                            
+                            <div class="ascii-chart">
+                                <h5>AI Agent Perception-Reasoning-Action Loop</h5>
+                                <pre>
+┌─────────────────────────────────────────────────────────┐
+│                    AUTONOMOUS AGENT                      │
+├─────────────────────────────────────────────────────────┤
+│  ┌───────────────┐  ┌───────────────┐  ┌─────────────┐ │
+│  │  PERCEPTION   │  │   REASONING   │  │   ACTION    │ │
+│  │  ───────────  │  │  ───────────  │  │  ─────────  │ │
+│  │  Oracle Data  │→│  ML Inference │→│  Trade Exec │ │
+│  │  Acct Watcher │  │  Decision Tree│  │  CPI Calls  │ │
+│  │  Event Stream │  │  Neural Net   │  │  State Upd  │ │
+│  └───────────────┘  └───────────────┘  └─────────────┘ │
+│           │                │                 │         │
+│           │      ┌─────────┴─────────┐      │         │
+│           └──────│  Fixed-Point Math  │──────┘         │
+│                  │  INT32 (10000 scale)│               │
+│                  │  93ns inference     │               │
+│                  └────────────────────┘                │
+└─────────────────────────────────────────────────────────┘
+                </pre>
+                            </div>
+                            
+                            <div class="ascii-chart">
+                                <h5>Performance Comparison</h5>
+                                <pre>
+Operation         │ Traditional │ Slonana    │ Improvement
+──────────────────┼─────────────┼────────────┼────────────
+ML Inference      │   661ns (C) │   93ns     │    7.1x
+Timer Latency     │  1-5 sec    │  &lt;400ms    │   10-25x
+Monthly Cost      │   $600-1200 │   $25      │   20-50x
+Keeper Reliability│   95%       │   99.9%    │   Native
+ML Model CU       │  19,700     │   1,130    │   17.4x
+
+Hardware Acceleration (Intel AMX):
+MatMul 64×64      │  410,000 CU │  4,200 CU  │   97.6x
+MatMul 128×128    │  3.3M CU ❌  │  15,000 CU │  220.0x
+                </pre>
+                            </div>
+                        </div>
+                        
+                        <div class="key-results">
+                            <h4>New Syscalls for Autonomous Execution</h4>
+                            <div class="math-formula">
+                                <strong>Timer:</strong> sol_timer_init(), sol_timer_start(slot_offset, interval), sol_timer_cancel()
+                            </div>
+                            <div class="math-formula">
+                                <strong>Watcher:</strong> sol_watch_account(pubkey, condition) → triggers on AnyChange, DataChanged, LamportsChanged
+                            </div>
+                            <div class="math-formula">
+                                <strong>ML:</strong> sol_ml_matmul(), sol_ml_activation(ReLU|Sigmoid|Softmax), sol_ml_forward()
+                            </div>
+                            <div class="math-formula">
+                                <strong>Async:</strong> sol_ring_buffer_create(), sol_ring_buffer_push(), sol_ring_buffer_pop()
+                            </div>
+                        </div>
+                        
+                        <div class="paper-access">
+                            <a href="whitepaper.html" class="theory-paper-btn">📖 Read Full Whitepaper</a>
+                            <p class="paper-note">Comprehensive technical specification with implementation roadmap</p>
+                        </div>
+                    </div>
+                    
+                    <div class="theory-sidebar">
+                        <div class="theory-box">
+                            <h4>Whitepaper Contents</h4>
+                            <ul>
+                                <li>Autonomous Runtime Architecture</li>
+                                <li>On-Chain AI Inference</li>
+                                <li>BPF Runtime Innovations</li>
+                                <li>SBPFuncs Extensibility</li>
+                                <li>Trustless Multi-Agent Economy</li>
+                                <li>Agent Architectures</li>
+                                <li>Implementation Roadmap</li>
+                                <li>Economic Model</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="theory-box">
+                            <h4>Key Metrics</h4>
+                            <ul>
+                                <li>93ns inference latency</li>
+                                <li>7.1x faster than C</li>
+                                <li>1453x faster than Python</li>
+                                <li>800K inferences/second</li>
+                                <li>100KB compressed models</li>
+                                <li>&lt;1% accuracy loss</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="ascii-charts-sidebar">
+                            <div class="ascii-chart">
+                                <h5>Cost Breakdown</h5>
+                                <pre>
+Slonana Agent: $25/mo
+├─ Heartbeat: $2.43
+├─ Oracle rx: $22.50
+└─ Trades:    $0.08
+
+vs Cloud: $600-1200/mo
+├─ AWS Lambda
+├─ VPS
+└─ Keepers
+                </pre>
+                            </div>
+                            
+                            <div class="ascii-chart">
+                                <h5>Innovation Timeline</h5>
+                                <pre>
+Phase 1: 6 months
+├─ Block Timers
+├─ Account Watchers  
+└─ Scheduler Thread
+
+Phase 2: 4 months
+├─ ML Syscalls
+├─ Hardware Accel
+└─ Model Tooling
+
+Phase 3: 6 months
+├─ SBPFuncs
+├─ Governance
+└─ 20+ modules
+                </pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TRUSTLESS ECONOMY SECTION -->
+            <section class="roadmap-section">
+                <h2 class="section-title">TRUSTLESS MULTI-AGENT ECONOMY</h2>
+                <div class="roadmap-subtitle">Mechanism Design for Verifiable Agent Coordination</div>
+                
+                <div class="roadmap-content">
+                    <div class="roadmap-phase">
+                        <h3>Verifiable Execution</h3>
+                        <ul>
+                            <li><strong>Deterministic:</strong> All agent actions cryptographically reproducible</li>
+                            <li><strong>Atomic Settlement:</strong> Zero counterparty risk, instant finality</li>
+                            <li><strong>Perfect Transparency:</strong> All state changes publicly verifiable</li>
+                            <li><strong>Permissionless Entry:</strong> Anyone can deploy agents or protocols</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="roadmap-phase">
+                        <h3>Incentive Compatibility</h3>
+                        <ul>
+                            <li><strong>VCG Auctions:</strong> Truthful bidding is dominant strategy</li>
+                            <li><strong>Staking/Slashing:</strong> Capital at risk ensures honest behavior</li>
+                            <li><strong>Nash Equilibrium:</strong> Cooperation via payoff modification</li>
+                            <li><strong>Reputation Systems:</strong> Track performance without oracles</li>
+                        </ul>
+                    </div>
+
+                    <div class="roadmap-phase">
+                        <h3>Market Primitives</h3>
+                        <ul>
+                            <li><strong>Flash Loans:</strong> Borrow millions with zero collateral, atomic repay</li>
+                            <li><strong>Agent Escrow:</strong> Multi-party condition-based contracts</li>
+                            <li><strong>Batch Auctions:</strong> MEV-resistant price discovery (FBA)</li>
+                            <li><strong>On-Chain Order Books:</strong> Sub-slot latency CLOB</li>
+                        </ul>
+                    </div>
+
+                    <div class="roadmap-phase">
+                        <h3>Economic Impact</h3>
+                        <ul>
+                            <li><strong>50-100x Lower Friction:</strong> ~0.01% vs 0.5-1% traditional</li>
+                            <li><strong>No Intermediary Rent:</strong> Direct peer-to-peer coordination</li>
+                            <li><strong>Competitive Fees:</strong> Agent market making at 0.01% spread</li>
+                            <li><strong>Emergent Efficiency:</strong> Arbitrage eliminates inefficiencies</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="technical-innovation">
+                    <h4>Trustless Coordination Mechanisms</h4>
+                    <div class="ascii-chart">
+                        <h5>Economic Friction Comparison</h5>
+                        <pre>
+Traditional Finance (Per Round-Trip Trade)
+─────────────────────────────────────────────────────────
+Exchange fees           │  0.1-0.3%   │  ████████████
+Clearinghouse           │  0.01-0.05% │  ██
+Market maker spread     │  0.05-0.2%  │  ██████
+Broker fees             │  $1-10      │  ███
+─────────────────────────────────────────────────────────
+TOTAL FRICTION          │  0.5-1%     │  █████████████████
+
+
+Trustless Multi-Agent Economy (Slonana)
+─────────────────────────────────────────────────────────
+Runtime verification    │  0 SOL      │  
+Settlement              │  $0.00075   │  
+Agent market making     │  0.01%      │  █
+Direct peer-to-peer     │  $0         │  
+─────────────────────────────────────────────────────────
+TOTAL FRICTION          │  ~0.01%     │  █
+
+                         50-100x REDUCTION
+                        </pre>
+                    </div>
+                    <p>This represents a fundamental restructuring of market economics—enabling million-agent economies that operate 24/7 with zero off-chain dependencies, making real-time trading decisions with millisecond latency, and coordinating trustlessly through cryptographic verification rather than legal contracts.</p>
                 </div>
             </section>
 
@@ -864,19 +1131,22 @@ Equilibrium
                     <h5>Project Information</h5>
                     <p>GitHub: slonana-labs/slonana.cpp</p>
                     <p>License: Unlicense (Public Domain)</p>
+                    <p><a href="whitepaper.html" style="color:#333;">📖 Technical Whitepaper</a></p>
+                </div>
+                <div class="footer-section">
+                    <h5>Documentation</h5>
+                    <p><a href="svm-consensus-theory.html" style="color:#333;">Consensus Theory</a></p>
+                    <p><a href="whitepaper.html" style="color:#333;">Autonomous Runtime</a></p>
+                    <p><a href="ARCHITECTURE.md" style="color:#333;">Architecture Guide</a></p>
                 </div>
                 <div class="footer-section">
                     <h5>Governance</h5>
                     <p>Community-Owned Network</p>
                     <p>DAO-Governed Protocol</p>
-                </div>
-                <div class="footer-section">
-                    <h5>Community</h5>
                     <p>Fair-Launched | No Pre-Mine</p>
-                    <p>Open Development | Open Source</p>
                 </div>
             </div>
-            <div class="copyright">The Slonana Network - Community-owned infrastructure for autonomous agents.</div>
+            <div class="copyright">The Slonana Network - Community-owned infrastructure for autonomous agents. Powered by BPF Runtime Innovations.</div>
         </footer>
     </div>
 </body>
