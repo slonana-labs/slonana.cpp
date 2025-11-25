@@ -166,7 +166,7 @@
 │      └─ BTF integration, Intel AMX, governance model                     │  │
 │                                                                          │  │
 │  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  │
-│  ▓  IMPLEMENTATION (Parts 11-13)                                         ▓  │
+│  ▓  IMPLEMENTATION (Parts 11-14)                                         ▓  │
 │  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  │
 │  │                                                                       │  │
 │  ├─► Part 11: Advanced Verifier Capabilities                             │  │
@@ -175,8 +175,11 @@
 │  ├─► Part 12: Production Use Cases                                       │  │
 │  │   └─ Trading bots, MEV extraction, market making, swarm agents        │  │
 │  │                                                                       │  │
-│  └─► Part 13: Future Research Directions                                 │  │
-│      └─ RL agents, neuro-symbolic AI, cross-chain, LLMs on-chain         │  │
+│  ├─► Part 13: Future Research Directions                                 │  │
+│  │   └─ RL agents, neuro-symbolic AI, cross-chain, LLMs on-chain         │  │
+│  │                                                                       │  │
+│  └─► Part 14: Meshtastic/Meshcore Global Payment Network ⭐              │  │
+│      └─ Orbital nodes, censorship-resistant mesh, owned by no one        │  │
 │                                                                          │  │
 └─────────────────────────────────────────────────────────────────────────────┘
                         </pre>
@@ -2720,6 +2723,533 @@ TRANSPARENCY:
                 </div>
             </section>
 
+        <!-- PART 14: MESHTASTIC/MESHCORE GLOBAL PAYMENT NETWORK -->
+        <section class="architecture-section">
+            <h2 class="section-title">PART 14: MESHTASTIC/MESHCORE GLOBAL PAYMENT NETWORK</h2>
+            <div class="arch-subtitle">Infrastructure Layer for Censorship-Resistant Decentralized Finance Owned by No One</div>
+            
+            <div class="architecture-content">
+                <div class="arch-main">
+                    <h3>The Last Mile Problem for Decentralized Finance</h3>
+                    <p class="arch-lead">While blockchain solves trust, it still depends on traditional internet infrastructure—ISPs, DNS, CDNs—creating centralization chokepoints. Meshtastic and Meshcore enable a fully decentralized physical layer where transactions propagate through mesh networks independent of any corporation or government.</p>
+
+                    <div class="ascii-chart">
+                        <h5>Traditional vs Mesh Payment Infrastructure</h5>
+                        <pre>
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│              INFRASTRUCTURE DEPENDENCY COMPARISON                               │
+├─────────────────────────────────────────────────────────────────────────────────┤
+
+TRADITIONAL (Centralized Chokepoints):
+──────────────────────────────────────────────────────────────────────────────────
+
+User A ──► ISP ──► Backbone ──► Data Center ──► Blockchain ──► Data Center ──► ISP ──► User B
+           │         │              │                              │           │
+           ▼         ▼              ▼                              ▼           ▼
+        CENSORABLE  CENSORABLE   CENSORABLE                    CENSORABLE   CENSORABLE
+
+Failure Points:
+├─ ISP blocks traffic (Russia, China, Iran)
+├─ DNS seizure (domain takedowns)
+├─ Backbone provider cuts access
+├─ Government firewall (Great Firewall)
+└─ Data center jurisdiction issues
+
+
+MESHTASTIC/MESHCORE (No Centralization):
+──────────────────────────────────────────────────────────────────────────────────
+
+                        ┌─────────────────────┐
+                        │   SATELLITE NODE    │ ◄── LEO Constellation
+                        │   (Space Layer)     │     (Starlink-compatible)
+                        └──────────┬──────────┘
+                                   │
+          ┌────────────────────────┼────────────────────────┐
+          │                        │                        │
+          ▼                        ▼                        ▼
+    ┌──────────┐            ┌──────────┐            ┌──────────┐
+    │ Node A   │◄──LoRa────►│ Node B   │◄──LoRa────►│ Node C   │
+    │(Mountain)│            │(City)    │            │(Valley)  │
+    └────┬─────┘            └────┬─────┘            └────┬─────┘
+         │                       │                       │
+         ▼                       ▼                       ▼
+    ┌──────────┐            ┌──────────┐            ┌──────────┐
+    │ Node D   │◄──LoRa────►│ Node E   │◄──LoRa────►│ Node F   │
+    │(Village) │            │(Town)    │            │(Farm)    │
+    └──────────┘            └──────────┘            └──────────┘
+
+No Single Point of Failure! ✓
+Every node routes, every user controls their hardware
+                        </pre>
+                    </div>
+
+                    <h4>Meshtastic Protocol Stack for Payments</h4>
+                    <p>Meshtastic is an open-source LoRa mesh networking platform. We extend it with a custom payment layer for censorship-resistant financial transactions.</p>
+
+                    <div class="ascii-chart">
+                        <h5>Payment Protocol Stack</h5>
+                        <pre>
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    MESHPAY PROTOCOL STACK                                       │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  Layer 7: Application                                                           │
+│  ├─ Wallet UI (Mobile/Desktop)                                                  │
+│  ├─ Point-of-Sale Integration                                                   │
+│  └─ Agent Transaction API                                                       │
+│                                                                                 │
+│  Layer 6: Payment Protocol                                                      │
+│  ├─ Transaction Serialization (Borsh, 256 bytes max)                            │
+│  ├─ Digital Signatures (Ed25519)                                                │
+│  ├─ Transaction Batching (up to 10 txs per packet)                              │
+│  └─ Merkle Proof Generation (for offline verification)                          │
+│                                                                                 │
+│  Layer 5: Consensus Sync                                                        │
+│  ├─ Block Header Propagation (80 bytes)                                         │
+│  ├─ Light Client Verification                                                   │
+│  ├─ Optimistic Confirmation (3 hops = high confidence)                          │
+│  └─ Fraud Proof Relaying                                                        │
+│                                                                                 │
+│  Layer 4: Mesh Routing                                                          │
+│  ├─ Meshtastic Protocol (mesh routing)                                          │
+│  ├─ Store-and-Forward (for offline nodes)                                       │
+│  ├─ Multi-path Redundancy                                                       │
+│  └─ Encryption (AES-256-CTR)                                                    │
+│                                                                                 │
+│  Layer 3: Radio Transport                                                       │
+│  ├─ LoRa Modulation (SF7-SF12)                                                  │
+│  ├─ Frequency: 868/915 MHz (region-dependent)                                   │
+│  ├─ Range: 1-20 km per hop                                                      │
+│  └─ Bandwidth: 0.3-37.5 kbps                                                    │
+│                                                                                 │
+│  Layer 2: Hardware                                                              │
+│  ├─ ESP32 + SX1262 (Heltec V3, T-Beam)                                          │
+│  ├─ Solar Powered (autonomous operation)                                        │
+│  └─ Custom ASIC for signing (future)                                            │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                        </pre>
+                    </div>
+
+                    <h4>Orbital Mesh Nodes: Space-Based Payment Relay</h4>
+                    <p>The ultimate censorship resistance: nodes in orbit. LEO satellites at 400-600km altitude can cover entire continents without ground infrastructure dependency.</p>
+
+                    <div class="ascii-chart">
+                        <h5>Orbital Node Architecture</h5>
+                        <pre>
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    SPACE-BASED PAYMENT RELAY                                    │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│                              ★ ORBITAL NODE                                     │
+│                             ╱   400-600 km LEO                                  │
+│                            ╱                                                    │
+│  ┌────────────────────────╱──────────────────────────────────────────────┐     │
+│  │                    ╱                                                   │     │
+│  │              Footprint: 2,000 km diameter                              │     │
+│  │              Coverage: ~3.14 million km²                               │     │
+│  │                                                                        │     │
+│  │  LoRa         LoRa          LoRa          LoRa          LoRa          │     │
+│  │   ▲            ▲             ▲             ▲             ▲            │     │
+│  │   │            │             │             │             │            │     │
+│  │ ┌───┐       ┌───┐        ┌───┐        ┌───┐        ┌───┐            │     │
+│  │ │ A │       │ B │        │ C │        │ D │        │ E │            │     │
+│  │ └───┘       └───┘        └───┘        └───┘        └───┘            │     │
+│  │ Paris      Berlin       Warsaw       Kiev        Moscow              │     │
+│  │                                                                        │     │
+│  └────────────────────────────────────────────────────────────────────────┘     │
+│                                                                                 │
+│  Hardware Specification:                                                        │
+│  ├─ Mass: 3U CubeSat (~4 kg)                                                    │
+│  ├─ Power: Solar panels (10W), batteries (30 Wh)                                │
+│  ├─ Radio: LoRa SX1262 (TX: 22 dBm, RX: -148 dBm)                               │
+│  ├─ Antenna: High-gain helical (10 dBi)                                         │
+│  ├─ Compute: Radiation-hardened ARM + secure enclave                            │
+│  └─ Storage: 32 GB flash (10-year transaction history)                          │
+│                                                                                 │
+│  Link Budget:                                                                   │
+│  ├─ Path loss @ 500km, 915 MHz: 152 dB                                          │
+│  ├─ TX power: +22 dBm                                                           │
+│  ├─ TX antenna: +3 dBi                                                          │
+│  ├─ RX antenna: +10 dBi (satellite)                                             │
+│  ├─ RX sensitivity: -148 dBm (SF12)                                             │
+│  └─ Link margin: +31 dB ✓                                                       │
+│                                                                                 │
+│  Constellation Design:                                                          │
+│  ├─ 12 satellites = global coverage                                             │
+│  ├─ 3 orbital planes @ 60° inclination                                          │
+│  ├─ Revisit time: &lt;15 minutes                                                   │
+│  ├─ Launch cost: ~$300K per satellite (SpaceX rideshare)                        │
+│  └─ Total constellation: ~$4M (crowd-fundable!)                                 │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                        </pre>
+                    </div>
+
+                    <div class="code-snippet">
+<code>/// MeshPay Satellite Node - Rust Implementation
+pub struct OrbitalNode {
+    keypair: Ed25519Keypair,
+    position: OrbitalPosition,
+    mempool: Vec&lt;PendingTransaction&gt;,
+    block_headers: LightClient,
+    
+    // Hardware interfaces
+    lora_radio: LoRaTransceiver,
+    solar_power: PowerManagement,
+    secure_enclave: SecureEnclave,
+}
+
+impl OrbitalNode {
+    /// Process incoming LoRa packet from ground
+    pub fn receive_packet(&mut self, packet: LoRaPacket) -> Result&lt;()&gt; {
+        match packet.packet_type {
+            PacketType::Transaction => {
+                let tx = Transaction::deserialize(&packet.payload)?;
+                
+                // Verify signature
+                if !tx.verify_signature() {
+                    return Err(InvalidSignature);
+                }
+                
+                // Add to mempool for aggregation
+                self.mempool.push(PendingTransaction {
+                    tx,
+                    received_at: self.get_time(),
+                    source_region: packet.source_region,
+                });
+                
+                // Broadcast to constellation (inter-satellite link)
+                self.broadcast_to_constellation(&tx)?;
+            }
+            
+            PacketType::BlockHeader => {
+                let header = BlockHeader::deserialize(&packet.payload)?;
+                self.block_headers.process_header(header)?;
+                
+                // Rebroadcast to ground with signature
+                self.broadcast_to_ground(&header)?;
+            }
+            
+            PacketType::MerkleProof => {
+                // Relay proof for offline verification
+                self.relay_proof(&packet)?;
+            }
+        }
+        Ok(())
+    }
+    
+    /// Aggregate transactions and broadcast batch
+    pub fn aggregate_and_broadcast(&mut self) -> Result&lt;()&gt; {
+        if self.mempool.len() >= 10 || self.aggregation_timeout() {
+            let batch = TransactionBatch {
+                transactions: self.mempool.drain(..).collect(),
+                satellite_signature: self.keypair.sign(&batch_hash),
+                timestamp: self.get_time(),
+            };
+            
+            // Broadcast to ground (all regions in footprint)
+            self.lora_radio.broadcast_batch(batch)?;
+        }
+        Ok(())
+    }
+}</code>
+                    </div>
+
+                    <h4>Ground Network Architecture: Meshcore</h4>
+                    <p>Meshcore provides the dense ground network for last-mile connectivity and urban coverage.</p>
+
+                    <div class="ascii-chart">
+                        <h5>Hierarchical Mesh Network</h5>
+                        <pre>
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    MESHCORE GROUND NETWORK                                      │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  TIER 1: BACKBONE NODES (Solar-powered, high elevation)                        │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │                                                                         │   │
+│  │     🏔️              🏔️              🏔️              🏔️                   │   │
+│  │   Mountain       Mountain        Mountain        Mountain               │   │
+│  │   Node A         Node B          Node C          Node D                 │   │
+│  │      │              │               │               │                   │   │
+│  │      └──────────────┼───────────────┼───────────────┘                   │   │
+│  │                     │               │                                   │   │
+│  │  Range: 50-100 km   │  Connects:    │  Power: 20W solar                 │   │
+│  │  Height: 2000m+     │  Cities       │  Battery: 100Ah                   │   │
+│  │                                                                         │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                 │
+│  TIER 2: URBAN RELAYS (Rooftop-mounted, grid+battery)                          │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │                                                                         │   │
+│  │    🏢  ────  🏢  ────  🏢  ────  🏢  ────  🏢                            │   │
+│  │     │         │         │         │         │                           │   │
+│  │    Building  Building  Building  Building  Building                     │   │
+│  │    Relay A   Relay B   Relay C   Relay D   Relay E                      │   │
+│  │                                                                         │   │
+│  │  Range: 5-10 km (urban)                                                 │   │
+│  │  Density: 1 per 10,000 residents                                        │   │
+│  │  Cost: $50 hardware + volunteer hosting                                 │   │
+│  │                                                                         │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                 │
+│  TIER 3: EDGE DEVICES (User wallets, PoS terminals)                            │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │                                                                         │   │
+│  │  📱  📱  📱  📱  📱  📱  📱  📱  📱  📱  📱  📱  📱  📱  📱  📱          │   │
+│  │                                                                         │   │
+│  │  User devices with LoRa capability                                      │   │
+│  │  Range: 1-5 km (to nearest relay)                                       │   │
+│  │  Form factor: Phone case, USB dongle, embedded                          │   │
+│  │                                                                         │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+Node Economics (Self-Sustaining):
+─────────────────────────────────────────────────────────────────────────────────
+│ Node Type    │ Hardware │ Monthly Op │ Revenue (fees) │ ROI       │
+├──────────────┼──────────┼────────────┼────────────────┼───────────┤
+│ Tier 1       │ $500     │ $5 (solar) │ $50-200        │ 3-6 months│
+│ Tier 2       │ $100     │ $2 (power) │ $20-50         │ 2-4 months│
+│ Tier 3       │ $30      │ $0         │ N/A (user)     │ N/A       │
+└──────────────┴──────────┴────────────┴────────────────┴───────────┘
+                        </pre>
+                    </div>
+
+                    <h4>Global Payment Network Owned by No One</h4>
+                    <p>The key innovation: no single entity owns or controls the network. Ownership is distributed through hardware possession, not stake in a company.</p>
+
+                    <div class="ascii-chart">
+                        <h5>Ownership Distribution Model</h5>
+                        <pre>
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    "OWNED BY NO ONE" ARCHITECTURE                               │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  TRADITIONAL PAYMENT NETWORKS:                                                  │
+│  ─────────────────────────────                                                  │
+│  Visa Inc. ──► owns ──► servers, network, patents, brand                        │
+│  PayPal    ──► owns ──► infrastructure, user data, policies                     │
+│  Banks     ──► own  ──► SWIFT terminals, correspondent relationships            │
+│                                                                                 │
+│  Result: Single points of control, censorship, de-platforming                   │
+│                                                                                 │
+│                                                                                 │
+│  MESHPAY "OWNED BY NO ONE":                                                     │
+│  ──────────────────────────                                                     │
+│                                                                                 │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │                         PROTOCOL (Open Source)                          │   │
+│  │  • MIT Licensed                                                         │   │
+│  │  • No patents                                                           │   │
+│  │  • Anyone can fork                                                      │   │
+│  │  • Changes require consensus                                            │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                              │                                                  │
+│              ┌───────────────┼───────────────┐                                  │
+│              ▼               ▼               ▼                                  │
+│  ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐                │
+│  │  HARDWARE        │ │  NETWORK         │ │  GOVERNANCE       │                │
+│  │  (User-owned)    │ │  (Self-forming)  │ │  (Rough consensus)│                │
+│  │  ───────────     │ │  ─────────────   │ │  ─────────────────│                │
+│  │  • Buy node: $30 │ │  • No DNS        │ │  • No foundation  │                │
+│  │  • Run software  │ │  • No ISP needed │ │  • No company     │                │
+│  │  • Own the node  │ │  • Mesh routes   │ │  • No board       │                │
+│  │  • No permission │ │  • Auto-healing  │ │  • BIP-style RFCs │                │
+│  └──────────────────┘ └──────────────────┘ └──────────────────┘                │
+│                                                                                 │
+│  KEY PROPERTIES:                                                                │
+│  ├─ No company to sue, subpoena, or regulate                                    │
+│  ├─ No employees to arrest                                                      │
+│  ├─ No servers to seize                                                         │
+│  ├─ No domain to take down                                                      │
+│  ├─ No bank account to freeze                                                   │
+│  └─ No jurisdiction applies                                                     │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                        </pre>
+                    </div>
+
+                    <h4>Deployment Scenarios</h4>
+                    <div class="ascii-chart">
+                        <h5>Real-World Use Cases</h5>
+                        <pre>
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    DEPLOYMENT SCENARIOS                                         │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  SCENARIO 1: Sanctions Circumvention (Humanitarian)                             │
+│  ─────────────────────────────────────────────────────────────────────────────  │
+│                                                                                 │
+│    Country A              Border               Country B                        │
+│    (Sanctioned)             │                 (Open)                            │
+│                             │                                                   │
+│    📱 User ──LoRa──► 🏔️ ───│──► 🏔️ ──LoRa──► 📱 Family                        │
+│                             │                                                   │
+│    Remittance sent without bank involvement                                     │
+│    No SWIFT, no correspondent banking, no middleman fees                        │
+│                                                                                 │
+│                                                                                 │
+│  SCENARIO 2: Disaster Recovery                                                  │
+│  ─────────────────────────────────────────────────────────────────────────────  │
+│                                                                                 │
+│    Internet: DOWN ❌     Cell towers: DOWN ❌     Power grid: DOWN ❌            │
+│                                                                                 │
+│    But MeshPay network: OPERATIONAL ✓                                           │
+│                                                                                 │
+│    📱──LoRa──►🏔️──LoRa──►★──LoRa──►🏔️──LoRa──►📱                              │
+│    Victim    Solar    Satellite   Solar    Aid Worker                           │
+│              Node                  Node                                         │
+│                                                                                 │
+│    Aid funds reach victims even without infrastructure                          │
+│                                                                                 │
+│                                                                                 │
+│  SCENARIO 3: Rural Financial Inclusion                                          │
+│  ─────────────────────────────────────────────────────────────────────────────  │
+│                                                                                 │
+│    Village (no cell, no internet, no bank)                                      │
+│                                                                                 │
+│       🏘️ ──LoRa──► 🏔️ ──LoRa──► 🏢 ──Internet──► Blockchain                    │
+│       Village     Mountain     Town Hub     Settlement                          │
+│       Wallet       Relay       Gateway                                          │
+│                                                                                 │
+│    Farmers receive payment for crops without bank account                       │
+│    Cost per transaction: $0.001 (vs $3-5 remittance fee)                        │
+│                                                                                 │
+│                                                                                 │
+│  SCENARIO 4: Protest/Political Organizing                                       │
+│  ─────────────────────────────────────────────────────────────────────────────  │
+│                                                                                 │
+│    Government shuts down internet during protests                               │
+│                                                                                 │
+│    📱──LoRa──►📱──LoRa──►📱──LoRa──►📱──LoRa──►📱                               │
+│                                                                                 │
+│    Crowdfunding continues, legal defense funds flow                             │
+│    No bank can freeze accounts, no ISP can block traffic                        │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                        </pre>
+                    </div>
+
+                    <div class="code-snippet">
+<code>/// Slonana Agent Integration with MeshPay
+(define-autonomous-program mesh-payment-agent
+
+  ;; Subscribe to mesh network events
+  (on-startup
+    (mesh-subscribe-transactions
+      :filter {:amount-min 1.0 :token "SLONANA"}
+      :callback process-mesh-payment))
+  
+  ;; Process incoming mesh payment
+  (define (process-mesh-payment tx)
+    (let* ((sender (get tx "sender"))
+           (amount (get tx "amount"))
+           (merkle-proof (get tx "merkle_proof")))
+      
+      ;; Verify transaction is in confirmed block
+      (if (verify-merkle-proof merkle-proof)
+          (do
+            ;; Credit user's on-chain balance
+            (sol-invoke credit-program
+              {:user sender :amount amount})
+            
+            ;; Emit confirmation back to mesh
+            (mesh-broadcast-confirmation
+              {:tx-id (get tx "id")
+               :status "CONFIRMED"
+               :slot (sol-get-slot)}))
+          
+          ;; Wait for more confirmations
+          (mesh-request-more-proofs sender))))
+
+  ;; Bridge on-chain to mesh (withdrawal)
+  (define (process-mesh-withdrawal request)
+    (let* ((recipient (get request "mesh_address"))
+           (amount (get request "amount")))
+      
+      ;; Burn on-chain tokens
+      (sol-invoke burn-program {:amount amount})
+      
+      ;; Create mesh transaction
+      (mesh-create-transaction
+        {:recipient recipient
+         :amount amount
+         :memo "On-chain withdrawal"}))))</code>
+                    </div>
+                </div>
+                
+                <div class="arch-sidebar">
+                    <div class="performance-chart">
+                        <h4>Network Specs</h4>
+                        <div class="platform-item">Range: 1-100 km/hop</div>
+                        <div class="platform-item">Latency: 1-30 sec</div>
+                        <div class="platform-item">Bandwidth: 300 bps</div>
+                        <div class="platform-item">Power: 5W typical</div>
+                        <div class="platform-item">Cost: $30-500/node</div>
+                    </div>
+
+                    <div class="memory-usage">
+                        <h4>Coverage Goals</h4>
+                        <div class="memory-item">
+                            <span>Phase 1:</span>
+                            <span>10 cities</span>
+                        </div>
+                        <div class="memory-item">
+                            <span>Phase 2:</span>
+                            <span>100 regions</span>
+                        </div>
+                        <div class="memory-item">
+                            <span>Phase 3:</span>
+                            <span>Global (sat)</span>
+                        </div>
+                    </div>
+
+                    <div class="ascii-charts-sidebar">
+                        <div class="ascii-chart">
+                            <h5>Satellite Launch</h5>
+                            <pre>
+12 sats needed:
+├─ 4 per plane
+├─ 3 orbital planes  
+├─ 60° inclination
+├─ $300K per sat
+└─ $4M total
+
+Crowd-fundable
+via DAO! 🚀
+                            </pre>
+                        </div>
+                    </div>
+
+                    <div class="tech-box">
+                        <h4>Key Benefits</h4>
+                        <ul>
+                            <li>No ISP needed</li>
+                            <li>No DNS required</li>
+                            <li>Works offline</li>
+                            <li>Censorship-proof</li>
+                            <li>Disaster-resilient</li>
+                            <li>$0.001 tx cost</li>
+                        </ul>
+                    </div>
+
+                    <div class="tech-box">
+                        <h4>Hardware Options</h4>
+                        <ul>
+                            <li>Heltec V3: $25</li>
+                            <li>T-Beam S3: $45</li>
+                            <li>RAK4631: $35</li>
+                            <li>WisMesh: $50</li>
+                            <li>Custom ASIC: TBD</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- REFERENCES SECTION -->
         <section class="developer-section">
             <h2 class="section-title">TECHNICAL REFERENCES</h2>
@@ -2764,6 +3294,12 @@ TRANSPARENCY:
 │  ├─ "Reinforcement Learning" (Sutton & Barto, 2018)                         │
 │  └─ "Multiagent Systems" (Shoham & Leyton-Brown, 2009)                      │
 │                                                                             │
+│  MESH NETWORKING                                                            │
+│  ├─ Meshtastic Project (meshtastic.org)                                     │
+│  ├─ LoRa Alliance Technical Specifications                                  │
+│  ├─ Semtech SX1262 Datasheet (Long Range, Low Power RF)                     │
+│  └─ CubeSat Design Specification (Cal Poly SLO)                             │
+│                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
                         </pre>
                     </div>
@@ -2773,6 +3309,8 @@ TRANSPARENCY:
                         <li><strong>Intel AMX:</strong> Advanced Matrix Extensions Programming Guide (intel.com)</li>
                         <li><strong>AVX-512:</strong> Intel Intrinsics Guide</li>
                         <li><strong>BLS12-381:</strong> Pairing-friendly curves for cryptographic applications</li>
+                        <li><strong>Meshtastic:</strong> Open source LoRa mesh networking (github.com/meshtastic)</li>
+                        <li><strong>LoRa:</strong> Semtech SX1262 long-range transceiver</li>
                     </ul>
 
                     <h4>Implementation Sources</h4>
