@@ -406,13 +406,14 @@ fn sigmoid_approx(x: i32) -> i32 {
 }
 
 // Bounded loop for tree traversal (verifier-safe)
-#define MAX_DEPTH 20
+// In C/eBPF: #define MAX_DEPTH 20
+const MAX_DEPTH: usize = 20;
 
 fn classify(tree: &DecisionTree, input: &[i32]) -> i32 {
     let mut node = 0;
     
-    #pragma unroll
-    for depth in 0..MAX_DEPTH {
+    // Unrolled iteration - verifier sees bounded loop
+    for _depth in 0..MAX_DEPTH {
         let feature = tree.features[node];
         let threshold = tree.thresholds[node];
         
@@ -1261,12 +1262,12 @@ __bpf_kfunc int bpf_ml_matmul(
     const int *input_a,    // Input A
     const int *input_b,    // Input B
     u32 m, u32 k, u32 n,   // Dimensions
-    int __sz *output,      // Size annotation (BTF magic!)
-    int __sz *input_a,     // Verifier auto-checks bounds
-    int __sz *input_b      // No manual verification needed!
+    u32 output_sz,         // Size of output (BTF paired with pointer)
+    u32 input_a_sz,        // Size of input_a
+    u32 input_b_sz         // Size of input_b
 )
 
-BTF Annotations:
+BTF Annotations (separate size parameters):
 ├─ __sz   → Memory size pair (bounds-checked)
 ├─ __k    → Known constant (compile-time)
 ├─ __uninit → Output param (not read)
@@ -1630,6 +1631,7 @@ private_balance (tainted) ──► if condition (tainted)
         (log :message "💓 Heartbeat" :slot current-slot)
         
         ;; Check positions for stop-loss
+        (define positions (get-state bot-state "positions"))
         (for (position positions)
           (define pnl (calculate-pnl position))
           (if (< pnl (* (get position "entry-value") -0.05))
