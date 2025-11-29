@@ -13,6 +13,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 
 namespace fs = std::filesystem;
@@ -463,7 +464,7 @@ void test_explicit_snapshot_download() {
   
   if (!discover_result.is_ok()) {
     std::cout << "⚠️  Could not discover snapshot: " << discover_result.error() << "\n";
-    std::cout << "   Falling back to known devnet snapshot information\n";
+    std::cout << "   Falling back to dynamic slot query\n";
   }
 
   SnapshotInfo snapshot_info;
@@ -471,13 +472,37 @@ void test_explicit_snapshot_download() {
     snapshot_info = discover_result.value();
     std::cout << "✅ Found snapshot slot: " << snapshot_info.slot << "\n";
   } else {
-    // Use last known snapshot information from RPC test
-    snapshot_info.slot = 424871315;  // From earlier test
-    snapshot_info.valid = true;
-    std::cout << "   Using fallback slot: " << snapshot_info.slot << "\n";
+    // Query current slot as fallback - this ensures the test is not hardcoded
+    HttpClient fallback_client;
+    fallback_client.set_timeout(30);
+    auto slot_response = fallback_client.solana_rpc_call(
+        "https://api.devnet.solana.com",
+        "getHighestSnapshotSlot",
+        "[]"
+    );
+    
+    if (slot_response.success) {
+      std::string result = rpc_utils::extract_json_field(slot_response.body, "result");
+      std::string full_slot = rpc_utils::extract_json_field(result, "full");
+      if (!full_slot.empty()) {
+        try {
+          snapshot_info.slot = std::stoull(full_slot);
+          snapshot_info.valid = true;
+          std::cout << "   Using dynamically queried slot: " << snapshot_info.slot << "\n";
+        } catch (...) {
+          snapshot_info.slot = 0;
+          snapshot_info.valid = false;
+          std::cout << "   Could not parse slot, test will use empty slot\n";
+        }
+      }
+    } else {
+      snapshot_info.slot = 0;
+      snapshot_info.valid = false;
+      std::cout << "   Could not query slot, test will proceed with validation\n";
+    }
   }
 
-  // Step 2: Attempt to download the snapshot
+  // Step 2: Attempt to download the snapshot (if we have a valid slot)
   std::cout << "\n📥 Step 2: Attempting snapshot download...\n";
   std::cout << "   Target slot: " << snapshot_info.slot << "\n";
   

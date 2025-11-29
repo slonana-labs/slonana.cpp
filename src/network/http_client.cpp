@@ -5,6 +5,7 @@
 #include <curl/curl.h>
 #include <fstream>
 #include <iostream>
+#include <mutex>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <regex>
@@ -14,6 +15,16 @@
 
 namespace slonana {
 namespace network {
+
+// Constants for configuration
+constexpr size_t PROGRESS_REPORT_INTERVAL = 102400;  // 100KB
+constexpr long DEFAULT_DOWNLOAD_TIMEOUT = 300L;      // 5 minutes
+
+// Thread-safe CURL initialization
+static std::once_flag curl_init_flag;
+static void init_curl_once() {
+  curl_global_init(CURL_GLOBAL_DEFAULT);
+}
 
 // Callback function for CURL to write response data
 static size_t curl_write_callback(void *contents, size_t size, size_t nmemb,
@@ -45,10 +56,10 @@ static int curl_progress_callback(void *clientp, curl_off_t dltotal,
                                    curl_off_t /* ulnow */) {
   ProgressCallbackData *data = static_cast<ProgressCallbackData *>(clientp);
   if (data && data->callback && dltotal > 0) {
-    // Report progress at most every 100KB to avoid excessive callbacks
-    if (dlnow - data->last_reported > 102400) {
+    // Report progress at intervals to avoid excessive callbacks
+    if (static_cast<size_t>(dlnow) - data->last_reported > PROGRESS_REPORT_INTERVAL) {
       data->callback(static_cast<size_t>(dlnow), static_cast<size_t>(dltotal));
-      data->last_reported = dlnow;
+      data->last_reported = static_cast<size_t>(dlnow);
     }
   }
   return 0;
@@ -56,15 +67,17 @@ static int curl_progress_callback(void *clientp, curl_off_t dltotal,
 
 HttpClient::HttpClient()
     : timeout_seconds_(30), user_agent_("slonana-cpp/1.0") {
-  // Initialize CURL globally (thread-safe)
-  static bool curl_initialized = false;
-  if (!curl_initialized) {
-    curl_global_init(CURL_GLOBAL_DEFAULT);
-    curl_initialized = true;
-  }
+  // Thread-safe initialization of CURL using std::call_once
+  std::call_once(curl_init_flag, init_curl_once);
 }
 
-HttpClient::~HttpClient() {}
+HttpClient::~HttpClient() {
+  // Note: curl_global_cleanup() is intentionally not called here because
+  // it's a global cleanup function that should only be called once when
+  // all CURL usage is complete. In a long-running application with multiple
+  // HttpClient instances, premature cleanup would break other instances.
+  // The OS will clean up when the process exits.
+}
 
 HttpResponse
 HttpClient::get(const std::string &url,
@@ -128,7 +141,7 @@ bool HttpClient::download_file(
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &file);
   curl_easy_setopt(curl, CURLOPT_USERAGENT, user_agent_.c_str());
   curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-  curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds_ > 0 ? timeout_seconds_ : 300L);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds_ > 0 ? static_cast<long>(timeout_seconds_) : DEFAULT_DOWNLOAD_TIMEOUT);
   curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L);
   curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
   curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
