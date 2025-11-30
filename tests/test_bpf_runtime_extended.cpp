@@ -47,9 +47,18 @@ void test_memory_region_zero_size() {
     EnhancedBpfRuntime runtime;
     
     MemoryRegion region(0x1000, 0, MemoryPermission::READ, "zero_size");
-    runtime.add_memory_region(region);
     
-    // Zero-size region should not validate any access
+    // Zero-size region should throw an exception
+    bool threw_exception = false;
+    try {
+        runtime.add_memory_region(region);
+    } catch (const std::invalid_argument& e) {
+        threw_exception = true;
+    }
+    
+    ASSERT_TRUE(threw_exception);
+    
+    // No regions should be added, so validation should fail
     ASSERT_FALSE(runtime.validate_memory_access(0x1000, 1, MemoryPermission::READ));
 }
 
@@ -252,8 +261,9 @@ void test_instruction_cost_all_opcodes() {
     EnhancedBpfRuntime runtime;
     
     // Test that we can get cost for all instruction types
-    for (uint8_t opcode = 0; opcode < 256; opcode++) {
-        uint64_t cost = runtime.get_instruction_cost(opcode);
+    // Use uint16_t to avoid overflow when iterating 0-255
+    for (uint16_t opcode = 0; opcode <= 255; opcode++) {
+        uint64_t cost = runtime.get_instruction_cost(static_cast<uint8_t>(opcode));
         // Cost should be reasonable (1-10000 CU)
         ASSERT_LE(cost, (uint64_t)100000);
     }
