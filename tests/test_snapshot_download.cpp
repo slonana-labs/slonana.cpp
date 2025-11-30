@@ -10,11 +10,14 @@
 #include "network/http_client.h"
 #include "validator/snapshot_bootstrap.h"
 #include "validator/snapshot_finder.h"
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <tuple>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -657,6 +660,258 @@ void test_download_real_solana_data() {
   std::cout << "   Successfully downloaded account and blockhash data from devnet\n";
 }
 
+/**
+ * Test pinging cluster nodes to discover validators with RPC endpoints
+ * This validates the gossip-style node discovery mechanism
+ */
+void test_ping_cluster_nodes() {
+  std::cout << "\n🧪 Test: Ping Cluster Nodes for Validator Discovery\n";
+  std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+  std::cout << "⚠️  This test discovers and pings real Solana validators\n\n";
+
+  HttpClient client;
+  client.set_timeout(15);
+
+  // Step 1: Get cluster nodes from devnet
+  std::cout << "📡 Step 1: Fetching cluster nodes from devnet...\n";
+  
+  auto cluster_response = client.solana_rpc_call(
+      "https://api.devnet.solana.com",
+      "getClusterNodes",
+      "[]"
+  );
+
+  if (!cluster_response.success) {
+    std::cout << "❌ Failed to get cluster nodes: " << cluster_response.error_message << "\n";
+    ASSERT_TRUE(false);
+    return;
+  }
+
+  std::cout << "✅ Retrieved cluster nodes\n";
+
+  // Parse to find nodes with RPC endpoints
+  std::vector<std::pair<std::string, std::string>> rpc_nodes; // (rpc_url, pubkey)
+  
+  // Simple JSON parsing to extract RPC nodes
+  std::string body = cluster_response.body;
+  size_t pos = 0;
+  int nodes_found = 0;
+  int nodes_with_rpc = 0;
+  
+  while ((pos = body.find("\"pubkey\"", pos)) != std::string::npos) {
+    nodes_found++;
+    
+    // Find pubkey value
+    size_t pk_start = body.find("\":", pos) + 2;
+    size_t pk_end = body.find("\"", pk_start + 1);
+    if (pk_start == std::string::npos || pk_end == std::string::npos) break;
+    std::string pubkey = body.substr(pk_start + 1, pk_end - pk_start - 1);
+    
+    // Find rpc value (may be null)
+    size_t rpc_pos = body.find("\"rpc\"", pos);
+    size_t next_node = body.find("\"pubkey\"", pos + 10);
+    
+    if (rpc_pos != std::string::npos && (next_node == std::string::npos || rpc_pos < next_node)) {
+      size_t rpc_val_start = body.find(":", rpc_pos) + 1;
+      // Skip whitespace
+      while (rpc_val_start < body.size() && (body[rpc_val_start] == ' ' || body[rpc_val_start] == '\t')) {
+        rpc_val_start++;
+      }
+      
+      if (body[rpc_val_start] == '"') {
+        // It's a string value, not null
+        size_t rpc_val_end = body.find("\"", rpc_val_start + 1);
+        if (rpc_val_end != std::string::npos) {
+          std::string rpc_addr = body.substr(rpc_val_start + 1, rpc_val_end - rpc_val_start - 1);
+          if (!rpc_addr.empty() && rpc_addr != "null") {
+            rpc_nodes.push_back({"http://" + rpc_addr, pubkey.substr(0, 12) + "..."});
+            nodes_with_rpc++;
+          }
+        }
+      }
+    }
+    
+    pos = pk_end + 1;
+    if (nodes_found > 200) break; // Limit parsing
+  }
+
+  std::cout << "   Total nodes: " << nodes_found << "\n";
+  std::cout << "   Nodes with RPC: " << nodes_with_rpc << "\n\n";
+
+  // Step 2: Ping each RPC node to check health and snapshot availability
+  std::cout << "📡 Step 2: Pinging RPC nodes for health check...\n";
+  
+  int healthy_nodes = 0;
+  int nodes_with_snapshot_info = 0;
+  std::vector<std::tuple<std::string, uint64_t, double>> working_nodes; // (url, slot, latency_ms)
+
+  for (size_t i = 0; i < std::min(rpc_nodes.size(), size_t(10)); i++) {
+    const auto& [rpc_url, pubkey] = rpc_nodes[i];
+    std::cout << "   🔍 Pinging " << rpc_url << " (" << pubkey << ")...\n";
+    
+    auto start = std::chrono::steady_clock::now();
+    
+    // Try to get slot
+    auto slot_response = client.solana_rpc_call(rpc_url, "getSlot", "[]");
+    
+    auto end = std::chrono::steady_clock::now();
+    double latency_ms = std::chrono::duration<double, std::milli>(end - start).count();
+    
+    if (slot_response.success) {
+      healthy_nodes++;
+      std::string slot_result = rpc_utils::extract_json_field(slot_response.body, "result");
+      uint64_t slot = 0;
+      try {
+        slot = std::stoull(slot_result);
+      } catch (...) {}
+      
+      std::cout << "      ✅ Healthy! Slot: " << slot << " (latency: " << std::fixed << std::setprecision(1) << latency_ms << "ms)\n";
+      
+      // Try to get snapshot info
+      auto snap_response = client.solana_rpc_call(rpc_url, "getHighestSnapshotSlot", "[]");
+      if (snap_response.success && snap_response.body.find("\"full\"") != std::string::npos) {
+        nodes_with_snapshot_info++;
+        std::string snap_result = rpc_utils::extract_json_field(snap_response.body, "result");
+        std::string full_slot = rpc_utils::extract_json_field(snap_result, "full");
+        std::cout << "      📸 Snapshot slot: " << full_slot << "\n";
+        
+        working_nodes.push_back({rpc_url, slot, latency_ms});
+      }
+    } else {
+      std::cout << "      ❌ Not responding or error\n";
+    }
+  }
+
+  std::cout << "\n📊 Node Discovery Summary:\n";
+  std::cout << "   Healthy nodes: " << healthy_nodes << "/" << std::min(rpc_nodes.size(), size_t(10)) << "\n";
+  std::cout << "   Nodes with snapshot info: " << nodes_with_snapshot_info << "\n";
+  
+  // Step 3: Report best nodes for snapshot download
+  if (!working_nodes.empty()) {
+    std::cout << "\n🏆 Best nodes for snapshot download:\n";
+    
+    // Sort by latency
+    std::sort(working_nodes.begin(), working_nodes.end(), 
+              [](const auto& a, const auto& b) { return std::get<2>(a) < std::get<2>(b); });
+    
+    for (size_t i = 0; i < std::min(working_nodes.size(), size_t(3)); i++) {
+      const auto& [url, slot, latency] = working_nodes[i];
+      std::cout << "   " << (i+1) << ". " << url << " (slot: " << slot 
+                << ", latency: " << std::fixed << std::setprecision(1) << latency << "ms)\n";
+    }
+  }
+
+  // The test passes if we found at least some healthy nodes
+  ASSERT_TRUE(healthy_nodes > 0);
+  
+  std::cout << "\n✅ Cluster node ping test PASSED!\n";
+  std::cout << "   Successfully discovered and pinged " << healthy_nodes << " validators\n";
+}
+
+/**
+ * Test downloading snapshot metadata from multiple nodes
+ * This validates the multi-node snapshot discovery approach
+ */
+void test_multi_node_snapshot_discovery() {
+  std::cout << "\n🧪 Test: Multi-Node Snapshot Discovery\n";
+  std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+  std::cout << "⚠️  This test queries multiple nodes for snapshot information\n\n";
+
+  HttpClient client;
+  client.set_timeout(10);
+
+  // List of known devnet RPC endpoints to try
+  std::vector<std::string> rpc_endpoints = {
+    "https://api.devnet.solana.com",
+    "https://devnet.rpcpool.com",
+    "https://rpc.ankr.com/solana_devnet"
+  };
+
+  std::cout << "📡 Querying " << rpc_endpoints.size() << " RPC endpoints for snapshot info...\n\n";
+
+  struct SnapshotData {
+    std::string endpoint;
+    uint64_t full_slot;
+    uint64_t incremental_slot;
+    bool success;
+  };
+
+  std::vector<SnapshotData> results;
+
+  for (const auto& endpoint : rpc_endpoints) {
+    std::cout << "   🔍 Querying " << endpoint << "...\n";
+    
+    SnapshotData data;
+    data.endpoint = endpoint;
+    data.success = false;
+    data.full_slot = 0;
+    data.incremental_slot = 0;
+
+    auto response = client.solana_rpc_call(endpoint, "getHighestSnapshotSlot", "[]");
+    
+    if (response.success) {
+      std::string result = rpc_utils::extract_json_field(response.body, "result");
+      std::string full_slot = rpc_utils::extract_json_field(result, "full");
+      std::string inc_slot = rpc_utils::extract_json_field(result, "incremental");
+      
+      if (!full_slot.empty()) {
+        try {
+          data.full_slot = std::stoull(full_slot);
+          data.success = true;
+          
+          if (!inc_slot.empty()) {
+            data.incremental_slot = std::stoull(inc_slot);
+          }
+          
+          std::cout << "      ✅ Full: " << data.full_slot;
+          if (data.incremental_slot > 0) {
+            std::cout << ", Incremental: " << data.incremental_slot;
+          }
+          std::cout << "\n";
+        } catch (...) {
+          std::cout << "      ❌ Parse error\n";
+        }
+      } else {
+        std::cout << "      ⚠️ No snapshot info available\n";
+      }
+    } else {
+      std::cout << "      ❌ Request failed: " << response.error_message << "\n";
+    }
+    
+    results.push_back(data);
+  }
+
+  // Analyze results
+  std::cout << "\n📊 Snapshot Discovery Results:\n";
+  
+  int successful = 0;
+  uint64_t max_full_slot = 0;
+  std::string best_endpoint;
+  
+  for (const auto& r : results) {
+    if (r.success) {
+      successful++;
+      if (r.full_slot > max_full_slot) {
+        max_full_slot = r.full_slot;
+        best_endpoint = r.endpoint;
+      }
+    }
+  }
+
+  std::cout << "   Endpoints responding: " << successful << "/" << results.size() << "\n";
+  if (max_full_slot > 0) {
+    std::cout << "   Latest snapshot slot: " << max_full_slot << "\n";
+    std::cout << "   Best endpoint: " << best_endpoint << "\n";
+  }
+
+  // The test passes if at least one endpoint responded with snapshot info
+  ASSERT_TRUE(successful > 0);
+  ASSERT_TRUE(max_full_slot > 0);
+
+  std::cout << "\n✅ Multi-node snapshot discovery PASSED!\n";
+  std::cout << "   Found snapshot at slot " << max_full_slot << " from " << successful << " endpoints\n";
+}
+
 } // anonymous namespace
 
 int main() {
@@ -689,6 +944,8 @@ int main() {
   run_test("Snapshot Bootstrap Workflow", test_snapshot_bootstrap_workflow);
   run_test("Explicit Snapshot Download", test_explicit_snapshot_download);
   run_test("Download Real Solana Data", test_download_real_solana_data);
+  run_test("Ping Cluster Nodes", test_ping_cluster_nodes);
+  run_test("Multi-Node Snapshot Discovery", test_multi_node_snapshot_discovery);
 
   std::cout << "\n";
   std::cout << "═══════════════════════════════════════════════════════════════\n";
