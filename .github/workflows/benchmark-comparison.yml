@@ -194,6 +194,40 @@ jobs:
             --verbose
         fi
 
+    - name: Run 3-Node Localnet Cluster Test
+      timeout-minutes: 15
+      run: |
+        echo "🌐 Running 3-Node Localnet Cluster Test..."
+        echo "   This tests actual network TPS with peer-to-peer communication"
+        
+        # Ensure PATH includes Solana CLI
+        export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+        
+        # Make the localnet test script executable
+        chmod +x ./scripts/test_localnet_cluster.sh
+        
+        # Run the localnet cluster test with native binaries
+        if [ -f "build/slonana_validator" ]; then
+          timeout 600s ./scripts/test_localnet_cluster.sh \
+            --test-duration 30 \
+            --tx-count 500 \
+            --tx-rate 50 \
+            --skip-build
+        else
+          echo "⚠️  Slonana validator not built, skipping localnet test"
+          echo "   Building is required for localnet cluster testing"
+        fi
+        
+        # Show test results
+        if [ -f "/tmp/slonana_localnet_cluster/test_report.txt" ]; then
+          echo ""
+          echo "📊 Localnet Cluster Test Report:"
+          cat /tmp/slonana_localnet_cluster/test_report.txt
+        fi
+        
+        # Cleanup the cluster
+        ./scripts/test_localnet_cluster.sh --cleanup-only 2>/dev/null || true
+
     - name: Run Agave validator benchmark
       timeout-minutes: 20
       run: |

@@ -213,17 +213,22 @@ SnapshotBootstrapManager::discover_latest_snapshot_safe_ci() {
     return simple_result;
   }
   
-  std::cout << "⚠️  RPC discovery failed, trying direct validator node discovery..." << std::endl;
+  std::cout << "⚠️  RPC discovery failed, trying enhanced validator node discovery..." << std::endl;
   
-  // Try to find validator nodes that serve snapshots
-  auto validator_nodes = discover_snapshot_serving_nodes();
-  if (!validator_nodes.empty()) {
-    std::cout << "📡 Found " << validator_nodes.size() << " nodes serving snapshots" << std::endl;
+  // Use enhanced latency-based discovery to find validator nodes that serve snapshots
+  auto snapshot_nodes = find_snapshot_nodes_by_latency();
+  
+  if (!snapshot_nodes.empty()) {
+    std::cout << "📡 Found " << snapshot_nodes.size() << " nodes serving snapshots (sorted by latency)" << std::endl;
     
-    // Return a snapshot info with the first available node
+    // Return snapshot info from the best (lowest latency) node
     SnapshotInfo info;
-    info.slot = 0; // Will be determined during download
+    info.slot = snapshot_nodes[0].snapshot_slot;
     info.valid = true;
+    
+    std::cout << "🏆 Best snapshot source: " << snapshot_nodes[0].rpc_url 
+              << " (slot " << info.slot << ", " << snapshot_nodes[0].latency_ms << "ms latency)" << std::endl;
+    
     return common::Result<SnapshotInfo>(info);
   }
   
@@ -403,51 +408,40 @@ common::Result<bool> SnapshotBootstrapManager::download_snapshot_simple(
     }
   };
 
-  // **ENHANCED DOWNLOAD**: First try to discover validator nodes serving snapshots
-  std::cout << "🔍 Discovering validator nodes that serve snapshots..." << std::endl;
+  // **ENHANCED DOWNLOAD**: Use latency-based node discovery
+  std::cout << "🔍 Using enhanced snapshot discovery (latency-sorted)..." << std::endl;
   
-  auto validator_nodes = discover_snapshot_serving_nodes();
+  auto snapshot_nodes = find_snapshot_nodes_by_latency();
   
   bool success = false;
   
-  if (!validator_nodes.empty()) {
-    std::cout << "📡 Found " << validator_nodes.size() << " nodes serving snapshots" << std::endl;
-    
-    // Try each validator node's /snapshot.tar.bz2 endpoint
-    for (const auto &node_url : validator_nodes) {
-      std::string snapshot_endpoint = node_url + "/snapshot.tar.bz2";
-      std::cout << "📥 Attempting download from: " << snapshot_endpoint << std::endl;
-      
-      success = http_client_->download_file(snapshot_endpoint, local_path, progress_cb);
-      if (success) {
-        std::cout << "✅ Successfully downloaded from validator node!" << std::endl;
-        break;
-      } else {
-        std::cout << "   ❌ Failed, trying next node..." << std::endl;
-      }
+  if (!snapshot_nodes.empty()) {
+    // Use the new download method that tries nodes in order of latency
+    auto download_result = download_snapshot_from_best_node(snapshot_nodes, local_path_out);
+    if (download_result.is_ok()) {
+      return download_result;
     }
+    std::cout << "⚠️  Download from discovered nodes failed: " << download_result.error() << std::endl;
   }
   
-  // Fallback to traditional URL-based download if validator nodes didn't work
+  // Fallback to traditional URL-based download if node discovery didn't work
+  std::cout << "⚠️  Node-based download failed, trying fallback URLs..." << std::endl;
+  std::string snapshot_url = build_snapshot_url(info);
+  std::cout << "📁 Downloading from: " << snapshot_url << std::endl;
+
+  success = http_client_->download_file(snapshot_url, local_path, progress_cb);
+  
   if (!success) {
-    std::cout << "⚠️  Validator node download failed, trying fallback URLs..." << std::endl;
-    std::string snapshot_url = build_snapshot_url(info);
-    std::cout << "📁 Downloading from: " << snapshot_url << std::endl;
+    // Try alternative mirrors
+    auto mirrors = get_devnet_snapshot_mirrors();
+    for (const auto &mirror : mirrors) {
+      std::string alt_url =
+          mirror + "/snapshot-" + std::to_string(info.slot) + ".tar.zst";
+      std::cout << "Retrying download from mirror: " << alt_url << std::endl;
 
-    success = http_client_->download_file(snapshot_url, local_path, progress_cb);
-    
-    if (!success) {
-      // Try alternative mirrors
-      auto mirrors = get_devnet_snapshot_mirrors();
-      for (const auto &mirror : mirrors) {
-        std::string alt_url =
-            mirror + "/snapshot-" + std::to_string(info.slot) + ".tar.zst";
-        std::cout << "Retrying download from mirror: " << alt_url << std::endl;
-
-        success = http_client_->download_file(alt_url, local_path, progress_cb);
-        if (success) {
-          break;
-        }
+      success = http_client_->download_file(alt_url, local_path, progress_cb);
+      if (success) {
+        break;
       }
     }
   }
@@ -940,6 +934,22 @@ std::vector<std::string>
 SnapshotBootstrapManager::discover_snapshot_serving_nodes() const {
   std::vector<std::string> snapshot_nodes;
   
+  // Use enhanced latency-based discovery
+  auto nodes = find_snapshot_nodes_by_latency();
+  
+  for (const auto& node : nodes) {
+    if (node.has_snapshot) {
+      snapshot_nodes.push_back(node.rpc_url);
+    }
+  }
+  
+  return snapshot_nodes;
+}
+
+std::vector<SnapshotBootstrapManager::ClusterNode>
+SnapshotBootstrapManager::discover_all_cluster_nodes() const {
+  std::vector<ClusterNode> nodes;
+  
   // Get the appropriate RPC endpoint for the network
   std::string rpc_url;
   if (config_.network_id == "devnet") {
@@ -954,66 +964,311 @@ SnapshotBootstrapManager::discover_snapshot_serving_nodes() const {
     rpc_url = config_.upstream_rpc_url;
   }
   
-  std::cout << "🔍 Querying cluster nodes from " << rpc_url << "..." << std::endl;
+  std::cout << "🔍 Discovering all cluster nodes from " << rpc_url << "..." << std::endl;
   
   // Query cluster nodes via getClusterNodes RPC
   auto response = http_client_->solana_rpc_call(rpc_url, "getClusterNodes", "[]");
   
   if (!response.success) {
-    std::cout << "   ❌ Failed to get cluster nodes" << std::endl;
-    return snapshot_nodes;
+    std::cout << "   ❌ Failed to get cluster nodes: " << response.error_message << std::endl;
+    return nodes;
   }
   
-  // Parse response to extract RPC endpoints
+  // Parse response to extract all nodes
   std::string body = response.body;
-  size_t pos = 0;
-  std::vector<std::string> rpc_endpoints;
   
-  // Simple JSON parsing to extract nodes with RPC endpoints
-  while ((pos = body.find("\"rpc\"", pos)) != std::string::npos) {
-    size_t colon_pos = body.find(":", pos);
-    if (colon_pos == std::string::npos) break;
-    size_t val_start = colon_pos + 1;
+  // Extract nodes array from JSON response
+  size_t result_start = body.find("\"result\"");
+  if (result_start == std::string::npos) {
+    std::cout << "   ❌ No result field in response" << std::endl;
+    return nodes;
+  }
+  
+  // Parse each node entry - look for pubkey and rpc fields
+  size_t pos = result_start;
+  while (pos < body.size()) {
+    // Find next pubkey field
+    size_t pubkey_pos = body.find("\"pubkey\"", pos);
+    if (pubkey_pos == std::string::npos) break;
     
-    // Skip whitespace
-    while (val_start < body.size() && (body[val_start] == ' ' || body[val_start] == '\t')) {
-      val_start++;
+    ClusterNode node;
+    node.has_snapshot = false;
+    node.latency_ms = 9999.0;
+    node.snapshot_slot = 0;
+    
+    // Extract pubkey
+    size_t pk_start = body.find("\"", pubkey_pos + 9);
+    if (pk_start != std::string::npos) {
+      size_t pk_end = body.find("\"", pk_start + 1);
+      if (pk_end != std::string::npos) {
+        node.pubkey = body.substr(pk_start + 1, pk_end - pk_start - 1);
+      }
     }
     
-    if (val_start < body.size() && body[val_start] == '"') {
-      size_t val_end = body.find("\"", val_start + 1);
-      if (val_end != std::string::npos) {
-        std::string rpc_addr = body.substr(val_start + 1, val_end - val_start - 1);
-        if (!rpc_addr.empty() && rpc_addr != "null") {
-          rpc_endpoints.push_back("http://" + rpc_addr);
+    // Find gossip address
+    size_t gossip_pos = body.find("\"gossip\"", pubkey_pos);
+    if (gossip_pos != std::string::npos && gossip_pos < pubkey_pos + 500) {
+      size_t g_start = body.find("\"", gossip_pos + 9);
+      if (g_start != std::string::npos) {
+        size_t g_end = body.find("\"", g_start + 1);
+        if (g_end != std::string::npos) {
+          node.gossip_addr = body.substr(g_start + 1, g_end - g_start - 1);
         }
       }
     }
-    pos++;
+    
+    // Find RPC address
+    size_t rpc_pos = body.find("\"rpc\"", pubkey_pos);
+    if (rpc_pos != std::string::npos && rpc_pos < pubkey_pos + 500) {
+      size_t r_start = body.find(":", rpc_pos);
+      if (r_start != std::string::npos) {
+        // Skip whitespace and find value
+        size_t val_start = r_start + 1;
+        while (val_start < body.size() && (body[val_start] == ' ' || body[val_start] == '\t')) {
+          val_start++;
+        }
+        
+        if (body[val_start] == '"') {
+          size_t r_end = body.find("\"", val_start + 1);
+          if (r_end != std::string::npos) {
+            std::string rpc_addr = body.substr(val_start + 1, r_end - val_start - 1);
+            if (!rpc_addr.empty() && rpc_addr != "null") {
+              // Check if it looks like an IP:port or hostname:port
+              if (rpc_addr.find(":") != std::string::npos) {
+                node.rpc_url = "http://" + rpc_addr;
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    // Only add nodes that have RPC endpoints
+    if (!node.rpc_url.empty()) {
+      nodes.push_back(node);
+    }
+    
+    pos = pubkey_pos + 1;
   }
   
-  std::cout << "   Found " << rpc_endpoints.size() << " nodes with RPC endpoints" << std::endl;
+  std::cout << "   📡 Discovered " << nodes.size() << " nodes with RPC endpoints" << std::endl;
+  return nodes;
+}
+
+std::vector<SnapshotBootstrapManager::ClusterNode>
+SnapshotBootstrapManager::ping_and_sort_nodes_by_latency(
+    std::vector<ClusterNode>& nodes, int max_nodes) const {
   
-  // Check which nodes serve snapshots by sending HEAD request to /snapshot.tar.bz2
-  int checked = 0;
-  for (const auto &endpoint : rpc_endpoints) {
-    if (checked >= 10) break; // Limit to checking first 10 nodes
+  std::cout << "🏓 Pinging nodes to measure latency..." << std::endl;
+  
+  int pinged = 0;
+  for (auto& node : nodes) {
+    if (pinged >= max_nodes) break;
     
-    std::string check_url = endpoint + "/snapshot.tar.bz2";
-    auto head_response = http_client_->head(check_url);
+    // Measure latency with a simple getHealth RPC call
+    auto start = std::chrono::high_resolution_clock::now();
+    
+    auto response = http_client_->solana_rpc_call(node.rpc_url, "getHealth", "[]");
+    
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+    
+    if (response.success || response.status_code == 200) {
+      node.latency_ms = duration.count() / 1000.0;
+      
+      if (pinged < 5) { // Only log first few
+        std::cout << "   ✅ " << node.rpc_url << " - " << std::fixed 
+                  << std::setprecision(1) << node.latency_ms << "ms" << std::endl;
+      }
+    } else {
+      node.latency_ms = 9999.0; // Mark as unreachable
+    }
+    
+    pinged++;
+  }
+  
+  // Sort by latency (lowest first)
+  std::sort(nodes.begin(), nodes.end(), [](const ClusterNode& a, const ClusterNode& b) {
+    return a.latency_ms < b.latency_ms;
+  });
+  
+  // Filter out unreachable nodes
+  std::vector<ClusterNode> reachable;
+  for (const auto& node : nodes) {
+    if (node.latency_ms < 5000.0) { // Less than 5 seconds
+      reachable.push_back(node);
+    }
+  }
+  
+  std::cout << "   📊 " << reachable.size() << " reachable nodes, best latency: " 
+            << (reachable.empty() ? 0.0 : reachable[0].latency_ms) << "ms" << std::endl;
+  
+  return reachable;
+}
+
+std::vector<SnapshotBootstrapManager::ClusterNode>
+SnapshotBootstrapManager::find_snapshot_nodes_by_latency() const {
+  std::cout << "\n🔍 ========================================" << std::endl;
+  std::cout << "   ENHANCED SNAPSHOT DISCOVERY" << std::endl;
+  std::cout << "   Finding snapshots from lowest-latency nodes" << std::endl;
+  std::cout << "   ========================================\n" << std::endl;
+  
+  // Step 1: Discover all cluster nodes from bootstrap
+  auto all_nodes = discover_all_cluster_nodes();
+  
+  if (all_nodes.empty()) {
+    std::cout << "   ⚠️ No cluster nodes found" << std::endl;
+    return {};
+  }
+  
+  // Step 2: Ping nodes and sort by latency
+  auto sorted_nodes = ping_and_sort_nodes_by_latency(all_nodes, 50);
+  
+  if (sorted_nodes.empty()) {
+    std::cout << "   ⚠️ No reachable nodes found" << std::endl;
+    return {};
+  }
+  
+  // Step 3: Check nodes for snapshot availability (lowest latency first)
+  std::cout << "\n📦 Checking nodes for snapshot availability..." << std::endl;
+  
+  std::vector<ClusterNode> snapshot_nodes;
+  int checked = 0;
+  
+  for (auto& node : sorted_nodes) {
+    if (checked >= 20) break; // Check up to 20 nodes
+    
+    // Check /snapshot.tar.bz2 endpoint (standard Solana validator endpoint)
+    std::string snapshot_url = node.rpc_url + "/snapshot.tar.bz2";
+    auto head_response = http_client_->head(snapshot_url);
+    
+    // Also try /snapshot.tar.zst endpoint
+    if (!head_response.success && head_response.status_code != 303 && head_response.status_code != 200) {
+      snapshot_url = node.rpc_url + "/snapshot.tar.zst";
+      head_response = http_client_->head(snapshot_url);
+    }
     
     // Status 200 or 303 (redirect) means snapshot is available
     if (head_response.success || head_response.status_code == 303 || head_response.status_code == 200) {
-      snapshot_nodes.push_back(endpoint);
-      std::cout << "   ✅ " << endpoint << " serves snapshots" << std::endl;
+      node.has_snapshot = true;
       
-      // Found enough nodes, stop checking
-      if (snapshot_nodes.size() >= 3) break;
+      // Try to get snapshot slot info
+      auto slot_response = http_client_->solana_rpc_call(node.rpc_url, "getHighestSnapshotSlot", "[]");
+      if (slot_response.success) {
+        std::string full_slot = network::rpc_utils::extract_json_field(slot_response.body, "full");
+        if (!full_slot.empty()) {
+          try {
+            // Handle nested result
+            std::string result = network::rpc_utils::extract_json_field(slot_response.body, "result");
+            if (!result.empty()) {
+              full_slot = network::rpc_utils::extract_json_field(result, "full");
+            }
+            node.snapshot_slot = std::stoull(full_slot);
+          } catch (...) {}
+        }
+      }
+      
+      snapshot_nodes.push_back(node);
+      std::cout << "   ✅ " << node.rpc_url << " serves snapshot"
+                << " (slot: " << node.snapshot_slot << ", latency: " 
+                << std::fixed << std::setprecision(1) << node.latency_ms << "ms)" << std::endl;
+      
+      // Found enough snapshot nodes
+      if (snapshot_nodes.size() >= 5) break;
     }
+    
     checked++;
   }
   
+  std::cout << "\n📊 Found " << snapshot_nodes.size() << " nodes serving snapshots" << std::endl;
+  
+  if (!snapshot_nodes.empty()) {
+    std::cout << "   🏆 Best node: " << snapshot_nodes[0].rpc_url 
+              << " (" << snapshot_nodes[0].latency_ms << "ms)" << std::endl;
+  }
+  
   return snapshot_nodes;
+}
+
+common::Result<bool> SnapshotBootstrapManager::download_snapshot_from_best_node(
+    const std::vector<ClusterNode>& nodes,
+    std::string& local_path_out) {
+  
+  if (nodes.empty()) {
+    return common::Result<bool>("No snapshot-serving nodes available");
+  }
+  
+  std::cout << "\n📥 Downloading snapshot from best available node..." << std::endl;
+  
+  // Ensure snapshot directory exists
+  if (!fs::exists(snapshot_dir_)) {
+    fs::create_directories(snapshot_dir_);
+  }
+  
+  // Progress callback for download
+  auto progress_cb = [this](size_t downloaded, size_t total) {
+    if (total > 0) {
+      uint64_t progress = (downloaded * 100) / total;
+      this->report_progress("Downloading snapshot", progress, 100);
+      
+      // Print progress every 10%
+      static uint64_t last_percent = 0;
+      uint64_t current_percent = (downloaded * 100) / total;
+      if (current_percent >= last_percent + 10) {
+        double mb_downloaded = downloaded / (1024.0 * 1024.0);
+        double mb_total = total / (1024.0 * 1024.0);
+        std::cout << "   📥 " << std::fixed << std::setprecision(1) 
+                  << mb_downloaded << " / " << mb_total << " MB (" 
+                  << current_percent << "%)" << std::endl;
+        last_percent = current_percent;
+      }
+    }
+  };
+  
+  // Try each node in order (already sorted by latency)
+  for (const auto& node : nodes) {
+    std::cout << "\n   🔄 Trying " << node.rpc_url << " (latency: " 
+              << node.latency_ms << "ms)..." << std::endl;
+    
+    // Generate local filename
+    std::string filename = "snapshot-" + std::to_string(node.snapshot_slot) + ".tar.bz2";
+    std::string local_path = snapshot_dir_ + "/" + filename;
+    
+    // Try /snapshot.tar.bz2 first (most common)
+    std::string snapshot_url = node.rpc_url + "/snapshot.tar.bz2";
+    
+    bool success = http_client_->download_file(snapshot_url, local_path, progress_cb);
+    
+    if (!success) {
+      // Try /snapshot.tar.zst as fallback
+      snapshot_url = node.rpc_url + "/snapshot.tar.zst";
+      filename = "snapshot-" + std::to_string(node.snapshot_slot) + ".tar.zst";
+      local_path = snapshot_dir_ + "/" + filename;
+      
+      success = http_client_->download_file(snapshot_url, local_path, progress_cb);
+    }
+    
+    if (success) {
+      // Verify file was downloaded
+      if (fs::exists(local_path)) {
+        auto file_size = fs::file_size(local_path);
+        double mb_size = file_size / (1024.0 * 1024.0);
+        
+        std::cout << "\n   ✅ Successfully downloaded snapshot!" << std::endl;
+        std::cout << "   📁 File: " << local_path << std::endl;
+        std::cout << "   📊 Size: " << std::fixed << std::setprecision(2) << mb_size << " MB" << std::endl;
+        std::cout << "   🔢 Slot: " << node.snapshot_slot << std::endl;
+        std::cout << "   🌐 Source: " << node.rpc_url << std::endl;
+        
+        local_path_out = local_path;
+        return common::Result<bool>(true);
+      }
+    }
+    
+    std::cout << "   ❌ Failed, trying next node..." << std::endl;
+  }
+  
+  return common::Result<bool>("Failed to download snapshot from any available node");
 }
 
 void SnapshotBootstrapManager::report_progress(const std::string &phase,
