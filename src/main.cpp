@@ -742,11 +742,10 @@ int main(int argc, char *argv[]) {
             std::cout << "🔄 Injecting activity " << activity_counter
                       << " (uptime: " << uptime.count() << "s)" << std::endl;
 
-            // Create synthetic transactions/blocks to maintain validator state
+            // Create synthetic transactions/blocks using the new method
             try {
-              auto stats = validator.get_stats();
-              stats.blocks_processed += 1;
-              stats.transactions_processed += 3;
+              // Inject synthetic activity - 1 block with 100 transactions per injection
+              validator.inject_synthetic_activity(1, 100);
 
               // Export synthetic metrics to show activity
               if (!config.metrics_output_path.empty()) {

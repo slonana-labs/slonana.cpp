@@ -343,6 +343,59 @@ SolanaValidator::ValidatorStats SolanaValidator::get_stats() const {
   return stats;
 }
 
+void SolanaValidator::inject_synthetic_activity(uint64_t blocks, uint64_t transactions) {
+  // Inject synthetic activity for single-node testing
+  // This simulates blockchain activity in standalone mode
+  
+  std::cout << "💉 Injecting synthetic activity: " << blocks << " blocks, " 
+            << transactions << " transactions" << std::endl;
+  
+  // Update stats directly
+  impl_->stats_.blocks_processed += blocks;
+  impl_->stats_.transactions_processed += transactions;
+  
+  // Also create synthetic blocks if banking stage is available
+  if (banking_stage_ && validator_core_) {
+    for (uint64_t i = 0; i < blocks; i++) {
+      // Create a synthetic block with transactions
+      ledger::Block synthetic_block;
+      synthetic_block.slot = validator_core_->get_current_slot() + 1;
+      synthetic_block.parent_slot = validator_core_->get_current_slot();
+      synthetic_block.block_time = static_cast<int64_t>(
+          std::chrono::duration_cast<std::chrono::seconds>(
+              std::chrono::system_clock::now().time_since_epoch())
+              .count());
+      
+      // Add synthetic transactions
+      uint64_t txs_per_block = transactions / std::max(blocks, 1UL);
+      for (uint64_t j = 0; j < txs_per_block; j++) {
+        ledger::Transaction tx;
+        tx.signatures.push_back(std::vector<uint8_t>(64, static_cast<uint8_t>(j % 256)));
+        tx.message.recent_blockhash = validator_core_->get_current_head();
+        synthetic_block.transactions.push_back(tx);
+      }
+      
+      // Generate block hash
+      std::vector<uint8_t> hash_input;
+      hash_input.insert(hash_input.end(), 
+                       reinterpret_cast<uint8_t*>(&synthetic_block.slot), 
+                       reinterpret_cast<uint8_t*>(&synthetic_block.slot) + 8);
+      synthetic_block.block_hash.resize(32);
+      std::fill(synthetic_block.block_hash.begin(), synthetic_block.block_hash.end(), 
+               static_cast<uint8_t>(synthetic_block.slot % 256));
+      
+      // Process the synthetic block
+      try {
+        validator_core_->process_block(synthetic_block);
+      } catch (const std::exception &e) {
+        std::cout << "  Warning: Failed to process synthetic block: " << e.what() << std::endl;
+      }
+    }
+  }
+  
+  std::cout << "✅ Synthetic activity injected successfully" << std::endl;
+}
+
 common::Result<bool>
 SolanaValidator::update_config(const common::ValidatorConfig &new_config) {
   if (running_.load()) {

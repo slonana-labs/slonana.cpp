@@ -200,19 +200,37 @@ SnapshotBootstrapManager::discover_latest_snapshot_with_timeout(
 // **SAFE CI DISCOVERY**: Single-threaded, timeout-protected discovery for CI
 common::Result<SnapshotInfo>
 SnapshotBootstrapManager::discover_latest_snapshot_safe_ci() {
-  std::cout << "🔧 Safe CI snapshot discovery (single-threaded, no complex "
-               "operations)"
-            << std::endl;
+  std::cout << "🔧 Safe CI snapshot discovery (single-threaded)" << std::endl;
 
-  // For CI, just return a failure to trigger fallback to genesis mode
-  // This completely avoids the problematic multi-threaded snapshot discovery
-  std::cout << "⚠️  CI mode: Skipping snapshot discovery to prevent segfaults"
-            << std::endl;
-  std::cout << "   Will proceed with genesis mode for stable CI operation"
-            << std::endl;
-
+  // **IMPROVED**: Actually try to discover snapshots in CI mode
+  // Use the simple discovery method which is single-threaded and stable
+  std::cout << "🔍 Attempting single-threaded snapshot discovery..." << std::endl;
+  
+  // First try simple RPC-based discovery
+  auto simple_result = discover_latest_snapshot_simple();
+  if (simple_result.is_ok()) {
+    std::cout << "✅ Found snapshot via RPC: slot " << simple_result.value().slot << std::endl;
+    return simple_result;
+  }
+  
+  std::cout << "⚠️  RPC discovery failed, trying direct validator node discovery..." << std::endl;
+  
+  // Try to find validator nodes that serve snapshots
+  auto validator_nodes = discover_snapshot_serving_nodes();
+  if (!validator_nodes.empty()) {
+    std::cout << "📡 Found " << validator_nodes.size() << " nodes serving snapshots" << std::endl;
+    
+    // Return a snapshot info with the first available node
+    SnapshotInfo info;
+    info.slot = 0; // Will be determined during download
+    info.valid = true;
+    return common::Result<SnapshotInfo>(info);
+  }
+  
+  // Fallback: return error to trigger genesis mode
+  std::cout << "⚠️  No snapshot sources found - proceeding with genesis mode" << std::endl;
   return common::Result<SnapshotInfo>(
-      "CI mode: Snapshot discovery disabled for stability");
+      "CI mode: No accessible snapshot sources found");
 }
 
 // **TIMEOUT-ENHANCED DOWNLOAD**: Wrapper with timeout
