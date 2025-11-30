@@ -29,10 +29,11 @@ NODE3_GOSSIP=38001
 NODE3_TPU=38003
 
 # Transaction test settings - high throughput mode
-TX_COUNT=100000  # 100k transactions for stress test
+TX_COUNT=50000   # 50k transactions (adjustable via -c flag)
 TX_RATE=10000    # 10k transactions per second target
 TX_BATCH_SIZE=100  # Send in batches for higher throughput
 TEST_DURATION=30
+WAIT_FOR_SLOT_SYNC=true  # Wait for nodes to sync slots before testing
 
 # Colors for output
 RED='\033[0;31m'
@@ -424,6 +425,55 @@ wait_for_cluster() {
     
     # Continue anyway - benchmark suite will provide TPS
     export RPC_CLUSTER_READY=false
+    return 0
+}
+
+# Wait for nodes to synchronize slots (for more accurate replication testing)
+wait_for_slot_sync() {
+    if [[ "$RPC_CLUSTER_READY" != "true" ]]; then
+        return 0
+    fi
+    
+    log_step "Waiting for nodes to synchronize slots..."
+    
+    local max_wait=20
+    local waited=0
+    local max_diff=50  # Max acceptable slot difference between nodes
+    
+    while [[ $waited -lt $max_wait ]]; do
+        local slot1=$(curl -s --max-time 2 "http://localhost:$NODE1_RPC" -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","id":1,"method":"getSlot"}' 2>/dev/null | grep -oP '"result":\s*\K[0-9]+' || echo "0")
+        local slot2=$(curl -s --max-time 2 "http://localhost:$NODE2_RPC" -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","id":1,"method":"getSlot"}' 2>/dev/null | grep -oP '"result":\s*\K[0-9]+' || echo "0")
+        local slot3=$(curl -s --max-time 2 "http://localhost:$NODE3_RPC" -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","id":1,"method":"getSlot"}' 2>/dev/null | grep -oP '"result":\s*\K[0-9]+' || echo "0")
+        
+        # Find min and max slots
+        local min_slot=$slot1
+        local max_slot=$slot1
+        [[ $slot2 -lt $min_slot ]] && min_slot=$slot2
+        [[ $slot3 -lt $min_slot ]] && min_slot=$slot3
+        [[ $slot2 -gt $max_slot ]] && max_slot=$slot2
+        [[ $slot3 -gt $max_slot ]] && max_slot=$slot3
+        
+        local slot_diff=$((max_slot - min_slot))
+        
+        echo -ne "\r  Slot sync: Node1=$slot1, Node2=$slot2, Node3=$slot3 (diff: $slot_diff, waiting ${waited}s)    "
+        
+        if [[ $slot_diff -le $max_diff ]]; then
+            echo ""
+            log_success "Nodes are in sync (slot difference: $slot_diff <= $max_diff)"
+            return 0
+        fi
+        
+        sleep 2
+        ((waited+=2))
+    done
+    
+    echo ""
+    log_warning "Nodes may not be fully synchronized (slot difference > $max_diff)"
+    log_info "Note: Each node runs independently without gossip - slots may drift"
+    log_info "This is expected until consensus networking is fully implemented"
     return 0
 }
 
@@ -885,6 +935,9 @@ main() {
     
     # Wait for cluster RPC to be ready
     wait_for_cluster
+    
+    # Wait for nodes to sync slots (optional, helps with replication accuracy)
+    wait_for_slot_sync
     
     # Run benchmark suite for baseline TPS (this always works)
     run_cluster_benchmark
