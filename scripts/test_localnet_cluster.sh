@@ -171,28 +171,13 @@ setup_cluster_dirs() {
     mkdir -p "$LOGS_DIR"
     mkdir -p "$CLUSTER_DIR/keys"
     
-    # Generate keypairs for each node
+    # Generate keypairs for each node (raw binary format - 64 bytes)
+    # slonana_validator reads keypair files as raw 64 bytes (32 pubkey + 32 privkey)
     for i in 1 2 3; do
-        if command -v solana-keygen &>/dev/null; then
-            solana-keygen new --no-bip39-passphrase -o "$CLUSTER_DIR/keys/node${i}-identity.json" 2>/dev/null
-            solana-keygen new --no-bip39-passphrase -o "$CLUSTER_DIR/keys/node${i}-vote.json" 2>/dev/null
-            log_success "Generated keypair for node $i"
-        else
-            # Create dummy keypair files for testing
-            cat > "$CLUSTER_DIR/keys/node${i}-identity.json" << EOF
-{
-    "pubkey": "Node${i}Validator111111111111111111111111111",
-    "keypair": [$(head -c 64 /dev/urandom | od -A n -t u1 | tr -d ' \n' | sed 's/\([0-9]*\)/\1,/g' | sed 's/,$//')]
-}
-EOF
-            cat > "$CLUSTER_DIR/keys/node${i}-vote.json" << EOF
-{
-    "pubkey": "Node${i}VoteAccount1111111111111111111111111",
-    "keypair": [$(head -c 64 /dev/urandom | od -A n -t u1 | tr -d ' \n' | sed 's/\([0-9]*\)/\1,/g' | sed 's/,$//')]
-}
-EOF
-            log_info "Created dummy keypair for node $i (solana-keygen not found)"
-        fi
+        # Generate 64 bytes of random data for keypair (32 pubkey + 32 privkey)
+        dd if=/dev/urandom of="$CLUSTER_DIR/keys/node${i}-identity.json" bs=64 count=1 2>/dev/null
+        dd if=/dev/urandom of="$CLUSTER_DIR/keys/node${i}-vote.json" bs=64 count=1 2>/dev/null
+        log_success "Generated keypair for node $i"
     done
     
     log_success "Cluster directories ready"
@@ -218,17 +203,26 @@ start_native_cluster() {
     # Try to start Node 1 (bootstrap/leader)
     log_info "Starting Node 1 (bootstrap leader)..."
     
-    # Try minimal arguments first - slonana_validator may not support all Agave-style args
-    "$BUILD_DIR/slonana_validator" > "$LOGS_DIR/node1.log" 2>&1 &
+    # Start validators with proper RPC bind addresses and ledger paths
+    "$BUILD_DIR/slonana_validator" \
+        --rpc-bind-address "127.0.0.1:$NODE1_RPC" \
+        --gossip-bind-address "127.0.0.1:$NODE1_GOSSIP" \
+        --ledger-path "$LEDGER_BASE/node1" \
+        --identity "$CLUSTER_DIR/keys/node1-identity.json" \
+        > "$LOGS_DIR/node1.log" 2>&1 &
     NODE1_PID=$!
     echo $NODE1_PID > "$CLUSTER_DIR/node1.pid"
     
-    sleep 2
+    sleep 3
     
     # Check if node 1 is still running (may have exited due to unsupported args)
     if ! kill -0 "$NODE1_PID" 2>/dev/null; then
-        log_warning "Node 1 process exited - validator may not support cluster mode yet"
-        log_info "This is expected for development builds. Will use benchmark suite for TPS."
+        log_warning "Node 1 process exited - checking logs for details"
+        if [[ -f "$LOGS_DIR/node1.log" ]]; then
+            log_info "Last 10 lines of node1.log:"
+            tail -10 "$LOGS_DIR/node1.log" 2>/dev/null || true
+        fi
+        log_info "Will use benchmark suite for TPS measurement"
         export VALIDATOR_NOT_AVAILABLE=true
         
         # Create dummy PID files
@@ -237,24 +231,53 @@ start_native_cluster() {
         return 0
     fi
     
-    # Start Node 2
+    log_success "Node 1 started and running"
+    
+    # Start Node 2 - wait a bit for Node 1 to be more stable
+    sleep 2
     log_info "Starting Node 2..."
-    "$BUILD_DIR/slonana_validator" > "$LOGS_DIR/node2.log" 2>&1 &
+    "$BUILD_DIR/slonana_validator" \
+        --rpc-bind-address "127.0.0.1:$NODE2_RPC" \
+        --gossip-bind-address "127.0.0.1:$NODE2_GOSSIP" \
+        --ledger-path "$LEDGER_BASE/node2" \
+        --identity "$CLUSTER_DIR/keys/node2-identity.json" \
+        > "$LOGS_DIR/node2.log" 2>&1 &
     NODE2_PID=$!
     echo $NODE2_PID > "$CLUSTER_DIR/node2.pid"
     
-    sleep 1
+    sleep 2
+    
+    # Check if node 2 is running
+    if ! kill -0 "$NODE2_PID" 2>/dev/null; then
+        log_warning "Node 2 process exited early"
+    else
+        log_success "Node 2 started and running"
+    fi
     
     # Start Node 3
     log_info "Starting Node 3..."
-    "$BUILD_DIR/slonana_validator" > "$LOGS_DIR/node3.log" 2>&1 &
+    "$BUILD_DIR/slonana_validator" \
+        --rpc-bind-address "127.0.0.1:$NODE3_RPC" \
+        --gossip-bind-address "127.0.0.1:$NODE3_GOSSIP" \
+        --ledger-path "$LEDGER_BASE/node3" \
+        --identity "$CLUSTER_DIR/keys/node3-identity.json" \
+        > "$LOGS_DIR/node3.log" 2>&1 &
     NODE3_PID=$!
     echo $NODE3_PID > "$CLUSTER_DIR/node3.pid"
     
+    sleep 2
+    
+    # Check if node 3 is running
+    if ! kill -0 "$NODE3_PID" 2>/dev/null; then
+        log_warning "Node 3 process exited early"
+    else
+        log_success "Node 3 started and running"
+    fi
+    
     log_success "All 3 nodes started"
-    log_info "Node 1 PID: $NODE1_PID (RPC: $NODE1_RPC)"
-    log_info "Node 2 PID: $NODE2_PID (RPC: $NODE2_RPC)"
-    log_info "Node 3 PID: $NODE3_PID (RPC: $NODE3_RPC)"
+    log_info "Node 1 PID: $NODE1_PID (RPC: http://localhost:$NODE1_RPC)"
+    log_info "Node 2 PID: $NODE2_PID (RPC: http://localhost:$NODE2_RPC)"
+    log_info "Node 3 PID: $NODE3_PID (RPC: http://localhost:$NODE3_RPC)"
 }
 
 # Start Docker cluster
@@ -315,10 +338,13 @@ wait_for_cluster() {
         return 0
     fi
     
-    local max_wait=30
+    # Increased timeout since validator takes 6-8 seconds to fully initialize
+    local max_wait=45
     local waited=0
     local rpc_ready=0
     local process_ready=0
+    
+    log_info "Validator startup takes 6-8 seconds before RPC responds..."
     
     while [[ $waited -lt $max_wait ]]; do
         rpc_ready=0
@@ -337,26 +363,34 @@ wait_for_cluster() {
         # Then check if RPC endpoints are responding
         if check_rpc_health "http://localhost:$NODE1_RPC"; then
             ((rpc_ready++))
-            log_info "  Node 1 RPC ready (port $NODE1_RPC)"
+            if [[ $rpc_ready -eq 1 ]]; then
+                log_success "Node 1 RPC ready (port $NODE1_RPC)"
+            fi
         fi
         if check_rpc_health "http://localhost:$NODE2_RPC"; then
             ((rpc_ready++))
-            log_info "  Node 2 RPC ready (port $NODE2_RPC)"
+            if [[ $rpc_ready -eq 2 ]]; then
+                log_success "Node 2 RPC ready (port $NODE2_RPC)"
+            fi
         fi
         if check_rpc_health "http://localhost:$NODE3_RPC"; then
             ((rpc_ready++))
-            log_info "  Node 3 RPC ready (port $NODE3_RPC)"
+            if [[ $rpc_ready -eq 3 ]]; then
+                log_success "Node 3 RPC ready (port $NODE3_RPC)"
+            fi
         fi
         
         # Success if at least 2 RPC endpoints are responding
         if [[ $rpc_ready -ge 2 ]]; then
+            echo ""
             log_success "Cluster RPC servers ready! $rpc_ready/3 RPC endpoints active"
             export RPC_CLUSTER_READY=true
             return 0
         fi
         
         # Also succeed if 2+ processes running (fallback for benchmark mode)
-        if [[ $process_ready -ge 2 ]] && [[ $waited -ge 15 ]]; then
+        if [[ $process_ready -ge 2 ]] && [[ $waited -ge 20 ]]; then
+            echo ""
             log_warning "Processes running but RPC not responding ($process_ready processes, $rpc_ready RPC)"
             log_info "Will use benchmark suite for TPS measurement"
             export RPC_CLUSTER_READY=false
@@ -364,16 +398,17 @@ wait_for_cluster() {
         fi
         
         # If no processes at all, give up early
-        if [[ $process_ready -eq 0 ]] && [[ $waited -ge 10 ]]; then
-            log_warning "No validator processes running after 10s"
+        if [[ $process_ready -eq 0 ]] && [[ $waited -ge 15 ]]; then
+            echo ""
+            log_warning "No validator processes running after 15s"
             log_info "Validator may not support standalone cluster mode yet"
             export RPC_CLUSTER_READY=false
             return 0
         fi
         
         echo -ne "\r  Waiting for cluster... (processes: $process_ready/3, RPC: $rpc_ready/3, ${waited}s elapsed)"
-        sleep 2
-        ((waited+=2))
+        sleep 3
+        ((waited+=3))
     done
     
     echo ""
