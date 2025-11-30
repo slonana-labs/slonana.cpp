@@ -743,6 +743,218 @@ void test_engine_stats() {
 }
 
 // ============================================================================
+// Ring Buffer Tests
+// ============================================================================
+
+void test_ring_buffer_create() {
+    std::cout << "Testing ring buffer creation...\n";
+    
+    RingBufferManager manager;
+    
+    // Create buffer with default size
+    uint64_t buf1 = manager.create_buffer("program1");
+    assert(buf1 != 0);
+    
+    // Create buffer with custom size
+    uint64_t buf2 = manager.create_buffer("program1", 8192);
+    assert(buf2 != 0);
+    assert(buf2 != buf1);
+    
+    // Verify buffer exists
+    const BpfRingBuffer* info = manager.get_buffer(buf1);
+    assert(info != nullptr);
+    assert(info->buffer_id == buf1);
+    assert(info->owner_program_id == "program1");
+    assert(info->capacity == DEFAULT_RING_BUFFER_SIZE);
+    assert(info->state == RingBufferState::ACTIVE);
+    
+    std::cout << "  ✓ Ring buffer creation tests passed\n";
+}
+
+void test_ring_buffer_push_pop() {
+    std::cout << "Testing ring buffer push/pop...\n";
+    
+    RingBufferManager manager;
+    uint64_t buf = manager.create_buffer("program1", 1024);
+    assert(buf != 0);
+    
+    // Push data
+    std::vector<uint8_t> data = {1, 2, 3, 4, 5};
+    bool pushed = manager.push(buf, data.data(), data.size(), 100, 0);
+    assert(pushed);
+    
+    // Verify has data
+    assert(manager.has_data(buf));
+    assert(manager.get_entry_count(buf) == 1);
+    
+    // Pop data
+    std::vector<uint8_t> popped = manager.pop(buf);
+    assert(popped.size() == data.size());
+    for (size_t i = 0; i < data.size(); i++) {
+        assert(popped[i] == data[i]);
+    }
+    
+    // Verify empty
+    assert(!manager.has_data(buf));
+    assert(manager.get_entry_count(buf) == 0);
+    
+    std::cout << "  ✓ Ring buffer push/pop tests passed\n";
+}
+
+void test_ring_buffer_multiple_entries() {
+    std::cout << "Testing ring buffer multiple entries...\n";
+    
+    RingBufferManager manager;
+    uint64_t buf = manager.create_buffer("program1", 4096);
+    assert(buf != 0);
+    
+    // Push multiple entries
+    for (int i = 0; i < 10; i++) {
+        std::vector<uint8_t> data(32, static_cast<uint8_t>(i));
+        assert(manager.push(buf, data.data(), data.size(), 100 + i, 0));
+    }
+    
+    assert(manager.get_entry_count(buf) == 10);
+    
+    // Pop in FIFO order
+    for (int i = 0; i < 10; i++) {
+        std::vector<uint8_t> popped = manager.pop(buf);
+        assert(!popped.empty());
+        assert(popped[0] == static_cast<uint8_t>(i));
+    }
+    
+    assert(!manager.has_data(buf));
+    
+    std::cout << "  ✓ Ring buffer multiple entries tests passed\n";
+}
+
+void test_ring_buffer_peek() {
+    std::cout << "Testing ring buffer peek...\n";
+    
+    RingBufferManager manager;
+    uint64_t buf = manager.create_buffer("program1", 1024);
+    assert(buf != 0);
+    
+    std::vector<uint8_t> data = {10, 20, 30};
+    manager.push(buf, data.data(), data.size(), 100, 0);
+    
+    // Peek without removing
+    std::vector<uint8_t> peeked = manager.peek(buf);
+    assert(peeked.size() == data.size());
+    assert(manager.has_data(buf));
+    assert(manager.get_entry_count(buf) == 1);
+    
+    // Can still pop after peek
+    std::vector<uint8_t> popped = manager.pop(buf);
+    assert(popped.size() == data.size());
+    assert(!manager.has_data(buf));
+    
+    std::cout << "  ✓ Ring buffer peek tests passed\n";
+}
+
+void test_ring_buffer_destroy() {
+    std::cout << "Testing ring buffer destroy...\n";
+    
+    RingBufferManager manager;
+    uint64_t buf = manager.create_buffer("program1", 1024);
+    assert(buf != 0);
+    
+    // Add some data
+    std::vector<uint8_t> data = {1, 2, 3};
+    manager.push(buf, data.data(), data.size(), 100, 0);
+    
+    // Destroy buffer
+    bool destroyed = manager.destroy_buffer(buf);
+    assert(destroyed);
+    
+    // Should not be able to access
+    assert(manager.get_buffer(buf) == nullptr);
+    
+    // Double destroy should fail
+    assert(!manager.destroy_buffer(buf));
+    
+    std::cout << "  ✓ Ring buffer destroy tests passed\n";
+}
+
+void test_ring_buffer_state() {
+    std::cout << "Testing ring buffer state...\n";
+    
+    RingBufferManager manager;
+    uint64_t buf = manager.create_buffer("program1", 1024);
+    assert(buf != 0);
+    
+    // Default state is ACTIVE
+    const BpfRingBuffer* info = manager.get_buffer(buf);
+    assert(info->state == RingBufferState::ACTIVE);
+    
+    // Pause buffer
+    assert(manager.set_buffer_state(buf, RingBufferState::PAUSED));
+    info = manager.get_buffer(buf);
+    assert(info->state == RingBufferState::PAUSED);
+    
+    // Push should fail when paused
+    std::vector<uint8_t> data = {1, 2, 3};
+    assert(!manager.push(buf, data.data(), data.size(), 100, 0));
+    
+    // Resume buffer
+    assert(manager.set_buffer_state(buf, RingBufferState::ACTIVE));
+    assert(manager.push(buf, data.data(), data.size(), 100, 0));
+    
+    std::cout << "  ✓ Ring buffer state tests passed\n";
+}
+
+void test_ring_buffer_usage() {
+    std::cout << "Testing ring buffer usage...\n";
+    
+    RingBufferManager manager;
+    uint64_t buf = manager.create_buffer("program1", 1024);
+    assert(buf != 0);
+    
+    // Empty buffer should have low usage
+    double initial_usage = manager.get_usage(buf);
+    assert(initial_usage < 0.01);
+    
+    // Fill buffer partway
+    for (int i = 0; i < 5; i++) {
+        std::vector<uint8_t> data(64, 0);
+        manager.push(buf, data.data(), data.size(), 100, 0);
+    }
+    
+    double usage = manager.get_usage(buf);
+    assert(usage > 0.1);  // Should be using some space
+    assert(usage < 1.0);  // Should not be full
+    
+    std::cout << "  ✓ Ring buffer usage tests passed\n";
+}
+
+void test_ring_buffer_engine_integration() {
+    std::cout << "Testing engine ring buffer integration...\n";
+    
+    AsyncBpfExecutionEngine engine;
+    assert(engine.initialize());
+    
+    // Create buffer through engine
+    uint64_t buf = engine.sol_ring_buffer_create("test_program", 2048);
+    assert(buf != 0);
+    
+    // Push through engine
+    std::vector<uint8_t> data = {5, 10, 15, 20};
+    bool pushed = engine.sol_ring_buffer_push(buf, data.data(), data.size(), 0);
+    assert(pushed);
+    
+    // Pop through engine
+    std::vector<uint8_t> popped = engine.sol_ring_buffer_pop(buf);
+    assert(popped.size() == data.size());
+    
+    // Destroy through engine
+    assert(engine.sol_ring_buffer_destroy(buf));
+    
+    engine.shutdown();
+    
+    std::cout << "  ✓ Engine ring buffer integration tests passed\n";
+}
+
+// ============================================================================
 // Performance Benchmarks
 // ============================================================================
 
@@ -896,6 +1108,16 @@ int main() {
     run_test("Scheduler Submit Task", test_scheduler_submit_task);
     run_test("Scheduler Priority", test_scheduler_priority);
     run_test("Scheduler Batch", test_scheduler_batch);
+    
+    std::cout << "\n--- Ring Buffer Tests ---\n";
+    run_test("Ring Buffer Create", test_ring_buffer_create);
+    run_test("Ring Buffer Push Pop", test_ring_buffer_push_pop);
+    run_test("Ring Buffer Multiple Entries", test_ring_buffer_multiple_entries);
+    run_test("Ring Buffer Peek", test_ring_buffer_peek);
+    run_test("Ring Buffer Destroy", test_ring_buffer_destroy);
+    run_test("Ring Buffer State", test_ring_buffer_state);
+    run_test("Ring Buffer Usage", test_ring_buffer_usage);
+    run_test("Ring Buffer Engine Integration", test_ring_buffer_engine_integration);
     
     std::cout << "\n--- Engine Integration Tests ---\n";
     run_test("Engine Initialize Shutdown", test_engine_initialize_shutdown);

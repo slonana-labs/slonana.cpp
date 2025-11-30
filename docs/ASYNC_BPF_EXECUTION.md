@@ -24,6 +24,9 @@ The Async BPF Execution module provides:
 | `sol_watcher_create` | Watch account for any change |
 | `sol_watcher_create_threshold` | Watch for value crossing threshold |
 | `sol_watcher_remove` | Remove an account watcher |
+| `sol_ring_buffer_create` | Create ring buffer for event queuing |
+| `sol_ring_buffer_push` | Push data to ring buffer |
+| `sol_ring_buffer_pop` | Pop data from ring buffer |
 | `sol_get_slot` | Get current slot number |
 
 ### Performance Results
@@ -59,6 +62,14 @@ The Async BPF Execution module provides:
 │  │  • THRESHOLD_ABOVE/BELOW - trigger on value crossing       ││
 │  │  • PATTERN_MATCH - trigger on data matching pattern        ││
 │  │  • Max 32 watchers per program                             ││
+│  └────────────────────────────────────────────────────────────┘│
+│                                                                 │
+│  ┌────────────────────────────────────────────────────────────┐│
+│  │  RingBufferManager                                         ││
+│  │  • Lock-free ring buffer implementation                    ││
+│  │  • Event queuing for inter-program communication           ││
+│  │  • FIFO ordering with sequence numbers                     ││
+│  │  • Max 8 buffers per program, up to 1MB each               ││
 │  └────────────────────────────────────────────────────────────┘│
 │                                                                 │
 │  ┌────────────────────────────────────────────────────────────┐│
@@ -226,6 +237,95 @@ uint64_t sol_watcher_remove(uint64_t watcher_id);
 
 ---
 
+## Ring Buffer API
+
+Ring buffers provide high-performance inter-program communication and event queuing for async operations.
+
+### sol_ring_buffer_create
+
+Create a new ring buffer for event communication.
+
+```c
+uint64_t sol_ring_buffer_create(uint64_t size);
+// Returns: Buffer ID or 0 on failure
+```
+
+**Example Usage:**
+```c
+// Create a 4KB event buffer
+uint64_t buffer_id = sol_ring_buffer_create(4096);
+if (buffer_id == 0) {
+    // Handle error
+    return;
+}
+```
+
+### sol_ring_buffer_push
+
+Push data to a ring buffer.
+
+```c
+uint64_t sol_ring_buffer_push(
+    uint64_t buffer_id,    // Target buffer
+    const uint8_t* data,   // Data to push
+    uint64_t data_len      // Length of data
+);
+// Returns: 0 on success, error code on failure
+```
+
+**Example Usage:**
+```c
+// Push market event to buffer
+uint8_t event[] = {0x01, 0x00, 0x50, 0xC3}; // Event type + price
+uint64_t result = sol_ring_buffer_push(buffer_id, event, sizeof(event));
+if (result != 0) {
+    // Handle buffer full or error
+}
+```
+
+### sol_ring_buffer_pop
+
+Pop data from a ring buffer.
+
+```c
+uint64_t sol_ring_buffer_pop(
+    uint64_t buffer_id,    // Source buffer
+    uint8_t* output,       // Output buffer
+    uint64_t output_len    // Max bytes to read
+);
+// Returns: Number of bytes read, 0 if empty
+```
+
+**Example Usage:**
+```c
+uint8_t event_data[256];
+uint64_t bytes_read = sol_ring_buffer_pop(buffer_id, event_data, sizeof(event_data));
+if (bytes_read > 0) {
+    // Process event
+    process_event(event_data, bytes_read);
+}
+```
+
+### sol_ring_buffer_destroy
+
+Destroy a ring buffer and free resources.
+
+```c
+uint64_t sol_ring_buffer_destroy(uint64_t buffer_id);
+// Returns: 0 on success, error code on failure
+```
+
+### Ring Buffer Configuration
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| MAX_RING_BUFFERS_PER_PROGRAM | 8 | Maximum buffers per program |
+| MAX_RING_BUFFER_SIZE | 1,048,576 | Maximum buffer size (1MB) |
+| MIN_RING_BUFFER_SIZE | 64 | Minimum buffer size |
+| DEFAULT_RING_BUFFER_SIZE | 4,096 | Default buffer size (4KB) |
+
+---
+
 ## Integration with ML Inference
 
 The async execution module integrates seamlessly with the ML inference syscalls for building autonomous AI trading agents:
@@ -323,6 +423,9 @@ The async execution module integrates seamlessly with the ML inference syscalls 
 | 5 | MAX_WATCHERS | Watcher limit reached |
 | 6 | INVALID_SLOT | Invalid slot number |
 | 7 | SHUTDOWN | Engine is shutting down |
+| 8 | INVALID_BUFFER | Buffer ID not found |
+| 9 | BUFFER_FULL | Ring buffer is full |
+| 10 | MAX_BUFFERS | Buffer limit reached |
 
 ---
 

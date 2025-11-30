@@ -14,6 +14,9 @@ constexpr uint64_t ASYNC_ERROR_MAX_TIMERS = 4;
 constexpr uint64_t ASYNC_ERROR_MAX_WATCHERS = 5;
 constexpr uint64_t ASYNC_ERROR_INVALID_SLOT = 6;
 constexpr uint64_t ASYNC_ERROR_SHUTDOWN = 7;
+constexpr uint64_t ASYNC_ERROR_INVALID_BUFFER = 8;
+constexpr uint64_t ASYNC_ERROR_BUFFER_FULL = 9;
+constexpr uint64_t ASYNC_ERROR_MAX_BUFFERS = 10;
 
 // Cleanup configuration - completed/cancelled timers are removed at these intervals
 constexpr uint64_t TIMER_CLEANUP_INTERVAL_SLOTS = 100;
@@ -554,6 +557,290 @@ AsyncTask AccountWatcherManager::create_watcher_task(
 }
 
 // ============================================================================
+// RingBufferManager Implementation
+// ============================================================================
+
+RingBufferManager::RingBufferManager() {}
+
+RingBufferManager::~RingBufferManager() {}
+
+uint64_t RingBufferManager::create_buffer(
+    const std::string& program_id,
+    uint64_t size)
+{
+    // Validate size
+    if (size < MIN_RING_BUFFER_SIZE || size > MAX_RING_BUFFER_SIZE) {
+        return 0;
+    }
+    
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    // Check per-program limit
+    auto it = program_buffers_.find(program_id);
+    if (it != program_buffers_.end() && it->second.size() >= MAX_RING_BUFFERS_PER_PROGRAM) {
+        return 0;
+    }
+    
+    // Create new buffer
+    uint64_t buffer_id = next_buffer_id_++;
+    auto buffer = std::make_unique<BpfRingBuffer>();
+    buffer->buffer_id = buffer_id;
+    buffer->owner_program_id = program_id;
+    buffer->state = RingBufferState::ACTIVE;
+    buffer->capacity = size;
+    buffer->buffer.resize(size);
+    
+    // Add to maps
+    program_buffers_[program_id].push_back(buffer_id);
+    buffers_[buffer_id] = std::move(buffer);
+    
+    total_buffers_created_++;
+    
+    return buffer_id;
+}
+
+bool RingBufferManager::destroy_buffer(uint64_t buffer_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    auto it = buffers_.find(buffer_id);
+    if (it == buffers_.end()) {
+        return false;
+    }
+    
+    // Remove from program list
+    const std::string& program_id = it->second->owner_program_id;
+    auto prog_it = program_buffers_.find(program_id);
+    if (prog_it != program_buffers_.end()) {
+        auto& buffers = prog_it->second;
+        buffers.erase(std::remove(buffers.begin(), buffers.end(), buffer_id), buffers.end());
+        if (buffers.empty()) {
+            program_buffers_.erase(prog_it);
+        }
+    }
+    
+    buffers_.erase(it);
+    return true;
+}
+
+bool RingBufferManager::push(
+    uint64_t buffer_id,
+    const uint8_t* data,
+    uint32_t data_len,
+    uint64_t current_slot,
+    uint32_t flags)
+{
+    if (!data || data_len == 0) {
+        return false;
+    }
+    
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    auto it = buffers_.find(buffer_id);
+    if (it == buffers_.end()) {
+        return false;
+    }
+    
+    BpfRingBuffer& buffer = *it->second;
+    
+    if (buffer.state != RingBufferState::ACTIVE) {
+        return false;
+    }
+    
+    // Calculate total entry size (header + data)
+    uint32_t entry_size = sizeof(RingBufferEntry) + data_len;
+    
+    // Check if we have enough space
+    uint64_t available = calculate_available_space(buffer);
+    if (entry_size > available) {
+        buffer.dropped_entries++;
+        return false;
+    }
+    
+    // Get write position
+    uint64_t head = buffer.head.load();
+    
+    // Write header
+    RingBufferEntry entry;
+    entry.sequence_number = buffer.sequence++;
+    entry.timestamp_slot = current_slot;
+    entry.data_length = data_len;
+    entry.flags = flags;
+    
+    // Write header bytes (wrap around if needed)
+    const uint8_t* header_bytes = reinterpret_cast<const uint8_t*>(&entry);
+    for (size_t i = 0; i < sizeof(RingBufferEntry); i++) {
+        buffer.buffer[(head + i) % buffer.capacity] = header_bytes[i];
+    }
+    
+    // Write data bytes
+    for (size_t i = 0; i < data_len; i++) {
+        buffer.buffer[(head + sizeof(RingBufferEntry) + i) % buffer.capacity] = data[i];
+    }
+    
+    // Update head
+    buffer.head.store((head + entry_size) % buffer.capacity);
+    buffer.entry_count.fetch_add(1);
+    buffer.total_writes++;
+    total_bytes_written_ += data_len;
+    
+    // Update peak usage
+    uint64_t used = buffer.capacity - calculate_available_space(buffer);
+    if (used > buffer.peak_usage) {
+        buffer.peak_usage = used;
+    }
+    
+    return true;
+}
+
+std::vector<uint8_t> RingBufferManager::pop(uint64_t buffer_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    auto it = buffers_.find(buffer_id);
+    if (it == buffers_.end()) {
+        return {};
+    }
+    
+    BpfRingBuffer& buffer = *it->second;
+    
+    if (buffer.state == RingBufferState::CLOSED) {
+        return {};
+    }
+    
+    if (buffer.entry_count.load() == 0) {
+        return {};
+    }
+    
+    uint64_t tail = buffer.tail.load();
+    uint64_t head = buffer.head.load();
+    
+    if (tail == head) {
+        return {};
+    }
+    
+    // Read header
+    RingBufferEntry entry;
+    uint8_t* header_bytes = reinterpret_cast<uint8_t*>(&entry);
+    for (size_t i = 0; i < sizeof(RingBufferEntry); i++) {
+        header_bytes[i] = buffer.buffer[(tail + i) % buffer.capacity];
+    }
+    
+    // Read data
+    std::vector<uint8_t> data(entry.data_length);
+    for (size_t i = 0; i < entry.data_length; i++) {
+        data[i] = buffer.buffer[(tail + sizeof(RingBufferEntry) + i) % buffer.capacity];
+    }
+    
+    // Update tail
+    uint32_t entry_size = sizeof(RingBufferEntry) + entry.data_length;
+    buffer.tail.store((tail + entry_size) % buffer.capacity);
+    buffer.entry_count.fetch_sub(1);
+    buffer.total_reads++;
+    total_bytes_read_ += entry.data_length;
+    
+    return data;
+}
+
+std::vector<uint8_t> RingBufferManager::peek(uint64_t buffer_id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    auto it = buffers_.find(buffer_id);
+    if (it == buffers_.end()) {
+        return {};
+    }
+    
+    const BpfRingBuffer& buffer = *it->second;
+    
+    if (buffer.entry_count.load() == 0) {
+        return {};
+    }
+    
+    uint64_t tail = buffer.tail.load();
+    
+    // Read header
+    RingBufferEntry entry;
+    uint8_t* header_bytes = reinterpret_cast<uint8_t*>(&entry);
+    for (size_t i = 0; i < sizeof(RingBufferEntry); i++) {
+        header_bytes[i] = buffer.buffer[(tail + i) % buffer.capacity];
+    }
+    
+    // Read data (without modifying tail)
+    std::vector<uint8_t> data(entry.data_length);
+    for (size_t i = 0; i < entry.data_length; i++) {
+        data[i] = buffer.buffer[(tail + sizeof(RingBufferEntry) + i) % buffer.capacity];
+    }
+    
+    return data;
+}
+
+const BpfRingBuffer* RingBufferManager::get_buffer(uint64_t buffer_id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = buffers_.find(buffer_id);
+    return it != buffers_.end() ? it->second.get() : nullptr;
+}
+
+bool RingBufferManager::has_data(uint64_t buffer_id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = buffers_.find(buffer_id);
+    return it != buffers_.end() && it->second->entry_count.load() > 0;
+}
+
+uint64_t RingBufferManager::get_entry_count(uint64_t buffer_id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = buffers_.find(buffer_id);
+    return it != buffers_.end() ? it->second->entry_count.load() : 0;
+}
+
+double RingBufferManager::get_usage(uint64_t buffer_id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = buffers_.find(buffer_id);
+    if (it == buffers_.end()) {
+        return 0.0;
+    }
+    
+    const BpfRingBuffer& buffer = *it->second;
+    uint64_t used = buffer.capacity - calculate_available_space(buffer);
+    return static_cast<double>(used) / static_cast<double>(buffer.capacity);
+}
+
+void RingBufferManager::get_stats(AsyncExecutionStats& stats) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    // Add ring buffer stats to memory usage
+    size_t total_memory = 0;
+    for (const auto& pair : buffers_) {
+        total_memory += pair.second->capacity;
+    }
+    stats.memory_used_bytes += total_memory;
+}
+
+bool RingBufferManager::set_buffer_state(uint64_t buffer_id, RingBufferState state) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = buffers_.find(buffer_id);
+    if (it == buffers_.end()) {
+        return false;
+    }
+    it->second->state = state;
+    return true;
+}
+
+std::vector<uint64_t> RingBufferManager::get_program_buffers(const std::string& program_id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = program_buffers_.find(program_id);
+    return it != program_buffers_.end() ? it->second : std::vector<uint64_t>{};
+}
+
+uint64_t RingBufferManager::calculate_available_space(const BpfRingBuffer& buffer) const {
+    uint64_t head = buffer.head.load();
+    uint64_t tail = buffer.tail.load();
+    
+    if (head >= tail) {
+        return buffer.capacity - (head - tail) - 1;  // -1 to distinguish full from empty
+    } else {
+        return tail - head - 1;
+    }
+}
+
+// ============================================================================
 // AsyncTaskScheduler Implementation
 // ============================================================================
 
@@ -757,7 +1044,8 @@ bool AsyncTaskScheduler::task_priority_compare(AsyncTask* a, AsyncTask* b) {
 AsyncBpfExecutionEngine::AsyncBpfExecutionEngine(size_t num_workers)
     : timer_manager_(std::make_unique<TimerManager>()),
       watcher_manager_(std::make_unique<AccountWatcherManager>()),
-      task_scheduler_(std::make_unique<AsyncTaskScheduler>(num_workers))
+      task_scheduler_(std::make_unique<AsyncTaskScheduler>(num_workers)),
+      ring_buffer_manager_(std::make_unique<RingBufferManager>())
 {}
 
 AsyncBpfExecutionEngine::~AsyncBpfExecutionEngine() {
@@ -882,6 +1170,35 @@ const AccountWatcher* AsyncBpfExecutionEngine::sol_watcher_get_info(uint64_t wat
     return watcher_manager_->get_watcher(watcher_id);
 }
 
+// Ring buffer methods
+uint64_t AsyncBpfExecutionEngine::sol_ring_buffer_create(
+    const std::string& program_id,
+    uint64_t size)
+{
+    return ring_buffer_manager_->create_buffer(program_id, size);
+}
+
+bool AsyncBpfExecutionEngine::sol_ring_buffer_push(
+    uint64_t buffer_id,
+    const uint8_t* data,
+    uint32_t data_len,
+    uint32_t flags)
+{
+    return ring_buffer_manager_->push(buffer_id, data, data_len, current_slot_.load(), flags);
+}
+
+std::vector<uint8_t> AsyncBpfExecutionEngine::sol_ring_buffer_pop(uint64_t buffer_id) {
+    return ring_buffer_manager_->pop(buffer_id);
+}
+
+bool AsyncBpfExecutionEngine::sol_ring_buffer_destroy(uint64_t buffer_id) {
+    return ring_buffer_manager_->destroy_buffer(buffer_id);
+}
+
+const BpfRingBuffer* AsyncBpfExecutionEngine::sol_ring_buffer_get_info(uint64_t buffer_id) const {
+    return ring_buffer_manager_->get_buffer(buffer_id);
+}
+
 void AsyncBpfExecutionEngine::process_slot(uint64_t slot) {
     current_slot_.store(slot);
     task_scheduler_->set_current_slot(slot);
@@ -921,6 +1238,7 @@ AsyncExecutionStats AsyncBpfExecutionEngine::get_stats() const {
     timer_manager_->get_stats(stats);
     watcher_manager_->get_stats(stats);
     task_scheduler_->get_stats(stats);
+    ring_buffer_manager_->get_stats(stats);
     return stats;
 }
 
@@ -1118,6 +1436,51 @@ uint64_t sol_watcher_create_threshold(
 uint64_t sol_watcher_remove(uint64_t watcher_id) {
     auto* engine = get_engine();
     return engine->sol_watcher_remove(watcher_id) ? ASYNC_SUCCESS : ASYNC_ERROR_INVALID_WATCHER;
+}
+
+uint64_t sol_ring_buffer_create(uint64_t size) {
+    auto* engine = get_engine();
+    return engine->sol_ring_buffer_create(g_current_program_id, size);
+}
+
+uint64_t sol_ring_buffer_push(
+    uint64_t buffer_id,
+    const uint8_t* data,
+    uint64_t data_len)
+{
+    if (!data && data_len > 0) {
+        return ASYNC_ERROR_NULL_POINTER;
+    }
+    
+    auto* engine = get_engine();
+    return engine->sol_ring_buffer_push(buffer_id, data, static_cast<uint32_t>(data_len), 0)
+        ? ASYNC_SUCCESS : ASYNC_ERROR_BUFFER_FULL;
+}
+
+uint64_t sol_ring_buffer_pop(
+    uint64_t buffer_id,
+    uint8_t* output,
+    uint64_t output_len)
+{
+    if (!output || output_len == 0) {
+        return 0;
+    }
+    
+    auto* engine = get_engine();
+    auto data = engine->sol_ring_buffer_pop(buffer_id);
+    
+    if (data.empty()) {
+        return 0;
+    }
+    
+    size_t copy_len = std::min(static_cast<size_t>(output_len), data.size());
+    std::memcpy(output, data.data(), copy_len);
+    return copy_len;
+}
+
+uint64_t sol_ring_buffer_destroy(uint64_t buffer_id) {
+    auto* engine = get_engine();
+    return engine->sol_ring_buffer_destroy(buffer_id) ? ASYNC_SUCCESS : ASYNC_ERROR_INVALID_BUFFER;
 }
 
 uint64_t sol_get_slot() {

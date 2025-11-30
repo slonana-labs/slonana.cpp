@@ -48,6 +48,100 @@ constexpr uint64_t MAX_BACKGROUND_TASKS = 64;
 constexpr uint64_t MIN_TIMER_SLOTS = 1;
 constexpr uint64_t MAX_TIMER_SLOTS = 1000000; // ~5 days at 400ms slots
 
+// Ring buffer limits
+constexpr uint64_t MAX_RING_BUFFERS_PER_PROGRAM = 8;
+constexpr uint64_t MAX_RING_BUFFER_SIZE = 1024 * 1024;  // 1MB max
+constexpr uint64_t MIN_RING_BUFFER_SIZE = 64;           // 64 bytes min
+constexpr uint64_t DEFAULT_RING_BUFFER_SIZE = 4096;     // 4KB default
+
+// ============================================================================
+// Ring Buffer Types (for async event communication)
+// ============================================================================
+
+/**
+ * Ring buffer state
+ */
+enum class RingBufferState : uint8_t {
+    ACTIVE = 0,       // Buffer is active and operational
+    PAUSED = 1,       // Buffer operations paused
+    CLOSED = 2,       // Buffer closed, no more operations allowed
+    DRAINING = 3      // Buffer being drained before close
+};
+
+/**
+ * Ring buffer entry header
+ * 
+ * NOTE: This struct is 24 bytes total (3x 8-byte aligned fields):
+ * - sequence_number: 8 bytes
+ * - timestamp_slot: 8 bytes  
+ * - data_length + flags: 8 bytes combined
+ * Naturally aligned for 64-bit platforms, no padding required.
+ */
+struct RingBufferEntry {
+    uint64_t sequence_number;     // Monotonically increasing sequence
+    uint64_t timestamp_slot;      // Slot when entry was written
+    uint32_t data_length;         // Length of data following header
+    uint32_t flags;               // Entry flags (priority, type, etc.)
+    
+    RingBufferEntry()
+        : sequence_number(0), timestamp_slot(0), data_length(0), flags(0) {}
+};
+
+/**
+ * Lock-free ring buffer for inter-program communication
+ * Enables async event passing between programs and the runtime
+ */
+struct BpfRingBuffer {
+    uint64_t buffer_id;
+    std::string owner_program_id;
+    RingBufferState state;
+    
+    // Buffer configuration
+    uint64_t capacity;           // Total buffer size in bytes
+    std::atomic<uint64_t> entry_count;  // Number of entries in buffer
+    
+    // Ring buffer pointers (atomic for lock-free operation)
+    std::atomic<uint64_t> head;  // Write position
+    std::atomic<uint64_t> tail;  // Read position
+    std::atomic<uint64_t> sequence; // Next sequence number
+    
+    // Buffer storage
+    std::vector<uint8_t> buffer;
+    
+    // Statistics
+    uint64_t total_writes;
+    uint64_t total_reads;
+    uint64_t dropped_entries;    // Entries dropped due to full buffer
+    uint64_t peak_usage;         // Peak bytes used
+    
+    // Created slot
+    uint64_t created_at_slot;
+    
+    BpfRingBuffer()
+        : buffer_id(0), state(RingBufferState::ACTIVE),
+          capacity(DEFAULT_RING_BUFFER_SIZE), entry_count(0),
+          head(0), tail(0), sequence(0),
+          total_writes(0), total_reads(0), dropped_entries(0),
+          peak_usage(0), created_at_slot(0) {}
+    
+    // Move constructor
+    BpfRingBuffer(BpfRingBuffer&& other) noexcept
+        : buffer_id(other.buffer_id),
+          owner_program_id(std::move(other.owner_program_id)),
+          state(other.state), capacity(other.capacity),
+          entry_count(other.entry_count.load()),
+          head(other.head.load()), tail(other.tail.load()),
+          sequence(other.sequence.load()),
+          buffer(std::move(other.buffer)),
+          total_writes(other.total_writes), total_reads(other.total_reads),
+          dropped_entries(other.dropped_entries), peak_usage(other.peak_usage),
+          created_at_slot(other.created_at_slot) {}
+    
+    // Disable copy
+    BpfRingBuffer(const BpfRingBuffer&) = delete;
+    BpfRingBuffer& operator=(const BpfRingBuffer&) = delete;
+};
+
 // ============================================================================
 // Timer Types
 // ============================================================================
@@ -499,6 +593,106 @@ private:
 };
 
 // ============================================================================
+// Ring Buffer Manager
+// ============================================================================
+
+/**
+ * Manages ring buffers for async event communication
+ */
+class RingBufferManager {
+public:
+    RingBufferManager();
+    ~RingBufferManager();
+    
+    /**
+     * Create a new ring buffer (sol_ring_buffer_create)
+     * @param program_id Program creating the buffer
+     * @param size Buffer size in bytes
+     * @return Buffer ID or 0 on failure
+     */
+    uint64_t create_buffer(
+        const std::string& program_id,
+        uint64_t size = DEFAULT_RING_BUFFER_SIZE
+    );
+    
+    /**
+     * Destroy a ring buffer (sol_ring_buffer_destroy)
+     */
+    bool destroy_buffer(uint64_t buffer_id);
+    
+    /**
+     * Push data to ring buffer (sol_ring_buffer_push)
+     * @return true on success, false if buffer full or invalid
+     */
+    bool push(
+        uint64_t buffer_id,
+        const uint8_t* data,
+        uint32_t data_len,
+        uint64_t current_slot,
+        uint32_t flags = 0
+    );
+    
+    /**
+     * Pop data from ring buffer (sol_ring_buffer_pop)
+     * @return Data vector (empty if no data available)
+     */
+    std::vector<uint8_t> pop(uint64_t buffer_id);
+    
+    /**
+     * Peek at next entry without removing (sol_ring_buffer_peek)
+     */
+    std::vector<uint8_t> peek(uint64_t buffer_id) const;
+    
+    /**
+     * Get buffer info
+     */
+    const BpfRingBuffer* get_buffer(uint64_t buffer_id) const;
+    
+    /**
+     * Check if buffer has data
+     */
+    bool has_data(uint64_t buffer_id) const;
+    
+    /**
+     * Get number of entries in buffer
+     */
+    uint64_t get_entry_count(uint64_t buffer_id) const;
+    
+    /**
+     * Get buffer capacity usage (0.0 to 1.0)
+     */
+    double get_usage(uint64_t buffer_id) const;
+    
+    /**
+     * Get statistics
+     */
+    void get_stats(AsyncExecutionStats& stats) const;
+    
+    /**
+     * Pause/resume buffer
+     */
+    bool set_buffer_state(uint64_t buffer_id, RingBufferState state);
+    
+    /**
+     * Get all buffers for a program
+     */
+    std::vector<uint64_t> get_program_buffers(const std::string& program_id) const;
+    
+private:
+    std::unordered_map<uint64_t, std::unique_ptr<BpfRingBuffer>> buffers_;
+    std::unordered_map<std::string, std::vector<uint64_t>> program_buffers_;
+    mutable std::mutex mutex_;
+    std::atomic<uint64_t> next_buffer_id_{1};
+    
+    // Statistics
+    std::atomic<uint64_t> total_buffers_created_{0};
+    std::atomic<uint64_t> total_bytes_written_{0};
+    std::atomic<uint64_t> total_bytes_read_{0};
+    
+    uint64_t calculate_available_space(const BpfRingBuffer& buffer) const;
+};
+
+// ============================================================================
 // Async Task Scheduler
 // ============================================================================
 
@@ -694,6 +888,53 @@ public:
     const AccountWatcher* sol_watcher_get_info(uint64_t watcher_id) const;
     
     // ========================================================================
+    // Ring Buffer API (sol_ring_buffer_* syscalls)
+    // ========================================================================
+    
+    /**
+     * Create a ring buffer (sol_ring_buffer_create)
+     * @param program_id Program creating the buffer
+     * @param size Buffer size in bytes
+     * @return Buffer ID or 0 on failure
+     */
+    uint64_t sol_ring_buffer_create(
+        const std::string& program_id,
+        uint64_t size = DEFAULT_RING_BUFFER_SIZE
+    );
+    
+    /**
+     * Push data to ring buffer (sol_ring_buffer_push)
+     * @param buffer_id Buffer to push to
+     * @param data Data to push
+     * @param data_len Length of data
+     * @param flags Entry flags
+     * @return true on success
+     */
+    bool sol_ring_buffer_push(
+        uint64_t buffer_id,
+        const uint8_t* data,
+        uint32_t data_len,
+        uint32_t flags = 0
+    );
+    
+    /**
+     * Pop data from ring buffer (sol_ring_buffer_pop)
+     * @param buffer_id Buffer to pop from
+     * @return Data vector (empty if no data)
+     */
+    std::vector<uint8_t> sol_ring_buffer_pop(uint64_t buffer_id);
+    
+    /**
+     * Destroy a ring buffer (sol_ring_buffer_destroy)
+     */
+    bool sol_ring_buffer_destroy(uint64_t buffer_id);
+    
+    /**
+     * Get ring buffer info
+     */
+    const BpfRingBuffer* sol_ring_buffer_get_info(uint64_t buffer_id) const;
+    
+    // ========================================================================
     // Slot Processing
     // ========================================================================
     
@@ -738,6 +979,7 @@ private:
     std::unique_ptr<TimerManager> timer_manager_;
     std::unique_ptr<AccountWatcherManager> watcher_manager_;
     std::unique_ptr<AsyncTaskScheduler> task_scheduler_;
+    std::unique_ptr<RingBufferManager> ring_buffer_manager_;
     
     std::atomic<bool> running_{false};
     std::atomic<uint64_t> current_slot_{0};
@@ -838,6 +1080,46 @@ uint64_t sol_watcher_create_threshold(
  * @return 0 on success, error code on failure
  */
 uint64_t sol_watcher_remove(uint64_t watcher_id);
+
+/**
+ * Create a ring buffer
+ * @param size Buffer size in bytes
+ * @return Buffer ID or 0 on failure
+ */
+uint64_t sol_ring_buffer_create(uint64_t size);
+
+/**
+ * Push data to ring buffer
+ * @param buffer_id Buffer to push to
+ * @param data Data to push
+ * @param data_len Length of data
+ * @return 0 on success, error code on failure
+ */
+uint64_t sol_ring_buffer_push(
+    uint64_t buffer_id,
+    const uint8_t* data,
+    uint64_t data_len
+);
+
+/**
+ * Pop data from ring buffer
+ * @param buffer_id Buffer to pop from
+ * @param output Buffer to write data to
+ * @param output_len Maximum bytes to read
+ * @return Number of bytes read, 0 if empty
+ */
+uint64_t sol_ring_buffer_pop(
+    uint64_t buffer_id,
+    uint8_t* output,
+    uint64_t output_len
+);
+
+/**
+ * Destroy a ring buffer
+ * @param buffer_id Buffer to destroy
+ * @return 0 on success, error code on failure
+ */
+uint64_t sol_ring_buffer_destroy(uint64_t buffer_id);
 
 /**
  * Get current slot
