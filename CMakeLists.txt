@@ -648,6 +648,15 @@ target_link_libraries(slonana_fuzzing_bpf_runtime_tests slonana_core gtest_main)
 target_include_directories(slonana_fuzzing_bpf_runtime_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 add_test(NAME fuzzing_bpf_runtime_tests COMMAND slonana_fuzzing_bpf_runtime_tests)
 
+# ML Inference Tests (AI in eBPF/sBPF Runtime)
+add_executable(slonana_ml_inference_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_ml_inference.cpp"
+)
+target_link_libraries(slonana_ml_inference_tests slonana_core)
+target_include_directories(slonana_ml_inference_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME ml_inference_tests COMMAND slonana_ml_inference_tests)
+
 
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")
