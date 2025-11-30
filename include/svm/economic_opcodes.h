@@ -47,6 +47,12 @@ namespace econ_compute_costs {
     constexpr uint64_t REPUTATION_UPDATE = 100;    // Manual: 2,000 CU
 }
 
+// Timing constants
+constexpr double SLOT_DURATION_SECONDS = 0.4;     // 400ms per slot (Solana default)
+constexpr uint64_t SLOTS_PER_DAY = static_cast<uint64_t>(24 * 60 * 60 / SLOT_DURATION_SECONDS);
+constexpr uint64_t DEFAULT_UNBONDING_PERIOD_DAYS = 7;
+constexpr uint64_t DEFAULT_UNBONDING_PERIOD_SLOTS = DEFAULT_UNBONDING_PERIOD_DAYS * SLOTS_PER_DAY;
+
 // Limits
 constexpr uint64_t MAX_AUCTION_ITEMS = 64;
 constexpr uint64_t MAX_BIDS_PER_AUCTION = 256;

@@ -686,9 +686,8 @@ bool StakingManager::begin_unstake(uint64_t stake_id, uint64_t current_slot) {
     }
     
     // Begin unbonding period (default 7 days worth of slots)
-    constexpr uint64_t UNBONDING_PERIOD = 7 * 24 * 60 * 60 / 0.4;  // ~7 days at 400ms slots
     stake.state = StakeState::UNLOCKING;
-    stake.unlock_slot = current_slot + UNBONDING_PERIOD;
+    stake.unlock_slot = current_slot + DEFAULT_UNBONDING_PERIOD_SLOTS;
     
     return true;
 }
