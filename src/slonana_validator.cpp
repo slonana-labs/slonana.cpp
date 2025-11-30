@@ -360,8 +360,11 @@ void SolanaValidator::inject_synthetic_activity(uint64_t blocks, uint64_t transa
       // Create a synthetic block with transactions
       ledger::Block synthetic_block;
       synthetic_block.slot = validator_core_->get_current_slot() + 1;
-      synthetic_block.parent_slot = validator_core_->get_current_slot();
-      synthetic_block.block_time = static_cast<int64_t>(
+      // parent_hash is used instead of parent_slot
+      synthetic_block.parent_hash.resize(32);
+      std::fill(synthetic_block.parent_hash.begin(), synthetic_block.parent_hash.end(), 
+               static_cast<uint8_t>(validator_core_->get_current_slot() % 256));
+      synthetic_block.timestamp = static_cast<uint64_t>(
           std::chrono::duration_cast<std::chrono::seconds>(
               std::chrono::system_clock::now().time_since_epoch())
               .count());
@@ -371,7 +374,9 @@ void SolanaValidator::inject_synthetic_activity(uint64_t blocks, uint64_t transa
       for (uint64_t j = 0; j < txs_per_block; j++) {
         ledger::Transaction tx;
         tx.signatures.push_back(std::vector<uint8_t>(64, static_cast<uint8_t>(j % 256)));
-        tx.message.recent_blockhash = validator_core_->get_current_head();
+        // message is a vector<uint8_t>, initialize with some data
+        auto current_head = validator_core_->get_current_head();
+        tx.message.insert(tx.message.end(), current_head.begin(), current_head.end());
         synthetic_block.transactions.push_back(tx);
       }
       
