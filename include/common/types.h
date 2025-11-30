@@ -128,6 +128,8 @@ struct ValidatorConfig {
   bool enable_faucet = false;               ///< Enable built-in faucet (devnet only)
   uint32_t faucet_port = 9900;              ///< Port for faucet service
   std::string rpc_faucet_address = "127.0.0.1:9900"; ///< Faucet service bind address
+  bool single_node_mode = false;            ///< Enable single-node mode with synthetic TPS
+  uint32_t synthetic_tps_target = 1000;     ///< Target synthetic TPS in single-node mode
   
   // Alerting and notification configuration
   std::string slack_webhook_url = "";       ///< Slack webhook URL for critical alerts
