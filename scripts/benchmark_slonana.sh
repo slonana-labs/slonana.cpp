@@ -418,48 +418,60 @@ setup_validator() {
     fi
 
     # Try to find and download real devnet snapshots for production-grade startup
+    # NOTE: In CI environments, snapshot download typically fails because public RPC
+    # endpoints don't serve snapshot archives directly. This is expected behavior.
     if [[ -n "$VALIDATOR_BIN" ]] && [[ -x "$VALIDATOR_BIN" ]]; then
-        log_info "Attempting devnet snapshot discovery for production startup..."
-        
-        # Discover available snapshot sources
-        log_verbose "Discovering devnet snapshot sources..."
-        local snapshot_discovery_success=false
-        local real_snapshot_downloaded=false
-        
-        if "$VALIDATOR_BIN" snapshot-find --network devnet --max-latency 2000 --max-snapshot-age 500000 --min-download-speed 0 --json > "$RESULTS_DIR/snapshot_sources.json" 2>/dev/null; then
-            log_verbose "Snapshot sources discovered, attempting download..."
-            snapshot_discovery_success=true
+        # Check if we're in CI mode - skip slow snapshot discovery for faster CI runs
+        if [[ -n "${CI:-}" || -n "${GITHUB_ACTIONS:-}" || -n "${SLONANA_CI_MODE:-}" ]]; then
+            log_info "🚀 CI environment detected - using fast genesis bootstrap mode"
+            log_info "   Skipping snapshot discovery to optimize CI benchmark speed"
+            log_info "   Note: Snapshot download from public endpoints typically fails in CI"
+            log_info "   because RPC providers don't serve raw .tar.zst snapshot archives"
+            setup_bootstrap_fallback
+        else
+            log_info "Attempting devnet snapshot discovery for production startup..."
             
-            if "$VALIDATOR_BIN" snapshot-download --output-dir "$LEDGER_DIR" --network devnet --max-latency 2000 --max-snapshot-age 500000 --min-download-speed 0 --verbose > "$RESULTS_DIR/snapshot_download.log" 2>&1; then
-                # Check if a REAL snapshot was actually downloaded
-                if find "$LEDGER_DIR" -name "*.tar.zst" -size +1M 2>/dev/null | head -1 | grep -q .; then
-                    # Verify it's not just a bootstrap marker disguised as a snapshot
-                    local snapshot_file=$(find "$LEDGER_DIR" -name "*.tar.zst" -size +1M 2>/dev/null | head -1)
-                    if ! grep -q "Bootstrap.*Marker" "$snapshot_file" 2>/dev/null; then
-                        log_success "✅ REAL devnet snapshot downloaded successfully"
-                        log_info "   Snapshot contains full chain state - validator will hard fork from snapshot"
-                        log_info "   File: $(basename "$snapshot_file")"
-                        log_info "   Size: $(ls -lh "$snapshot_file" | awk '{print $5}')"
-                        real_snapshot_downloaded=true
+            # Discover available snapshot sources
+            log_verbose "Discovering devnet snapshot sources..."
+            local snapshot_discovery_success=false
+            local real_snapshot_downloaded=false
+            
+            if "$VALIDATOR_BIN" snapshot-find --network devnet --max-latency 2000 --max-snapshot-age 500000 --min-download-speed 0 --json > "$RESULTS_DIR/snapshot_sources.json" 2>/dev/null; then
+                log_verbose "Snapshot sources discovered, attempting download..."
+                snapshot_discovery_success=true
+                
+                if "$VALIDATOR_BIN" snapshot-download --output-dir "$LEDGER_DIR" --network devnet --max-latency 2000 --max-snapshot-age 500000 --min-download-speed 0 --verbose > "$RESULTS_DIR/snapshot_download.log" 2>&1; then
+                    # Check if a REAL snapshot was actually downloaded
+                    if find "$LEDGER_DIR" -name "*.tar.zst" -size +1M 2>/dev/null | head -1 | grep -q .; then
+                        # Verify it's not just a bootstrap marker disguised as a snapshot
+                        local snapshot_file=$(find "$LEDGER_DIR" -name "*.tar.zst" -size +1M 2>/dev/null | head -1)
+                        if ! grep -q "Bootstrap.*Marker" "$snapshot_file" 2>/dev/null; then
+                            log_success "✅ REAL devnet snapshot downloaded successfully"
+                            log_info "   Snapshot contains full chain state - validator will hard fork from snapshot"
+                            log_info "   File: $(basename "$snapshot_file")"
+                            log_info "   Size: $(ls -lh "$snapshot_file" | awk '{print $5}')"
+                            real_snapshot_downloaded=true
+                        fi
                     fi
                 fi
             fi
-        fi
-        
-        # Handle fallback scenarios with clear messaging
-        if [[ "$real_snapshot_downloaded" == "true" ]]; then
-            log_success "Snapshot-based startup ready - validator will hard fork from downloaded state"
-        else
-            if [[ "$snapshot_discovery_success" == "true" ]]; then
-                log_info "⚠️  Devnet snapshot discovery succeeded but no accessible snapshots found"
-                log_info "   This is normal for development environments where snapshots are restricted"
-            else
-                log_info "⚠️  Devnet snapshot discovery failed - no accessible snapshot sources"
-            fi
             
-            log_info "🔧 Falling back to genesis bootstrap mode for development environment"
-            log_info "   Creating genesis configuration from scratch (no snapshot data will be used)"
-            setup_bootstrap_fallback
+            # Handle fallback scenarios with clear messaging
+            if [[ "$real_snapshot_downloaded" == "true" ]]; then
+                log_success "Snapshot-based startup ready - validator will hard fork from downloaded state"
+            else
+                if [[ "$snapshot_discovery_success" == "true" ]]; then
+                    log_info "⚠️  Devnet snapshot discovery succeeded but no accessible snapshots found"
+                    log_info "   This is EXPECTED - public RPC endpoints don't serve .tar.zst archives"
+                    log_info "   Snapshot serving requires dedicated snapshot providers or gossip protocol"
+                else
+                    log_info "⚠️  Devnet snapshot discovery failed - no accessible snapshot sources"
+                fi
+                
+                log_info "🔧 Falling back to genesis bootstrap mode for development environment"
+                log_info "   Creating genesis configuration from scratch (no snapshot data will be used)"
+                setup_bootstrap_fallback
+            fi
         fi
     else
         log_verbose "Validator binary not available - using genesis bootstrap for development"
