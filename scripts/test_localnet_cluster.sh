@@ -29,10 +29,10 @@ NODE3_GOSSIP=38001
 NODE3_TPU=38003
 
 # Transaction test settings - high throughput mode
-TX_COUNT=50000   # 50k transactions (adjustable via -c flag)
-TX_RATE=10000    # 10k transactions per second target
-TX_BATCH_SIZE=100  # Send in batches for higher throughput
-TEST_DURATION=30
+TX_COUNT=500000   # 500k transactions (adjustable via -c flag)
+TX_RATE=50000    # 50k transactions per second target
+TX_BATCH_SIZE=500  # Larger batches for higher throughput
+TEST_DURATION=60
 WAIT_FOR_SLOT_SYNC=true  # Wait for nodes to sync slots before testing
 
 # Colors for output
@@ -59,15 +59,15 @@ Usage: $0 [OPTIONS]
 Options:
   -h, --help           Show this help message
   -d, --docker         Use Docker containers (default: native binaries)
-  -t, --test-duration  Duration of TPS test in seconds (default: 30)
-  -c, --tx-count       Number of transactions to generate (default: 100000)
-  -r, --tx-rate        Transaction rate per second (default: 10000)
-  -b, --batch-size     Batch size for parallel sending (default: 100)
+  -t, --test-duration  Duration of TPS test in seconds (default: 60)
+  -c, --tx-count       Number of transactions to generate (default: 500000)
+  -r, --tx-rate        Transaction rate per second (default: 50000)
+  -b, --batch-size     Batch size for parallel sending (default: 500)
   --skip-build         Skip building the validator
   --cleanup-only       Only cleanup existing cluster
   
 Examples:
-  $0                   # Run with default high-throughput settings (100k tx @ 10k/s)
+  $0                   # Run with default high-throughput settings (500k tx @ 50k/s)
   $0 --docker          # Use Docker containers
   $0 -t 60 -c 500000 -r 50000  # 60 second stress test with 500k tx @ 50k/s
   $0 -c 1000 -r 100    # Light test with 1k tx @ 100/s
