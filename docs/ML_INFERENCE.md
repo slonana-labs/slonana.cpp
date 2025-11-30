@@ -273,6 +273,7 @@ switch (action) {
 3. **Convolutional Layers**: For image/signal processing
 4. **Attention Mechanisms**: Transformer-style attention
 5. **Quantization Aware Training**: Better INT8 model support
+6. **Async BPF Execution**: See `docs/ASYNC_BPF_EXECUTION.md` for autonomous program execution
 
 ---
 

@@ -657,6 +657,13 @@ target_link_libraries(slonana_ml_inference_tests slonana_core)
 target_include_directories(slonana_ml_inference_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 add_test(NAME ml_inference_tests COMMAND slonana_ml_inference_tests)
 
+# Async BPF Execution Tests (Autonomous Program Execution)
+add_executable(slonana_async_bpf_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_async_bpf_execution.cpp"
+)
+target_link_libraries(slonana_async_bpf_tests slonana_core)
+target_include_directories(slonana_async_bpf_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME async_bpf_tests COMMAND slonana_async_bpf_tests)
 
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")
