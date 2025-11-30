@@ -28,11 +28,11 @@ NODE3_RPC=38899
 NODE3_GOSSIP=38001
 NODE3_TPU=38003
 
-# Transaction test settings - high throughput mode
-TX_COUNT=500000   # 500k transactions (adjustable via -c flag)
-TX_RATE=50000    # 50k transactions per second target
-TX_BATCH_SIZE=500  # Larger batches for higher throughput
-TEST_DURATION=60
+# Transaction test settings - balanced for CI timeout constraints
+TX_COUNT=10000   # 10k transactions (adjustable via -c flag)
+TX_RATE=5000     # 5k transactions per second target
+TX_BATCH_SIZE=100  # Balanced batch size for reliability
+TEST_DURATION=30
 WAIT_FOR_SLOT_SYNC=true  # Wait for nodes to sync slots before testing
 
 # Colors for output
