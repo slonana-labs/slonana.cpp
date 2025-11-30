@@ -357,37 +357,44 @@ void SolanaValidator::inject_synthetic_activity(uint64_t blocks, uint64_t transa
   // Also create synthetic blocks if banking stage is available
   if (banking_stage_ && validator_core_) {
     for (uint64_t i = 0; i < blocks; i++) {
-      // Create a synthetic block with transactions
+      // Create a synthetic block with transactions for testing/benchmarking
       ledger::Block synthetic_block;
       synthetic_block.slot = validator_core_->get_current_slot() + 1;
-      // parent_hash is used instead of parent_slot
+      
+      // Generate realistic parent_hash using slot data XOR'd with varying bytes
+      // This simulates a pseudo-random hash while being deterministic for testing
+      uint64_t parent_slot = validator_core_->get_current_slot();
       synthetic_block.parent_hash.resize(32);
-      std::fill(synthetic_block.parent_hash.begin(), synthetic_block.parent_hash.end(), 
-               static_cast<uint8_t>(validator_core_->get_current_slot() % 256));
+      for (size_t byte_idx = 0; byte_idx < 32; byte_idx++) {
+        // Mix slot value with byte position for variety
+        synthetic_block.parent_hash[byte_idx] = static_cast<uint8_t>(
+            ((parent_slot >> (byte_idx % 8)) ^ (byte_idx * 17)) & 0xFF);
+      }
+      
       synthetic_block.timestamp = static_cast<uint64_t>(
           std::chrono::duration_cast<std::chrono::seconds>(
               std::chrono::system_clock::now().time_since_epoch())
               .count());
       
-      // Add synthetic transactions
+      // Add synthetic transactions for benchmarking
       uint64_t txs_per_block = transactions / std::max(blocks, 1UL);
       for (uint64_t j = 0; j < txs_per_block; j++) {
         ledger::Transaction tx;
         tx.signatures.push_back(std::vector<uint8_t>(64, static_cast<uint8_t>(j % 256)));
-        // message is a vector<uint8_t>, initialize with some data
+        
+        // Synthetic transaction message format (for testing/benchmarking only):
+        // [32 bytes: recent blockhash] - used by the validator for deduplication
         auto current_head = validator_core_->get_current_head();
         tx.message.insert(tx.message.end(), current_head.begin(), current_head.end());
         synthetic_block.transactions.push_back(tx);
       }
       
-      // Generate block hash
-      std::vector<uint8_t> hash_input;
-      hash_input.insert(hash_input.end(), 
-                       reinterpret_cast<uint8_t*>(&synthetic_block.slot), 
-                       reinterpret_cast<uint8_t*>(&synthetic_block.slot) + 8);
+      // Generate block hash with varied bytes using slot + index mixing
       synthetic_block.block_hash.resize(32);
-      std::fill(synthetic_block.block_hash.begin(), synthetic_block.block_hash.end(), 
-               static_cast<uint8_t>(synthetic_block.slot % 256));
+      for (size_t byte_idx = 0; byte_idx < 32; byte_idx++) {
+        synthetic_block.block_hash[byte_idx] = static_cast<uint8_t>(
+            ((synthetic_block.slot >> (byte_idx % 8)) ^ (byte_idx * 31) ^ i) & 0xFF);
+      }
       
       // Process the synthetic block
       try {
