@@ -109,6 +109,9 @@ private:
   // Default snapshot mirrors for devnet
   std::vector<std::string> get_devnet_snapshot_mirrors() const;
 
+  // Discover validator nodes that serve snapshots via /snapshot.tar.bz2
+  std::vector<std::string> discover_snapshot_serving_nodes() const;
+
   // Progress reporting helpers
   void report_progress(const std::string &phase, uint64_t current = 0,
                        uint64_t total = 0) const;

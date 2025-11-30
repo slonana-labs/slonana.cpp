@@ -369,7 +369,6 @@ SnapshotBootstrapManager::download_snapshot(const SnapshotInfo &info,
 
 common::Result<bool> SnapshotBootstrapManager::download_snapshot_simple(
     const SnapshotInfo &info, std::string &local_path_out) {
-  std::string snapshot_url = build_snapshot_url(info);
   std::string local_filename = generate_snapshot_filename(info);
   std::string local_path = snapshot_dir_ + "/" + local_filename;
 
@@ -377,8 +376,6 @@ common::Result<bool> SnapshotBootstrapManager::download_snapshot_simple(
   if (!fs::exists(snapshot_dir_)) {
     fs::create_directories(snapshot_dir_);
   }
-
-  std::cout << "Downloading snapshot from: " << snapshot_url << std::endl;
 
   // Set up progress callback for download
   auto progress_cb = [this](size_t downloaded, size_t total) {
@@ -388,33 +385,61 @@ common::Result<bool> SnapshotBootstrapManager::download_snapshot_simple(
     }
   };
 
-  // Real snapshot download implementation
-  std::cout << "📁 Downloading real snapshot from: " << snapshot_url
-            << std::endl;
-
-  bool success =
-      http_client_->download_file(snapshot_url, local_path, progress_cb);
-  if (!success) {
-    // If direct download fails, try alternative mirrors
-    auto mirrors = get_devnet_snapshot_mirrors();
-    for (const auto &mirror : mirrors) {
-      std::string alt_url =
-          mirror + "/snapshot-" + std::to_string(info.slot) + ".tar.zst";
-      std::cout << "Retrying download from mirror: " << alt_url << std::endl;
-
-      success = http_client_->download_file(alt_url, local_path, progress_cb);
+  // **ENHANCED DOWNLOAD**: First try to discover validator nodes serving snapshots
+  std::cout << "🔍 Discovering validator nodes that serve snapshots..." << std::endl;
+  
+  auto validator_nodes = discover_snapshot_serving_nodes();
+  
+  bool success = false;
+  
+  if (!validator_nodes.empty()) {
+    std::cout << "📡 Found " << validator_nodes.size() << " nodes serving snapshots" << std::endl;
+    
+    // Try each validator node's /snapshot.tar.bz2 endpoint
+    for (const auto &node_url : validator_nodes) {
+      std::string snapshot_endpoint = node_url + "/snapshot.tar.bz2";
+      std::cout << "📥 Attempting download from: " << snapshot_endpoint << std::endl;
+      
+      success = http_client_->download_file(snapshot_endpoint, local_path, progress_cb);
       if (success) {
+        std::cout << "✅ Successfully downloaded from validator node!" << std::endl;
         break;
+      } else {
+        std::cout << "   ❌ Failed, trying next node..." << std::endl;
       }
     }
+  }
+  
+  // Fallback to traditional URL-based download if validator nodes didn't work
+  if (!success) {
+    std::cout << "⚠️  Validator node download failed, trying fallback URLs..." << std::endl;
+    std::string snapshot_url = build_snapshot_url(info);
+    std::cout << "📁 Downloading from: " << snapshot_url << std::endl;
 
+    success = http_client_->download_file(snapshot_url, local_path, progress_cb);
+    
     if (!success) {
-      return common::Result<bool>(
-          "Failed to download snapshot from all available sources");
+      // Try alternative mirrors
+      auto mirrors = get_devnet_snapshot_mirrors();
+      for (const auto &mirror : mirrors) {
+        std::string alt_url =
+            mirror + "/snapshot-" + std::to_string(info.slot) + ".tar.zst";
+        std::cout << "Retrying download from mirror: " << alt_url << std::endl;
+
+        success = http_client_->download_file(alt_url, local_path, progress_cb);
+        if (success) {
+          break;
+        }
+      }
     }
   }
 
-  std::cout << "✅ Real snapshot download completed" << std::endl;
+  if (!success) {
+    return common::Result<bool>(
+        "Failed to download snapshot from all available sources");
+  }
+
+  std::cout << "✅ Snapshot download completed" << std::endl;
 
   // Verify the downloaded file exists and has reasonable size
   if (!fs::exists(local_path)) {
@@ -891,6 +916,86 @@ SnapshotBootstrapManager::get_default_rpc_endpoints() const {
 std::vector<std::string>
 SnapshotBootstrapManager::get_devnet_snapshot_mirrors() const {
   return {"https://api.devnet.solana.com", "https://devnet.genesysgo.net"};
+}
+
+std::vector<std::string>
+SnapshotBootstrapManager::discover_snapshot_serving_nodes() const {
+  std::vector<std::string> snapshot_nodes;
+  
+  // Get the appropriate RPC endpoint for the network
+  std::string rpc_url;
+  if (config_.network_id == "devnet") {
+    rpc_url = "https://api.devnet.solana.com";
+  } else if (config_.network_id == "testnet") {
+    rpc_url = "https://api.testnet.solana.com";
+  } else {
+    rpc_url = "https://api.mainnet-beta.solana.com";
+  }
+  
+  if (!config_.upstream_rpc_url.empty()) {
+    rpc_url = config_.upstream_rpc_url;
+  }
+  
+  std::cout << "🔍 Querying cluster nodes from " << rpc_url << "..." << std::endl;
+  
+  // Query cluster nodes via getClusterNodes RPC
+  auto response = http_client_->solana_rpc_call(rpc_url, "getClusterNodes", "[]");
+  
+  if (!response.success) {
+    std::cout << "   ❌ Failed to get cluster nodes" << std::endl;
+    return snapshot_nodes;
+  }
+  
+  // Parse response to extract RPC endpoints
+  std::string body = response.body;
+  size_t pos = 0;
+  std::vector<std::string> rpc_endpoints;
+  
+  // Simple JSON parsing to extract nodes with RPC endpoints
+  while ((pos = body.find("\"rpc\"", pos)) != std::string::npos) {
+    size_t colon_pos = body.find(":", pos);
+    if (colon_pos == std::string::npos) break;
+    size_t val_start = colon_pos + 1;
+    
+    // Skip whitespace
+    while (val_start < body.size() && (body[val_start] == ' ' || body[val_start] == '\t')) {
+      val_start++;
+    }
+    
+    if (val_start < body.size() && body[val_start] == '"') {
+      size_t val_end = body.find("\"", val_start + 1);
+      if (val_end != std::string::npos) {
+        std::string rpc_addr = body.substr(val_start + 1, val_end - val_start - 1);
+        if (!rpc_addr.empty() && rpc_addr != "null") {
+          rpc_endpoints.push_back("http://" + rpc_addr);
+        }
+      }
+    }
+    pos++;
+  }
+  
+  std::cout << "   Found " << rpc_endpoints.size() << " nodes with RPC endpoints" << std::endl;
+  
+  // Check which nodes serve snapshots by sending HEAD request to /snapshot.tar.bz2
+  int checked = 0;
+  for (const auto &endpoint : rpc_endpoints) {
+    if (checked >= 10) break; // Limit to checking first 10 nodes
+    
+    std::string check_url = endpoint + "/snapshot.tar.bz2";
+    auto head_response = http_client_->head(check_url);
+    
+    // Status 200 or 303 (redirect) means snapshot is available
+    if (head_response.success || head_response.status_code == 303 || head_response.status_code == 200) {
+      snapshot_nodes.push_back(endpoint);
+      std::cout << "   ✅ " << endpoint << " serves snapshots" << std::endl;
+      
+      // Found enough nodes, stop checking
+      if (snapshot_nodes.size() >= 3) break;
+    }
+    checked++;
+  }
+  
+  return snapshot_nodes;
 }
 
 void SnapshotBootstrapManager::report_progress(const std::string &phase,
