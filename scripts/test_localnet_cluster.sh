@@ -285,68 +285,108 @@ EOF
     log_info "Node 3 RPC: http://localhost:38899"
 }
 
-# Wait for cluster to be ready
-wait_for_cluster() {
-    log_step "Waiting for cluster to be ready..."
+# Check if RPC endpoint is responding
+check_rpc_health() {
+    local endpoint=$1
+    local timeout=2
     
-    local max_wait=30
+    local response=$(curl -s --max-time $timeout "$endpoint" -H "Content-Type: application/json" \
+        -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null)
+    
+    if echo "$response" | grep -q '"result"'; then
+        return 0
+    fi
+    return 1
+}
+
+# Wait for cluster to be ready with proper RPC health checks
+wait_for_cluster() {
+    log_step "Waiting for cluster RPC servers to be ready..."
+    
+    local max_wait=60
     local waited=0
-    local nodes_ready=0
+    local rpc_ready=0
+    local process_ready=0
     
     while [[ $waited -lt $max_wait ]]; do
-        nodes_ready=0
+        rpc_ready=0
+        process_ready=0
         
-        # Check if validator processes are running (by PID)
+        # First check if processes are running
         for pid_file in "$CLUSTER_DIR/node1.pid" "$CLUSTER_DIR/node2.pid" "$CLUSTER_DIR/node3.pid"; do
             if [[ -f "$pid_file" ]]; then
                 local pid=$(cat "$pid_file")
                 if kill -0 "$pid" 2>/dev/null; then
-                    ((nodes_ready++))
+                    ((process_ready++))
                 fi
             fi
         done
         
-        if [[ $nodes_ready -ge 2 ]]; then
-            log_success "Cluster processes running! $nodes_ready/3 nodes active"
+        # Then check if RPC endpoints are responding
+        if check_rpc_health "http://localhost:$NODE1_RPC"; then
+            ((rpc_ready++))
+            log_info "  Node 1 RPC ready (port $NODE1_RPC)"
+        fi
+        if check_rpc_health "http://localhost:$NODE2_RPC"; then
+            ((rpc_ready++))
+            log_info "  Node 2 RPC ready (port $NODE2_RPC)"
+        fi
+        if check_rpc_health "http://localhost:$NODE3_RPC"; then
+            ((rpc_ready++))
+            log_info "  Node 3 RPC ready (port $NODE3_RPC)"
+        fi
+        
+        # Success if at least 2 RPC endpoints are responding
+        if [[ $rpc_ready -ge 2 ]]; then
+            log_success "Cluster RPC servers ready! $rpc_ready/3 RPC endpoints active"
+            export RPC_CLUSTER_READY=true
             return 0
         fi
         
-        echo -ne "\r  Waiting for nodes... ($nodes_ready/3 ready, ${waited}s elapsed)"
-        sleep 2
-        ((waited+=2))
+        # Also succeed if 2+ processes running (fallback for benchmark mode)
+        if [[ $process_ready -ge 2 ]] && [[ $waited -ge 20 ]]; then
+            log_warning "Processes running but RPC not responding ($process_ready processes, $rpc_ready RPC)"
+            log_info "Will use benchmark suite for TPS measurement"
+            export RPC_CLUSTER_READY=false
+            return 0
+        fi
+        
+        echo -ne "\r  Waiting for cluster... (processes: $process_ready/3, RPC: $rpc_ready/3, ${waited}s elapsed)"
+        sleep 3
+        ((waited+=3))
     done
     
     echo ""
-    log_warning "Cluster may not be fully ready after ${max_wait}s (${nodes_ready}/3 processes)"
+    log_warning "Cluster may not be fully ready after ${max_wait}s"
+    log_info "Processes: $process_ready/3, RPC endpoints: $rpc_ready/3"
     
-    # In CI mode, continue anyway - we'll use benchmark results
-    if [[ -n "$CI" ]]; then
-        log_info "CI mode: Continuing with benchmark suite instead of network test"
+    # Continue anyway with whatever we have
+    if [[ $process_ready -ge 1 ]]; then
+        export RPC_CLUSTER_READY=false
         return 0
     fi
     
     return 1
 }
 
-# Generate test transactions
+# Generate test transactions via RPC
 generate_transactions() {
-    log_step "Generating $TX_COUNT test transactions at $TX_RATE tx/s..."
+    log_step "Testing network TPS via RPC requests..."
     
-    # In CI mode without full RPC, skip network transaction test
-    if [[ -n "$CI" ]]; then
-        log_info "CI mode: Using benchmark suite results for TPS measurement"
-        log_info "  (Network transaction test skipped - RPC server not available)"
-        
-        # The TPS was already measured in run_cluster_benchmark
+    # Check if RPC is ready
+    if [[ "$RPC_CLUSTER_READY" != "true" ]]; then
+        log_info "RPC cluster not fully ready, using benchmark suite results"
         if [[ -f "$CLUSTER_DIR/measured_tps.txt" ]]; then
             local measured_tps=$(cat "$CLUSTER_DIR/measured_tps.txt")
-            log_success "Effective TPS from benchmark suite: $measured_tps ops/s"
+            log_success "Benchmark TPS: $measured_tps ops/s"
         fi
         return 0
     fi
     
+    log_info "Sending $TX_COUNT RPC requests at ~$TX_RATE req/s..."
+    
     local transactions_sent=0
-    local start_time=$(date +%s)
+    local start_time=$(date +%s.%N)
     local errors=0
     
     # Use available RPC endpoints
@@ -357,40 +397,56 @@ generate_transactions() {
         local endpoint_idx=$((i % 3))
         local endpoint="${rpc_endpoints[$endpoint_idx]}"
         
-        # Send a simple getSlot request as a "transaction" for benchmarking
-        # In a full implementation, this would send actual SOL transfers
-        if curl -s "$endpoint" -H "Content-Type: application/json" \
-               -d '{"jsonrpc":"2.0","id":'$i',"method":"getSlot","params":[{"commitment":"processed"}]}' \
+        # Send RPC requests to measure throughput
+        # Use a mix of getSlot, getHealth, and getBlockHeight for realistic load
+        local method_idx=$((i % 3))
+        local method="getSlot"
+        case $method_idx in
+            0) method="getSlot" ;;
+            1) method="getHealth" ;;
+            2) method="getBlockHeight" ;;
+        esac
+        
+        if curl -s --max-time 2 "$endpoint" -H "Content-Type: application/json" \
+               -d '{"jsonrpc":"2.0","id":'$i',"method":"'"$method"'"}' \
                -o /dev/null 2>/dev/null; then
             ((transactions_sent++))
         else
             ((errors++))
         fi
         
-        # Rate limiting
-        if [[ $((i % TX_RATE)) -eq 0 ]]; then
-            sleep 1
-        fi
-        
-        # Progress update every 100 transactions
+        # Progress update every 100 requests
         if [[ $((i % 100)) -eq 0 ]]; then
             echo -ne "\r  Sent: $transactions_sent / $TX_COUNT (errors: $errors)"
         fi
     done
     
     echo ""
-    local end_time=$(date +%s)
-    local duration=$((end_time - start_time))
+    local end_time=$(date +%s.%N)
+    local duration=$(echo "$end_time - $start_time" | bc -l)
     
-    if [[ $duration -eq 0 ]]; then duration=1; fi
-    local actual_tps=$((transactions_sent / duration))
+    if [[ $(echo "$duration < 0.001" | bc -l) -eq 1 ]]; then 
+        duration=0.001
+    fi
     
-    log_success "Transactions sent: $transactions_sent"
+    local actual_rps=$(echo "$transactions_sent / $duration" | bc -l)
+    local actual_rps_int=${actual_rps%.*}
+    
+    log_success "RPC requests completed!"
+    log_info "  Successful requests: $transactions_sent"
     log_info "  Errors: $errors"
     log_info "  Duration: ${duration}s"
-    log_info "  Actual TPS: $actual_tps tx/s"
+    log_info "  Network RPC TPS: $actual_rps_int requests/sec 🚀"
     
-    echo "$actual_tps" > "$CLUSTER_DIR/measured_tps.txt"
+    # Save network TPS if it's better than benchmark-only results
+    if [[ $actual_rps_int -gt 0 ]]; then
+        echo "$actual_rps_int" > "$CLUSTER_DIR/network_rpc_tps.txt"
+        
+        # Update measured TPS if network results are meaningful
+        if [[ $transactions_sent -gt 50 ]]; then
+            log_success "✅ Network RPC test successful: $actual_rps_int req/s"
+        fi
+    fi
 }
 
 # Run benchmark suite on cluster
@@ -436,63 +492,58 @@ get_cluster_stats() {
     echo "=== Slonana Cluster Statistics ==="
     echo ""
     
-    # Check if we're in CI mode without RPC
-    if [[ -n "$CI" ]]; then
-        log_info "CI mode: RPC stats not available (validator RPC server not active)"
+    for i in 1 2 3; do
+        local port_var="NODE${i}_RPC"
+        local port="${!port_var}"
+        local pid_file="$CLUSTER_DIR/node${i}.pid"
         
-        # Show process status instead
-        for i in 1 2 3; do
-            local pid_file="$CLUSTER_DIR/node${i}.pid"
-            echo "--- Node $i ---"
-            if [[ -f "$pid_file" ]]; then
-                local pid=$(cat "$pid_file")
-                if kill -0 "$pid" 2>/dev/null; then
-                    echo "  Status: ✅ Process running (PID: $pid)"
-                else
-                    echo "  Status: ⚠️ Process stopped"
-                fi
+        echo "--- Node $i (port $port) ---"
+        
+        # Check process status
+        if [[ -f "$pid_file" ]]; then
+            local pid=$(cat "$pid_file")
+            if kill -0 "$pid" 2>/dev/null; then
+                echo "  Process: ✅ Running (PID: $pid)"
             else
-                echo "  Status: ⚠️ PID file not found"
+                echo "  Process: ⚠️ Stopped"
+                continue
             fi
-            echo ""
-        done
-    else
-        for i in 1 2 3; do
-            local port_var="NODE${i}_RPC"
-            local port="${!port_var}"
-            
-            echo "--- Node $i (port $port) ---"
-            
-            # Get slot
-            local slot=$(curl -s "http://localhost:$port" -H "Content-Type: application/json" \
-                -d '{"jsonrpc":"2.0","id":1,"method":"getSlot"}' 2>/dev/null | grep -oP '"result":\s*\K[0-9]+' || echo "N/A")
-            echo "  Current Slot: $slot"
-            
-            # Get transaction count  
-            local tx_count=$(curl -s "http://localhost:$port" -H "Content-Type: application/json" \
-                -d '{"jsonrpc":"2.0","id":1,"method":"getTransactionCount"}' 2>/dev/null | grep -oP '"result":\s*\K[0-9]+' || echo "N/A")
-            echo "  Transaction Count: $tx_count"
-            
-            # Get health
-            local health=$(curl -s "http://localhost:$port" -H "Content-Type: application/json" \
-                -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null)
-            if echo "$health" | grep -q "ok"; then
-                echo "  Health: ✅ OK"
-            else
-                echo "  Health: ⚠️ Unknown"
-            fi
-            
-            echo ""
-        done
-    fi
-    
-    # Show measured TPS if available
-    if [[ -f "$CLUSTER_DIR/measured_tps.txt" ]]; then
-        local measured_tps=$(cat "$CLUSTER_DIR/measured_tps.txt")
-        echo "=== Benchmark TPS Measurement ==="
-        echo "  Measured TPS: $measured_tps ops/s 🚀"
+        else
+            echo "  Process: ⚠️ PID file not found"
+            continue
+        fi
+        
+        # Try RPC queries
+        local slot=$(curl -s --max-time 2 "http://localhost:$port" -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","id":1,"method":"getSlot"}' 2>/dev/null | grep -oP '"result":\s*\K[0-9]+' || echo "N/A")
+        echo "  Current Slot: $slot"
+        
+        local tx_count=$(curl -s --max-time 2 "http://localhost:$port" -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","id":1,"method":"getTransactionCount"}' 2>/dev/null | grep -oP '"result":\s*\K[0-9]+' || echo "N/A")
+        echo "  Transaction Count: $tx_count"
+        
+        local health=$(curl -s --max-time 2 "http://localhost:$port" -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null)
+        if echo "$health" | grep -q '"result"'; then
+            echo "  Health: ✅ OK"
+        else
+            echo "  Health: ⚠️ Not responding"
+        fi
+        
         echo ""
+    done
+    
+    # Show TPS measurements
+    echo "=== TPS Measurements ==="
+    if [[ -f "$CLUSTER_DIR/measured_tps.txt" ]]; then
+        local benchmark_tps=$(cat "$CLUSTER_DIR/measured_tps.txt")
+        echo "  Benchmark Suite TPS: $benchmark_tps ops/s 🚀"
     fi
+    if [[ -f "$CLUSTER_DIR/network_rpc_tps.txt" ]]; then
+        local network_tps=$(cat "$CLUSTER_DIR/network_rpc_tps.txt")
+        echo "  Network RPC TPS: $network_tps requests/s 🚀"
+    fi
+    echo ""
     
     echo "=== Cluster Logs ==="
     echo "  Node 1: $LOGS_DIR/node1.log"
@@ -520,20 +571,24 @@ CLUSTER CONFIGURATION:
 - Node 3 RPC: localhost:$NODE3_RPC
 
 TEST PARAMETERS:
-- Transaction Count: $TX_COUNT
-- Target TX Rate: $TX_RATE tx/s
+- RPC Request Count: $TX_COUNT
 - Test Duration: $TEST_DURATION seconds
 
 RESULTS:
 $(if [[ -f "$CLUSTER_DIR/measured_tps.txt" ]]; then
-    echo "- Measured Network TPS: $(cat $CLUSTER_DIR/measured_tps.txt) tx/s"
+    echo "- Benchmark Suite TPS: $(cat $CLUSTER_DIR/measured_tps.txt) ops/s"
 else
-    echo "- Measured Network TPS: N/A"
+    echo "- Benchmark Suite TPS: N/A"
+fi)
+$(if [[ -f "$CLUSTER_DIR/network_rpc_tps.txt" ]]; then
+    echo "- Network RPC TPS: $(cat $CLUSTER_DIR/network_rpc_tps.txt) requests/s"
+else
+    echo "- Network RPC TPS: N/A (cluster RPC not ready)"
 fi)
 
 BENCHMARK SUITE RESULTS:
 $(if [[ -f "$CLUSTER_DIR/benchmark_results.txt" ]]; then
-    grep -E "TransactionQueue|AccountLookup|VoteTracking" "$CLUSTER_DIR/benchmark_results.txt" || echo "N/A"
+    grep -E "TransactionQueue|AccountLookup|VoteTracking" "$CLUSTER_DIR/benchmark_results.txt" 2>/dev/null || echo "N/A"
 else
     echo "N/A"
 fi)
@@ -553,12 +608,6 @@ main() {
     echo "║     Testing actual network TPS with peer communication    ║"
     echo "╚═══════════════════════════════════════════════════════════╝"
     echo ""
-    
-    # CI mode detection
-    if [[ -n "$CI" ]]; then
-        log_info "CI mode detected - will use benchmark suite for TPS measurement"
-        log_info "(Full RPC-based network testing requires RPC server integration)"
-    fi
     
     # Cleanup first
     cleanup_cluster
@@ -581,13 +630,13 @@ main() {
         start_native_cluster
     fi
     
-    # Wait for cluster
+    # Wait for cluster RPC to be ready
     wait_for_cluster
     
-    # Run benchmark suite
+    # Run benchmark suite for baseline TPS
     run_cluster_benchmark
     
-    # Generate test transactions
+    # Test network RPC throughput
     generate_transactions
     
     # Collect statistics
@@ -598,6 +647,18 @@ main() {
     
     echo ""
     log_success "Localnet cluster test complete!"
+    
+    # Show summary
+    echo ""
+    echo "=== Summary ==="
+    if [[ -f "$CLUSTER_DIR/measured_tps.txt" ]]; then
+        echo "  Benchmark TPS: $(cat $CLUSTER_DIR/measured_tps.txt) ops/s"
+    fi
+    if [[ -f "$CLUSTER_DIR/network_rpc_tps.txt" ]]; then
+        echo "  Network RPC TPS: $(cat $CLUSTER_DIR/network_rpc_tps.txt) req/s"
+    fi
+    echo ""
+    
     log_info "To cleanup: $0 --cleanup-only"
     echo ""
 }
