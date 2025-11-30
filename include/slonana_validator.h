@@ -57,6 +57,9 @@ public:
 
   ValidatorStats get_stats() const;
 
+  // Inject synthetic activity for single-node testing
+  void inject_synthetic_activity(uint64_t blocks = 1, uint64_t transactions = 100);
+
   // Configuration updates (some require restart)
   Result<bool> update_config(const ValidatorConfig &new_config);
   const ValidatorConfig &get_config() const;

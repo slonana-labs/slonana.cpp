@@ -109,7 +109,8 @@ enable_testing()
 include(FetchContent)
 FetchContent_Declare(
   googletest
-  URL https://github.com/google/googletest/archive/refs/tags/release-1.12.1.zip
+  URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 # Prevent overriding the parent project's compiler/linker settings
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
@@ -218,7 +219,11 @@ target_link_libraries(slonana_shutdown_race_test slonana_core)
 
 # Find OpenSSL for PoH cryptographic operations
 find_package(OpenSSL REQUIRED)
-target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto sodium)
+
+# Find CURL for HTTPS support
+find_package(CURL REQUIRED)
+
+target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto sodium CURL::libcurl)
 
 # Link nlohmann_json if found as package
 find_package(nlohmann_json 3.2.0 QUIET)
@@ -396,6 +401,16 @@ target_link_libraries(slonana_snapshot_tests slonana_core)
 target_include_directories(slonana_snapshot_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 target_compile_definitions(slonana_snapshot_tests PRIVATE STANDALONE_SNAPSHOT_TESTS)
 add_test(NAME snapshot_tests COMMAND slonana_snapshot_tests)
+
+# Snapshot download integration test suite (connects to real Solana network)
+add_executable(slonana_snapshot_download_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_snapshot_download.cpp"
+)
+target_link_libraries(slonana_snapshot_download_tests slonana_core)
+target_include_directories(slonana_snapshot_download_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_snapshot_download_tests PRIVATE STANDALONE_SNAPSHOT_DOWNLOAD_TESTS)
+add_test(NAME snapshot_download_tests COMMAND slonana_snapshot_download_tests)
 
 # Hardware wallet test suite
 add_executable(slonana_hardware_wallet_tests

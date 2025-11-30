@@ -194,6 +194,41 @@ jobs:
             --verbose
         fi
 
+    - name: Run 3-Node Localnet Cluster Test
+      timeout-minutes: 15
+      run: |
+        echo "🌐 Running 3-Node Localnet Cluster Test..."
+        echo "   This tests actual network TPS with peer-to-peer communication"
+        
+        # Ensure PATH includes Solana CLI
+        export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+        
+        # Make the localnet test script executable
+        chmod +x ./scripts/test_localnet_cluster.sh
+        
+        # Run the localnet cluster test with native binaries
+        # Balanced test: 10k transactions @ 5k/sec (completes in ~5 minutes)
+        if [ -f "build/slonana_validator" ]; then
+          timeout 600s ./scripts/test_localnet_cluster.sh \
+            --test-duration 30 \
+            --tx-count 10000 \
+            --tx-rate 5000 \
+            --skip-build
+        else
+          echo "⚠️  Slonana validator not built, skipping localnet test"
+          echo "   Building is required for localnet cluster testing"
+        fi
+        
+        # Show test results
+        if [ -f "/tmp/slonana_localnet_cluster/test_report.txt" ]; then
+          echo ""
+          echo "📊 Localnet Cluster Test Report:"
+          cat /tmp/slonana_localnet_cluster/test_report.txt
+        fi
+        
+        # Cleanup the cluster
+        ./scripts/test_localnet_cluster.sh --cleanup-only 2>/dev/null || true
+
     - name: Run Agave validator benchmark
       timeout-minutes: 20
       run: |
@@ -217,52 +252,114 @@ jobs:
       run: |
         echo "📊 Generating benchmark comparison report..."
 
-        AGAVE_RESULTS=$(cat benchmark_results/agave/benchmark_results.json)
-        SLONANA_RESULTS=$(cat benchmark_results/slonana/benchmark_results.json)
+        # Validate result files exist and contain valid JSON, default to safe values if missing
+        AGAVE_FILE="benchmark_results/agave/benchmark_results.json"
+        SLONANA_FILE="benchmark_results/slonana/benchmark_results.json"
 
-        AGAVE_TPS=$(echo $AGAVE_RESULTS | jq -r '.effective_tps')
-        AGAVE_LATENCY=$(echo $AGAVE_RESULTS | jq -r '.rpc_latency_ms')
-        AGAVE_MEMORY=$(echo $AGAVE_RESULTS | jq -r '.memory_usage_mb')
-        AGAVE_CPU=$(echo $AGAVE_RESULTS | jq -r '.cpu_usage_percent')
+        if [ -s "$AGAVE_FILE" ] && jq -e . >/dev/null 2>&1 <"$AGAVE_FILE"; then
+          AGAVE_TPS=$(jq -r '.effective_tps // 0' "$AGAVE_FILE")
+          AGAVE_LATENCY=$(jq -r '.rpc_latency_ms // 0' "$AGAVE_FILE")
+          AGAVE_MEMORY=$(jq -r '.memory_usage_mb // 0' "$AGAVE_FILE")
+          AGAVE_CPU=$(jq -r '.cpu_usage_percent // 0' "$AGAVE_FILE")
+        else
+          echo "⚠️ Agave results missing/invalid, defaulting metrics to 0"
+          AGAVE_TPS=0; AGAVE_LATENCY=0; AGAVE_MEMORY=0; AGAVE_CPU=0
+        fi
 
-        SLONANA_TPS=$(echo $SLONANA_RESULTS | jq -r '.effective_tps')
-        SLONANA_LATENCY=$(echo $SLONANA_RESULTS | jq -r '.rpc_latency_ms')
-        SLONANA_MEMORY=$(echo $SLONANA_RESULTS | jq -r '.memory_usage_mb')
-        SLONANA_CPU=$(echo $SLONANA_RESULTS | jq -r '.cpu_usage_percent')
+        if [ -s "$SLONANA_FILE" ] && jq -e . >/dev/null 2>&1 <"$SLONANA_FILE"; then
+          SLONANA_TPS=$(jq -r '.effective_tps // 0' "$SLONANA_FILE")
+          SLONANA_LATENCY=$(jq -r '.rpc_latency_ms // 0' "$SLONANA_FILE")
+          SLONANA_MEMORY=$(jq -r '.memory_usage_mb // 0' "$SLONANA_FILE")
+          SLONANA_CPU=$(jq -r '.cpu_usage_percent // 0' "$SLONANA_FILE")
+        else
+          echo "⚠️ Slonana results missing/invalid, defaulting metrics to 0"
+          SLONANA_TPS=0; SLONANA_LATENCY=0; SLONANA_MEMORY=0; SLONANA_CPU=0
+        fi
 
-        TPS_IMPROVEMENT=$(echo "scale=1; ($SLONANA_TPS - $AGAVE_TPS) * 100 / $AGAVE_TPS" | bc -l)
-        LATENCY_IMPROVEMENT=$(echo "scale=1; ($AGAVE_LATENCY - $SLONANA_LATENCY) * 100 / $AGAVE_LATENCY" | bc -l)
-        MEMORY_IMPROVEMENT=$(echo "scale=1; ($AGAVE_MEMORY - $SLONANA_MEMORY) * 100 / $AGAVE_MEMORY" | bc -l)
+        # Convert null to 0 for any null values that slipped through
+        AGAVE_TPS=${AGAVE_TPS:-0}; [ "$AGAVE_TPS" = "null" ] && AGAVE_TPS=0
+        AGAVE_LATENCY=${AGAVE_LATENCY:-0}; [ "$AGAVE_LATENCY" = "null" ] && AGAVE_LATENCY=0
+        AGAVE_MEMORY=${AGAVE_MEMORY:-0}; [ "$AGAVE_MEMORY" = "null" ] && AGAVE_MEMORY=0
+        AGAVE_CPU=${AGAVE_CPU:-0}; [ "$AGAVE_CPU" = "null" ] && AGAVE_CPU=0
+        SLONANA_TPS=${SLONANA_TPS:-0}; [ "$SLONANA_TPS" = "null" ] && SLONANA_TPS=0
+        SLONANA_LATENCY=${SLONANA_LATENCY:-0}; [ "$SLONANA_LATENCY" = "null" ] && SLONANA_LATENCY=0
+        SLONANA_MEMORY=${SLONANA_MEMORY:-0}; [ "$SLONANA_MEMORY" = "null" ] && SLONANA_MEMORY=0
+        SLONANA_CPU=${SLONANA_CPU:-0}; [ "$SLONANA_CPU" = "null" ] && SLONANA_CPU=0
 
-        cat > benchmark_comparison.json << EOF
-        {
-          "benchmark_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-          "environment": {
-            "runner": "GitHub Actions - ubuntu-latest",
-            "cores": $(nproc),
-            "memory_gb": $(echo "$(free -m | awk '/^Mem:/{print $2}') / 1024" | bc)
-          },
-          "results": {
-            "agave": {
-              "tps": $AGAVE_TPS,
-              "rpc_latency_ms": $AGAVE_LATENCY,
-              "memory_usage_mb": $AGAVE_MEMORY,
-              "cpu_usage_percent": $AGAVE_CPU
+        echo "📊 Parsed values:"
+        echo "   Agave:   TPS=$AGAVE_TPS, Latency=$AGAVE_LATENCY, Memory=$AGAVE_MEMORY, CPU=$AGAVE_CPU"
+        echo "   Slonana: TPS=$SLONANA_TPS, Latency=$SLONANA_LATENCY, Memory=$SLONANA_MEMORY, CPU=$SLONANA_CPU"
+
+        # Safe improvement calculations - guard against divide-by-zero
+        if [ "$AGAVE_TPS" != "0" ] && [ -n "$AGAVE_TPS" ]; then
+          TPS_IMPROVEMENT=$(echo "scale=1; ($SLONANA_TPS - $AGAVE_TPS) * 100 / $AGAVE_TPS" | bc -l 2>/dev/null || echo "0")
+        else
+          TPS_IMPROVEMENT="0"
+          echo "⚠️ Agave TPS is 0, setting TPS improvement to 0%"
+        fi
+
+        if [ "$AGAVE_LATENCY" != "0" ] && [ -n "$AGAVE_LATENCY" ]; then
+          LATENCY_IMPROVEMENT=$(echo "scale=1; ($AGAVE_LATENCY - $SLONANA_LATENCY) * 100 / $AGAVE_LATENCY" | bc -l 2>/dev/null || echo "0")
+        else
+          LATENCY_IMPROVEMENT="0"
+          echo "⚠️ Agave Latency is 0, setting latency improvement to 0%"
+        fi
+
+        if [ "$AGAVE_MEMORY" != "0" ] && [ -n "$AGAVE_MEMORY" ]; then
+          MEMORY_IMPROVEMENT=$(echo "scale=1; ($AGAVE_MEMORY - $SLONANA_MEMORY) * 100 / $AGAVE_MEMORY" | bc -l 2>/dev/null || echo "0")
+        else
+          MEMORY_IMPROVEMENT="0"
+          echo "⚠️ Agave Memory is 0, setting memory improvement to 0%"
+        fi
+
+        # Ensure improvement values are valid numbers (not empty)
+        TPS_IMPROVEMENT=${TPS_IMPROVEMENT:-0}
+        LATENCY_IMPROVEMENT=${LATENCY_IMPROVEMENT:-0}
+        MEMORY_IMPROVEMENT=${MEMORY_IMPROVEMENT:-0}
+
+        # Use jq to create valid JSON (safer than heredoc)
+        jq -n \
+          --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+          --argjson cores "$(nproc)" \
+          --argjson memory_gb "$(echo "$(free -m | awk '/^Mem:/{print $2}') / 1024" | bc)" \
+          --argjson agave_tps "${AGAVE_TPS}" \
+          --argjson agave_latency "${AGAVE_LATENCY}" \
+          --argjson agave_memory "${AGAVE_MEMORY}" \
+          --argjson agave_cpu "${AGAVE_CPU}" \
+          --argjson slonana_tps "${SLONANA_TPS}" \
+          --argjson slonana_latency "${SLONANA_LATENCY}" \
+          --argjson slonana_memory "${SLONANA_MEMORY}" \
+          --argjson slonana_cpu "${SLONANA_CPU}" \
+          --argjson tps_imp "${TPS_IMPROVEMENT}" \
+          --argjson latency_imp "${LATENCY_IMPROVEMENT}" \
+          --argjson memory_imp "${MEMORY_IMPROVEMENT}" \
+          '{
+            benchmark_date: $date,
+            environment: {
+              runner: "GitHub Actions - ubuntu-latest",
+              cores: $cores,
+              memory_gb: $memory_gb
             },
-            "slonana": {
-              "tps": $SLONANA_TPS,
-              "rpc_latency_ms": $SLONANA_LATENCY,
-              "memory_usage_mb": $SLONANA_MEMORY,
-              "cpu_usage_percent": $SLONANA_CPU
-            },
-            "improvements": {
-              "tps_percent": $TPS_IMPROVEMENT,
-              "latency_percent": $LATENCY_IMPROVEMENT,
-              "memory_percent": $MEMORY_IMPROVEMENT
+            results: {
+              agave: {
+                tps: $agave_tps,
+                rpc_latency_ms: $agave_latency,
+                memory_usage_mb: $agave_memory,
+                cpu_usage_percent: $agave_cpu
+              },
+              slonana: {
+                tps: $slonana_tps,
+                rpc_latency_ms: $slonana_latency,
+                memory_usage_mb: $slonana_memory,
+                cpu_usage_percent: $slonana_cpu
+              },
+              improvements: {
+                tps_percent: $tps_imp,
+                latency_percent: $latency_imp,
+                memory_percent: $memory_imp
+              }
             }
-          }
-        }
-        EOF
+          }' > benchmark_comparison.json
 
         echo "📈 Benchmark comparison completed!"
         echo "Agave TPS: $AGAVE_TPS | Slonana TPS: $SLONANA_TPS (${TPS_IMPROVEMENT}% improvement)"
