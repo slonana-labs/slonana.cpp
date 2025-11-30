@@ -251,16 +251,20 @@ void test_apply_activation() {
     {
         int32_t data[] = {-1000, 0, 1000, 2000};
         activation::apply(data, 4, ActivationType::RELU, scale);
-        TEST_ASSERT(data[0] == 0 && data[1] == 0 && data[2] == 1000 && data[3] == 2000,
-                    "Batch ReLU should apply to all elements");
+        ASSERT_EQ(data[0], 0);
+        ASSERT_EQ(data[1], 0);
+        ASSERT_EQ(data[2], 1000);
+        ASSERT_EQ(data[3], 2000);
     }
     
     // Test NONE (linear) leaves data unchanged
     {
         int32_t data[] = {-1000, 0, 1000, 2000};
         activation::apply(data, 4, ActivationType::NONE, scale);
-        TEST_ASSERT(data[0] == -1000 && data[1] == 0 && data[2] == 1000 && data[3] == 2000,
-                    "Linear activation should not change data");
+        ASSERT_EQ(data[0], -1000);
+        ASSERT_EQ(data[1], 0);
+        ASSERT_EQ(data[2], 1000);
+        ASSERT_EQ(data[3], 2000);
     }
     
     std::cout << "  ✓ Batch activation application tests passed\n";
@@ -590,8 +594,7 @@ void test_mlp_model_serialization() {
     
     // Verify weights match
     for (size_t i = 0; i < layer1.weights.size(); i++) {
-        TEST_ASSERT(restored.layers[0].weights[i] == layer1.weights[i], 
-                    "Layer 1 weights should match");
+        ASSERT_TRUE(restored.layers[0].weights[i] == layer1.weights[i]);
     }
     
     std::cout << "  ✓ MLP model serialization tests passed\n";
@@ -640,12 +643,9 @@ void test_decision_tree_serialization() {
     
     // Verify nodes
     for (size_t i = 0; i < original.nodes.size(); i++) {
-        TEST_ASSERT(restored.nodes[i].feature_index == original.nodes[i].feature_index,
-                    "Node feature index should match");
-        TEST_ASSERT(restored.nodes[i].threshold == original.nodes[i].threshold,
-                    "Node threshold should match");
-        TEST_ASSERT(restored.nodes[i].leaf_value == original.nodes[i].leaf_value,
-                    "Node leaf value should match");
+        ASSERT_TRUE(restored.nodes[i].feature_index == original.nodes[i].feature_index);
+        ASSERT_TRUE(restored.nodes[i].threshold == original.nodes[i].threshold);
+        ASSERT_TRUE(restored.nodes[i].leaf_value == original.nodes[i].leaf_value);
     }
     
     std::cout << "  ✓ Decision tree serialization tests passed\n";
