@@ -98,7 +98,7 @@ show_help() {
     echo ""
 }
 
-# Build command - compile C++ to sBPF
+# Build command - compile C/C++ to sBPF using clang with BPF target
 cmd_build() {
     local path="$1"
     
@@ -118,51 +118,97 @@ cmd_build() {
     echo ""
     
     log_info "Source path: $path"
+    log_info "Compiler: clang with BPF target (bpfel-unknown-none)"
+    echo ""
     
-    # Check for CMakeLists.txt or Makefile
-    if [ -f "$path/CMakeLists.txt" ]; then
-        log_info "Found CMakeLists.txt - building with CMake"
-        
-        mkdir -p "$path/build"
-        cd "$path/build"
-        
-        cmake .. -DCMAKE_BUILD_TYPE=Release \
-            -DTARGET_BPF=ON \
-            2>&1 | tee build.log
-        
-        make -j$(nproc 2>/dev/null || echo 4) 2>&1 | tee -a build.log
-        
-        # Find the output .so file
-        SO_FILE=$(find . -name "*.so" -type f | head -1)
-        if [ -n "$SO_FILE" ]; then
-            log_success "Build successful!"
-            log_info "Output: $SO_FILE"
-            echo ""
-            echo -e "Deploy with: ${GREEN}slonana deploy $SO_FILE${NC}"
-        else
-            log_warning "No .so file generated - creating mock binary for testing"
-            # Create mock binary for demonstration
-            cd "$OLDPWD" 2>/dev/null || cd - > /dev/null 2>&1 || true
-            MOCK_SO="$(realpath "$path")/build/ml_trading_agent.so"
-            mkdir -p "$(dirname "$MOCK_SO")"
-            echo "SBPF_MOCK_BINARY" > "$MOCK_SO"
-            dd if=/dev/urandom bs=1024 count=10 >> "$MOCK_SO" 2>/dev/null
-            log_info "Mock binary created: $MOCK_SO"
-            log_success "Build complete"
-            echo ""
-            echo -e "Deploy with: ${GREEN}slonana deploy $MOCK_SO${NC}"
-        fi
-        
-    elif [ -f "$path/Makefile" ]; then
-        log_info "Found Makefile - building with Make"
-        cd "$path"
-        make clean 2>/dev/null || true
-        make 2>&1 | tee build.log
-        log_success "Build complete"
+    # Find source files
+    if [ -d "$path" ]; then
+        SOURCE_DIR="$path"
+        SOURCE_FILES=$(find "$path" -maxdepth 1 -name "*.c" -o -name "*.cpp" 2>/dev/null | head -1)
     else
-        log_error "No CMakeLists.txt or Makefile found in $path"
+        SOURCE_DIR="$(dirname "$path")"
+        SOURCE_FILES="$path"
+    fi
+    
+    if [ -z "$SOURCE_FILES" ]; then
+        log_error "No C/C++ source files found in $path"
         exit 1
     fi
+    
+    # Create build directory
+    BUILD_OUTPUT_DIR="$SOURCE_DIR/build"
+    mkdir -p "$BUILD_OUTPUT_DIR"
+    
+    # Get base name for output
+    BASE_NAME=$(basename "$SOURCE_FILES" | sed 's/\.[^.]*$//')
+    OUTPUT_SO="$BUILD_OUTPUT_DIR/${BASE_NAME}.so"
+    OUTPUT_O="$BUILD_OUTPUT_DIR/${BASE_NAME}.o"
+    
+    log_info "Source file: $SOURCE_FILES"
+    log_info "Output: $OUTPUT_SO"
+    echo ""
+    
+    # sBPF compilation flags (following Solana/Agave patterns)
+    SBPF_CFLAGS=(
+        "-target" "bpfel"                  # BPF little-endian target
+        "-O2"                              # Optimization level
+        "-fno-builtin"                     # No builtin functions
+        "-fno-stack-protector"             # No stack protector (BPF doesn't support)
+        "-ffreestanding"                   # Freestanding environment
+        "-nostdlib"                        # No standard library
+        "-g"                               # Debug symbols for verification
+        "-Wall"                            # All warnings
+        "-Wextra"                          # Extra warnings
+    )
+    
+    # Additional include paths
+    INCLUDE_PATHS=(
+        "-I$PROJECT_ROOT/include"
+        "-I$PROJECT_ROOT/include/svm"
+    )
+    
+    log_info "Compiling to BPF object file..."
+    
+    # Compile to object file
+    if clang "${SBPF_CFLAGS[@]}" "${INCLUDE_PATHS[@]}" \
+        -c "$SOURCE_FILES" -o "$OUTPUT_O" 2>&1 | tee "$BUILD_OUTPUT_DIR/compile.log"; then
+        log_success "Compiled to object file: $OUTPUT_O"
+    else
+        log_error "Compilation failed. See $BUILD_OUTPUT_DIR/compile.log for details"
+        exit 1
+    fi
+    
+    # For sBPF, the .o file IS the deployable binary (ELF format)
+    # No linking needed - copy .o to .so for convention
+    log_info "Creating sBPF ELF binary..."
+    cp "$OUTPUT_O" "$OUTPUT_SO"
+    log_success "Created sBPF binary: $OUTPUT_SO"
+    
+    # Show file info
+    echo ""
+    log_info "Build artifacts:"
+    ls -la "$BUILD_OUTPUT_DIR"/*.{o,so} 2>/dev/null || true
+    
+    # Verify it's a real BPF binary
+    FILE_TYPE=$(file "$OUTPUT_SO" 2>/dev/null || echo "unknown")
+    log_info "Binary type: $FILE_TYPE"
+    
+    # Show BPF section info if llvm-objdump is available
+    if command -v llvm-objdump &> /dev/null; then
+        echo ""
+        log_info "BPF sections:"
+        llvm-objdump -h "$OUTPUT_SO" 2>/dev/null | head -20 || true
+    fi
+    
+    echo ""
+    echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║                    BUILD SUCCESSFUL                               ║${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "  ${CYAN}Output:${NC}      $OUTPUT_SO"
+    echo -e "  ${CYAN}Size:${NC}        $(stat -c%s "$OUTPUT_SO" 2>/dev/null || stat -f%z "$OUTPUT_SO" 2>/dev/null) bytes"
+    echo ""
+    echo -e "Deploy with: ${GREEN}slonana deploy $OUTPUT_SO${NC}"
 }
 
 # Deploy command - deploy sBPF program
