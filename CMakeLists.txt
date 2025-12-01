@@ -223,7 +223,30 @@ find_package(OpenSSL REQUIRED)
 # Find CURL for HTTPS support
 find_package(CURL REQUIRED)
 
-target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto sodium CURL::libcurl)
+# Find libsodium for cryptographic operations
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(SODIUM QUIET libsodium)
+endif()
+
+if(SODIUM_FOUND)
+    target_include_directories(slonana_core SYSTEM PUBLIC ${SODIUM_INCLUDE_DIRS})
+    target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto ${SODIUM_LIBRARIES} CURL::libcurl)
+else()
+    # Try to find sodium directly
+    find_library(SODIUM_LIBRARY NAMES sodium libsodium)
+    find_path(SODIUM_INCLUDE_DIR NAMES sodium.h)
+    
+    if(SODIUM_LIBRARY AND SODIUM_INCLUDE_DIR)
+        message(STATUS "Found libsodium: ${SODIUM_LIBRARY}")
+        target_include_directories(slonana_core SYSTEM PUBLIC ${SODIUM_INCLUDE_DIR})
+        target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto ${SODIUM_LIBRARY} CURL::libcurl)
+    else()
+        message(WARNING "libsodium not found. Please install: sudo apt-get install libsodium-dev")
+        # Link without sodium for now - build will fail if sodium headers are used
+        target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto CURL::libcurl)
+    endif()
+endif()
 
 # Link nlohmann_json if found as package
 find_package(nlohmann_json 3.2.0 QUIET)
