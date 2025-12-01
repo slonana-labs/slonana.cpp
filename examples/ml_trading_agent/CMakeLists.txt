@@ -10,8 +10,7 @@ set(SLONANA_ROOT "${CMAKE_SOURCE_DIR}/../..")
 # Include directories
 include_directories(${SLONANA_ROOT}/include)
 
-# Link to slonana core library
-# Assumes slonana has been built in ${SLONANA_ROOT}/build
+# Link to slonana build directory if available
 link_directories(${SLONANA_ROOT}/build)
 
 # ============================================================================
@@ -25,16 +24,30 @@ add_executable(ml_trading_agent_test
 target_compile_definitions(ml_trading_agent_test PRIVATE)
 
 # ============================================================================
-# Deploy and invoke client
+# Deploy and invoke client requires full slonana build
+# Build from repo root: cmake -B build && make -C build
+# Then build this example
 # ============================================================================
-add_executable(deploy_and_invoke
-    deploy_and_invoke.cpp
-)
 
-target_link_libraries(deploy_and_invoke
-    slonana_core
-    pthread
-)
+# Check if slonana build exists
+if(EXISTS "${SLONANA_ROOT}/build/libslonana_svm.a" OR EXISTS "${SLONANA_ROOT}/build/CMakeCache.txt")
+    add_executable(deploy_and_invoke
+        deploy_and_invoke.cpp
+    )
+    
+    # Try to link against slonana libraries
+    target_link_libraries(deploy_and_invoke
+        slonana_svm
+        slonana_common
+        ssl
+        crypto
+        pthread
+    )
+    
+    message(STATUS "deploy_and_invoke target enabled (slonana build found)")
+else()
+    message(WARNING "Slonana not built - deploy_and_invoke will be skipped. Build slonana first: cmake -B build && make -C build")
+endif()
 
 # ============================================================================
 # sBPF compilation (requires clang with BPF target)
@@ -71,7 +84,7 @@ endif()
 # Installation
 # ============================================================================
 
-install(TARGETS deploy_and_invoke ml_trading_agent_test
+install(TARGETS ml_trading_agent_test
     RUNTIME DESTINATION bin
 )
 

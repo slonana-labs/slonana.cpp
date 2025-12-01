@@ -68,13 +68,13 @@ enum class InstructionType : uint8_t {
  * Generate a random public key for testing
  */
 PublicKey random_pubkey() {
-    PublicKey key;
+    PublicKey key(32, 0);  // PublicKey is a std::vector<uint8_t>
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<uint8_t> dis(0, 255);
     
-    for (size_t i = 0; i < sizeof(key.data); i++) {
-        key.data[i] = dis(gen);
+    for (size_t i = 0; i < 32; i++) {
+        key[i] = dis(gen);
     }
     return key;
 }
@@ -195,35 +195,60 @@ public:
         model_.num_features = 5;
         model_.num_classes = 3;
         
-        model_.nodes = {
-            // Node 0 (root): Check price ratio
-            {0, 1, 6, 0, 9800, 0},
-            // Node 1: Price is low, check momentum
-            {2, 2, 3, 0, -500, 0},
-            // Node 2: Leaf - Strong SELL signal
-            {-1, -1, -1, 0, 0, -1},
-            // Node 3: Check volume for potential reversal
-            {1, 4, 5, 0, 15000, 0},
-            // Node 4: Low volume - HOLD
-            {-1, -1, -1, 0, 0, 0},
-            // Node 5: High volume reversal - BUY
-            {-1, -1, -1, 0, 0, 1},
-            // Node 6: Price is normal/high, check momentum
-            {2, 7, 10, 0, 500, 0},
-            // Node 7: Negative momentum, check spread
-            {3, 8, 9, 0, 300, 0},
-            // Node 8: Wide spread - HOLD
-            {-1, -1, -1, 0, 0, 0},
-            // Node 9: Tight spread - potential SELL
-            {-1, -1, -1, 0, 0, -1},
-            // Node 10: Positive momentum, check volatility
-            {4, 11, 12, 0, 5000, 0},
-            // Node 11: Low volatility - strong BUY
-            {-1, -1, -1, 0, 0, 1},
-            // Node 12: High volatility - HOLD
-            {-1, -1, -1, 0, 0, 0},
-        };
+        // Build the decision tree nodes
+        model_.nodes.resize(13);
+        
+        // Node 0 (root): Check price ratio
+        model_.nodes[0] = make_node(0, 1, 6, 9800, 0);
+        // Node 1: Price is low, check momentum
+        model_.nodes[1] = make_node(2, 2, 3, -500, 0);
+        // Node 2: Leaf - Strong SELL signal
+        model_.nodes[2] = make_leaf(-1);
+        // Node 3: Check volume for potential reversal
+        model_.nodes[3] = make_node(1, 4, 5, 15000, 0);
+        // Node 4: Low volume - HOLD
+        model_.nodes[4] = make_leaf(0);
+        // Node 5: High volume reversal - BUY
+        model_.nodes[5] = make_leaf(1);
+        // Node 6: Price is normal/high, check momentum
+        model_.nodes[6] = make_node(2, 7, 10, 500, 0);
+        // Node 7: Negative momentum, check spread
+        model_.nodes[7] = make_node(3, 8, 9, 300, 0);
+        // Node 8: Wide spread - HOLD
+        model_.nodes[8] = make_leaf(0);
+        // Node 9: Tight spread - potential SELL
+        model_.nodes[9] = make_leaf(-1);
+        // Node 10: Positive momentum, check volatility
+        model_.nodes[10] = make_node(4, 11, 12, 5000, 0);
+        // Node 11: Low volatility - strong BUY
+        model_.nodes[11] = make_leaf(1);
+        // Node 12: High volatility - HOLD
+        model_.nodes[12] = make_leaf(0);
     }
+    
+private:
+    static DecisionTreeNode make_node(int16_t feature, int16_t left, int16_t right, 
+                                       int32_t threshold, int32_t value) {
+        DecisionTreeNode n;
+        n.feature_index = feature;
+        n.left_child = left;
+        n.right_child = right;
+        n.threshold = threshold;
+        n.leaf_value = value;
+        return n;
+    }
+    
+    static DecisionTreeNode make_leaf(int32_t value) {
+        DecisionTreeNode n;
+        n.feature_index = -1;
+        n.left_child = -1;
+        n.right_child = -1;
+        n.threshold = 0;
+        n.leaf_value = value;
+        return n;
+    }
+    
+public:
     
     PublicKey get_program_id() const override {
         return program_id_;
@@ -461,7 +486,7 @@ int main() {
     
     std::cout << "   ✓ Program deployed successfully\n";
     std::cout << "   Program ID: [" << std::hex;
-    for (int i = 0; i < 4; i++) std::cout << static_cast<int>(program_id.data[i]);
+    for (int i = 0; i < 4; i++) std::cout << static_cast<int>(program_id[i]);
     std::cout << "...]\n" << std::dec << "\n";
     
     // ========================================================================
