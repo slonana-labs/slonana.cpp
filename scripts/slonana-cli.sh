@@ -73,6 +73,36 @@ generate_base58_address() {
     echo "$keypair" | awk '{print $2}'
 }
 
+# Generate transaction signature (64 bytes = 88 Base58 characters)
+generate_transaction_signature() {
+    python3 -c "
+import hashlib
+import os
+
+ALPHABET = '$BASE58_ALPHABET'
+
+def encode_base58(data_bytes):
+    num = int.from_bytes(data_bytes, 'big')
+    if num == 0:
+        return ALPHABET[0]
+    result = ''
+    while num > 0:
+        num, rem = divmod(num, 58)
+        result = ALPHABET[rem] + result
+    for byte in data_bytes:
+        if byte == 0:
+            result = ALPHABET[0] + result
+        else:
+            break
+    return result
+
+# Generate 64-byte signature
+signature = os.urandom(64)
+sig_base58 = encode_base58(signature)
+print(sig_base58)
+"
+}
+
 # Generate full keypair and save to file
 generate_keypair_file() {
     local output_file="$1"
@@ -389,7 +419,7 @@ print(result[:44])
     fi
     
     # Generate transaction signature
-    TX_SIG=$(generate_base58_address 64)
+    TX_SIG=$(generate_transaction_signature)
     DEPLOYER=$(cat "$PROJECT_ROOT/keys/validator-identity.json" 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('public_key',''))" 2>/dev/null || generate_base58_address 32)
     
     # Get current slot from validator
@@ -655,7 +685,7 @@ cmd_call() {
         }' 2>/dev/null || echo '{"error": "RPC connection failed"}')
     
     # Generate transaction signature
-    TX_SIG=$(generate_base58_address 64)
+    TX_SIG=$(generate_transaction_signature)
     SLOT=$(curl -s -X POST "$RPC_URL" \
         -H "Content-Type: application/json" \
         -d '{"jsonrpc":"2.0","id":1,"method":"getSlot"}' 2>/dev/null | \

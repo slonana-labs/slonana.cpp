@@ -50,19 +50,28 @@ fi
 # Step 2: Deploy program (file-based, no validator process needed)
 log_step "2/5 Deploying async agent (file-based)..."
 
-# Generate program ID from file hash
+# Generate program ID from file hash (proper Base58 encoding)
 FILE_HASH=$(sha256sum "$ASYNC_OUTPUT" | cut -d' ' -f1)
 PROGRAM_ID=$(echo "$FILE_HASH" | python3 -c "
 ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
 import sys
-data = sys.stdin.read().strip()[:44]
-num = int(data, 16)
-result = ''
-while num > 0:
-    num, rem = divmod(num, 58)
-    result = ALPHABET[rem] + result
-print(result[:44] if result else '2ZmBxK7QrT9sWv')
-" 2>/dev/null || echo "2ZmBxK7QrT9sWv")
+
+def encode_base58(hex_str):
+    # Convert hex to bytes (32 bytes from SHA256)
+    data_bytes = bytes.fromhex(hex_str)
+    num = int.from_bytes(data_bytes, 'big')
+    if num == 0:
+        return ALPHABET[0]
+    result = ''
+    while num > 0:
+        num, rem = divmod(num, 58)
+        result = ALPHABET[rem] + result
+    # Pad to 44 characters (standard for 32-byte keys)
+    return result.rjust(44, ALPHABET[0])
+
+data = sys.stdin.read().strip()
+print(encode_base58(data))
+" 2>/dev/null || echo "111111111111111111111111111111111111111111")
 
 # Copy to deployment directories (both ledger/programs and programs/)
 PROGRAM_DIR="$PROJECT_ROOT/ledger/programs"
