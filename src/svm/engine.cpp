@@ -420,8 +420,29 @@ ExecutionEngine::load_program(const ProgramAccount &program) {
 
 void ExecutionEngine::register_builtin_program(
     std::unique_ptr<BuiltinProgram> program) {
-  std::cout << "Registered builtin program" << std::endl;
-  impl_->builtin_programs_.push_back(std::move(program));
+  if (program) {
+    PublicKey program_id = program->get_program_id();
+    
+    // Log program deployment with address in hex format
+    std::cout << "╔═══════════════════════════════════════════════════════════════╗" << std::endl;
+    std::cout << "║                    PROGRAM DEPLOYMENT                          ║" << std::endl;
+    std::cout << "╠═══════════════════════════════════════════════════════════════╣" << std::endl;
+    std::cout << "║ Program Address: ";
+    for (size_t i = 0; i < std::min(program_id.size(), size_t(16)); i++) {
+      printf("%02x", program_id[i]);
+    }
+    if (program_id.size() > 16) {
+      std::cout << "...";
+    }
+    std::cout << std::endl;
+    std::cout << "║ Program ID Size: " << program_id.size() << " bytes" << std::endl;
+    std::cout << "║ Status: DEPLOYED SUCCESSFULLY" << std::endl;
+    std::cout << "╚═══════════════════════════════════════════════════════════════╝" << std::endl;
+    
+    impl_->builtin_programs_.push_back(std::move(program));
+  } else {
+    std::cerr << "WARNING: Attempted to register null program" << std::endl;
+  }
 }
 
 bool ExecutionEngine::is_program_loaded(const PublicKey &program_id) const {
@@ -445,6 +466,17 @@ ExecutionOutcome ExecutionEngine::execute_transaction(
     const std::vector<Instruction> &instructions,
     std::unordered_map<PublicKey, ProgramAccount> &accounts) {
 
+  // Generate a unique transaction ID based on instructions hash
+  static uint64_t tx_counter = 0;
+  uint64_t tx_id = ++tx_counter;
+  
+  // Log transaction start
+  std::cout << "\n┌─────────────────────────────────────────────────────────────────┐" << std::endl;
+  std::cout << "│ TRANSACTION #" << tx_id << std::endl;
+  std::cout << "├─────────────────────────────────────────────────────────────────┤" << std::endl;
+  std::cout << "│ Instructions: " << instructions.size() << std::endl;
+  std::cout << "│ Accounts: " << accounts.size() << std::endl;
+  
   ExecutionOutcome final_outcome;
   final_outcome.result = ExecutionResult::SUCCESS;
   final_outcome.compute_units_consumed = 0;
@@ -452,16 +484,16 @@ ExecutionOutcome ExecutionEngine::execute_transaction(
   try {
     // Enhanced safety checks to prevent crashes
     if (instructions.empty()) {
-      std::cerr << "ERROR: Empty instructions in execute_transaction"
-                << std::endl;
+      std::cerr << "│ ERROR: Empty instructions" << std::endl;
+      std::cout << "└─────────────────────────────────────────────────────────────────┘" << std::endl;
       final_outcome.result = ExecutionResult::PROGRAM_ERROR;
       final_outcome.error_details = "No instructions provided";
       return final_outcome;
     }
 
     if (!impl_) {
-      std::cerr << "ERROR: Null implementation in execute_transaction"
-                << std::endl;
+      std::cerr << "│ ERROR: Null implementation" << std::endl;
+      std::cout << "└─────────────────────────────────────────────────────────────────┘" << std::endl;
       final_outcome.result = ExecutionResult::PROGRAM_ERROR;
       final_outcome.error_details = "Engine not properly initialized";
       return final_outcome;
@@ -472,10 +504,22 @@ ExecutionOutcome ExecutionEngine::execute_transaction(
     context.accounts = accounts;
     context.max_compute_units = impl_->max_compute_units_;
 
+    size_t instr_idx = 0;
     for (const auto &instruction : instructions) {
       try {
+        // Log instruction details
+        std::cout << "├─ Instruction #" << instr_idx << ":" << std::endl;
+        std::cout << "│   Program ID: ";
+        for (size_t i = 0; i < std::min(instruction.program_id.size(), size_t(8)); i++) {
+          printf("%02x", instruction.program_id[i]);
+        }
+        std::cout << "..." << std::endl;
+        std::cout << "│   Accounts: " << instruction.accounts.size() << std::endl;
+        std::cout << "│   Data size: " << instruction.data.size() << " bytes" << std::endl;
+        
         // Check if we have compute budget left
         if (context.consumed_compute_units >= context.max_compute_units) {
+          std::cout << "│   Status: FAILED (compute budget exceeded)" << std::endl;
           final_outcome.result = ExecutionResult::COMPUTE_BUDGET_EXCEEDED;
           final_outcome.error_details = "Transaction exceeded compute budget";
           break;
@@ -492,6 +536,7 @@ ExecutionOutcome ExecutionEngine::execute_transaction(
         }
 
         if (!program_to_execute) {
+          std::cout << "│   Status: FAILED (program not found)" << std::endl;
           final_outcome.result = ExecutionResult::PROGRAM_ERROR;
           final_outcome.error_details = "Program not found";
           break;
@@ -504,9 +549,17 @@ ExecutionOutcome ExecutionEngine::execute_transaction(
               outcome.compute_units_consumed;
 
           if (outcome.result != ExecutionResult::SUCCESS) {
+            std::cout << "│   Status: FAILED (" << outcome.error_details << ")" << std::endl;
             final_outcome.result = outcome.result;
             final_outcome.error_details = outcome.error_details;
             break;
+          }
+          
+          // Log successful execution
+          std::cout << "│   Status: SUCCESS" << std::endl;
+          std::cout << "│   Compute units: " << outcome.compute_units_consumed << std::endl;
+          if (!outcome.logs.empty()) {
+            std::cout << "│   Logs: " << outcome.logs << std::endl;
           }
 
           // Merge modified accounts
@@ -518,14 +571,14 @@ ExecutionOutcome ExecutionEngine::execute_transaction(
           impl_->total_instructions_executed_++;
 
         } catch (const std::exception &e) {
-          std::cerr << "ERROR: Exception during instruction execution: "
+          std::cerr << "│   ERROR: Exception during instruction execution: "
                     << e.what() << std::endl;
           final_outcome.result = ExecutionResult::PROGRAM_ERROR;
           final_outcome.error_details =
               "Instruction execution exception: " + std::string(e.what());
           break;
         } catch (...) {
-          std::cerr << "ERROR: Unknown exception during instruction execution"
+          std::cerr << "│   ERROR: Unknown exception during instruction execution"
                     << std::endl;
           final_outcome.result = ExecutionResult::PROGRAM_ERROR;
           final_outcome.error_details = "Unknown instruction execution error";
@@ -533,29 +586,53 @@ ExecutionOutcome ExecutionEngine::execute_transaction(
         }
 
       } catch (const std::exception &e) {
-        std::cerr << "ERROR: Exception during instruction processing: "
+        std::cerr << "│ ERROR: Exception during instruction processing: "
                   << e.what() << std::endl;
         final_outcome.result = ExecutionResult::PROGRAM_ERROR;
         final_outcome.error_details =
             "Instruction processing exception: " + std::string(e.what());
         break;
       } catch (...) {
-        std::cerr << "ERROR: Unknown exception during instruction processing"
+        std::cerr << "│ ERROR: Unknown exception during instruction processing"
                   << std::endl;
         final_outcome.result = ExecutionResult::PROGRAM_ERROR;
         final_outcome.error_details = "Unknown instruction processing error";
         break;
       }
+      instr_idx++;
     }
 
     impl_->total_compute_units_consumed_ +=
         final_outcome.compute_units_consumed;
 
     // Update the provided accounts with modifications - with crash protection
+    // NOTE: Use pubkey as the key, not program_id. program_id represents the
+    // program that owns the account, while pubkey is the account's address.
     try {
+      size_t accounts_updated = 0;
       for (const auto &modified_account : final_outcome.modified_accounts) {
-        accounts[modified_account.program_id] = modified_account;
+        // Use the account's pubkey as the key for proper state persistence
+        if (!modified_account.pubkey.empty()) {
+          accounts[modified_account.pubkey] = modified_account;
+          accounts_updated++;
+        } else {
+          // Fallback to program_id if pubkey is not set (backwards compatibility)
+          accounts[modified_account.program_id] = modified_account;
+          accounts_updated++;
+        }
       }
+      
+      // Log transaction summary
+      std::cout << "├─────────────────────────────────────────────────────────────────┤" << std::endl;
+      std::cout << "│ TRANSACTION SUMMARY" << std::endl;
+      std::cout << "│   Result: " << (final_outcome.is_success() ? "SUCCESS" : "FAILED") << std::endl;
+      std::cout << "│   Total compute units: " << final_outcome.compute_units_consumed << std::endl;
+      std::cout << "│   Accounts modified: " << accounts_updated << std::endl;
+      if (!final_outcome.error_details.empty()) {
+        std::cout << "│   Error: " << final_outcome.error_details << std::endl;
+      }
+      std::cout << "└─────────────────────────────────────────────────────────────────┘" << std::endl;
+      
     } catch (const std::exception &e) {
       std::cerr << "ERROR: Exception during account updates: " << e.what()
                 << std::endl;
