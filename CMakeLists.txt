@@ -595,6 +595,12 @@ add_executable(slonana_syscalls_sysvar_tests
     "${CMAKE_SOURCE_DIR}/tests/test_syscalls_sysvar.cpp"
 )
 target_link_libraries(slonana_syscalls_sysvar_tests slonana_core)
+
+# Real Validator Deployment Tests - NO MOCKS
+add_executable(test_real_validator_deployment
+    "${CMAKE_SOURCE_DIR}/tests/test_real_validator_deployment.cpp"
+)
+target_link_libraries(test_real_validator_deployment slonana_core)
 target_include_directories(slonana_syscalls_sysvar_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 add_test(NAME syscalls_sysvar_tests COMMAND slonana_syscalls_sysvar_tests)
 
