@@ -665,6 +665,14 @@ target_link_libraries(slonana_async_bpf_tests slonana_core)
 target_include_directories(slonana_async_bpf_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 add_test(NAME async_bpf_tests COMMAND slonana_async_bpf_tests)
 
+# Economic Opcodes Tests (Native Economic Primitives)
+add_executable(slonana_economic_opcodes_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_economic_opcodes.cpp"
+)
+target_link_libraries(slonana_economic_opcodes_tests slonana_core)
+target_include_directories(slonana_economic_opcodes_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME economic_opcodes_tests COMMAND slonana_economic_opcodes_tests)
+
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")
 target_link_libraries(slonana-genesis slonana_core OpenSSL::SSL OpenSSL::Crypto)
