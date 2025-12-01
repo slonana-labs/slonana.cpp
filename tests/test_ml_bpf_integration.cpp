@@ -28,6 +28,16 @@ using namespace slonana::common;
 namespace {
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+// Base price in lamports ($100.00)
+constexpr uint64_t BASE_PRICE_LAMPORTS = 100000000;
+
+// Average trading volume
+constexpr uint64_t AVG_VOLUME_LAMPORTS = 1000000;
+
+// ============================================================================
 // Data Structures (matching production sBPF programs)
 // ============================================================================
 
@@ -385,7 +395,7 @@ PublicKey random_pubkey() {
 }
 
 TestOracleData generate_market_data(uint64_t slot, double trend) {
-    static uint64_t base_price = 100000000;  // $100.00 in lamports
+    static uint64_t base_price = BASE_PRICE_LAMPORTS;
     static std::mt19937 gen(42);
     std::normal_distribution<> noise(0, 0.01);
     
@@ -396,9 +406,9 @@ TestOracleData generate_market_data(uint64_t slot, double trend) {
     data.version = 1;
     data.timestamp = slot * 400;
     data.current_price = base_price;
-    data.avg_price_24h = 100000000;
-    data.volume_24h = 1000000 + (gen() % 500000);
-    data.avg_volume = 1000000;
+    data.avg_price_24h = BASE_PRICE_LAMPORTS;
+    data.volume_24h = AVG_VOLUME_LAMPORTS + (gen() % 500000);
+    data.avg_volume = AVG_VOLUME_LAMPORTS;
     data.high_24h = static_cast<uint64_t>(base_price * 1.05);
     data.low_24h = static_cast<uint64_t>(base_price * 0.95);
     data.price_change_1h = static_cast<int64_t>(price_change * 10000);
@@ -770,9 +780,12 @@ int main() {
     std::cout << "\n╔═══════════════════════════════════════════════════════════════╗\n";
     std::cout << "║                    Test Summary                                ║\n";
     std::cout << "╠═══════════════════════════════════════════════════════════════╣\n";
-    std::cout << "║  Tests run: " << total_tests << "                                               ║\n";
-    std::cout << "║  Tests passed: " << passed_tests << "                                            ║\n";
-    std::cout << "║  Tests failed: " << (total_tests - passed_tests) << "                                            ║\n";
+    std::cout << "║  Tests run:    " << std::setw(3) << total_tests 
+              << "                                             ║\n";
+    std::cout << "║  Tests passed: " << std::setw(3) << passed_tests 
+              << "                                             ║\n";
+    std::cout << "║  Tests failed: " << std::setw(3) << (total_tests - passed_tests) 
+              << "                                             ║\n";
     std::cout << "╚═══════════════════════════════════════════════════════════════╝\n";
     
     return (passed_tests == total_tests) ? 0 : 1;
