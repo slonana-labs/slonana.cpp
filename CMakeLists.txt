@@ -673,6 +673,15 @@ target_link_libraries(slonana_economic_opcodes_tests slonana_core)
 target_include_directories(slonana_economic_opcodes_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 add_test(NAME economic_opcodes_tests COMMAND slonana_economic_opcodes_tests)
 
+# ML BPF Integration Tests (End-to-End ML Trading Agent)
+add_executable(slonana_ml_bpf_integration_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_ml_bpf_integration.cpp"
+)
+target_link_libraries(slonana_ml_bpf_integration_tests slonana_core)
+target_include_directories(slonana_ml_bpf_integration_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME ml_bpf_integration_tests COMMAND slonana_ml_bpf_integration_tests)
+
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")
 target_link_libraries(slonana-genesis slonana_core OpenSSL::SSL OpenSSL::Crypto)
