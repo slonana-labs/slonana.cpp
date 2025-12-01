@@ -20,6 +20,9 @@ sudo apt-get install -y \
     llvm-dev \
     libclang-dev \
     clang \
+    libsodium-dev \
+    libcurl4-openssl-dev \
+    nlohmann-json3-dev \
     bc \
     jq \
     netcat-openbsd
