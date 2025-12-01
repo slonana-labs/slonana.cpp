@@ -485,8 +485,10 @@ generate_test_transaction() {
     # In a real scenario this would be a proper serialized Solana transaction
     # For testing, we create a base64 string that looks like a transaction
     local tx_base="AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-    # Add some variation based on nonce
-    local hash=$(echo -n "tx_${nonce}_$(date +%s%N)" | sha256sum | cut -c1-64)
+    # Add some variation based on nonce AND random data to ensure uniqueness
+    # Use /dev/urandom for true randomness to avoid timestamp collisions
+    local random_data=$(head -c 16 /dev/urandom | base64 | tr -d '\n')
+    local hash=$(echo -n "tx_${nonce}_$(date +%s%N)_${random_data}_$$" | sha256sum | cut -c1-64)
     echo "${tx_base}${hash}"
 }
 
