@@ -178,7 +178,8 @@ jobs:
         file examples/program.o
         
         # Link to create .so using clang with lld
-        clang -target bpfel -fuse-ld=lld -nostdlib \
+        # Add -no-pie to prevent conflict with -shared
+        clang -target bpfel -fuse-ld=lld -nostdlib -no-pie \
           -Wl,-shared -Wl,-z,notext \
           examples/program.o -o examples/program.so
         
