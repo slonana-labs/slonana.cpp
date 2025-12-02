@@ -44,6 +44,7 @@ jobs:
           g++ \
           clang \
           llvm \
+          lld \
           libssl-dev \
           jq \
           nlohmann-json3-dev \
@@ -176,10 +177,10 @@ jobs:
         # Verify object file architecture
         file examples/program.o
         
-        # Link to create .so with explicit eBPF target
-        ld.lld -shared -o examples/program.so examples/program.o || \
-          clang -target bpfel -nostdlib -Wl,-shared -Wl,-z,notext \
-            examples/program.o -o examples/program.so
+        # Link to create .so using clang with lld
+        clang -target bpfel -fuse-ld=lld -nostdlib \
+          -Wl,-shared -Wl,-z,notext \
+          examples/program.o -o examples/program.so
         
         # Verify compilation
         file examples/program.so
