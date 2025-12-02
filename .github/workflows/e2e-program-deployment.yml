@@ -168,13 +168,18 @@ jobs:
             ;;
         esac
         
-        # Compile to eBPF
+        # Compile to eBPF with consistent architecture flags
         clang -target bpfel -O2 -fno-builtin -ffreestanding -nostdlib \
+          -Wno-unused-command-line-argument \
           -c ${{ matrix.test_scenario.program }} -o examples/program.o
         
-        # Link to create .so
-        clang -target bpfel -nostdlib -shared \
-          examples/program.o -o examples/program.so
+        # Verify object file architecture
+        file examples/program.o
+        
+        # Link to create .so with explicit eBPF target
+        ld.lld -shared -o examples/program.so examples/program.o || \
+          clang -target bpfel -nostdlib -Wl,-shared -Wl,-z,notext \
+            examples/program.o -o examples/program.so
         
         # Verify compilation
         file examples/program.so
