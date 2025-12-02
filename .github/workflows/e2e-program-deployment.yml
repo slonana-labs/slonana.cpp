@@ -191,27 +191,68 @@ jobs:
         
         echo "🧪 Testing ${{ matrix.test_scenario.name }}..."
         
-        # Start validator
+        # Start validator with debug logging
         echo "🚀 Starting validator..."
-        ./build/slonana_validator \
+        RUST_LOG=debug ./build/slonana_validator \
           --rpc-port 8899 \
-          --log-level info \
+          --log-level debug \
           > /tmp/validator.log 2>&1 &
         
         VALIDATOR_PID=$!
         echo "Validator PID: $VALIDATOR_PID"
         
-        # Wait for RPC to be ready
-        echo "⏳ Waiting for RPC endpoint..."
-        for i in {1..60}; do
-          if curl -s -X POST -H "Content-Type: application/json" \
+        # Give validator time to initialize
+        sleep 2
+        
+        # Verify validator is still running
+        if ! kill -0 $VALIDATOR_PID 2>/dev/null; then
+          echo "❌ Validator process died immediately"
+          echo "Last 50 lines of validator log:"
+          tail -50 /tmp/validator.log
+          exit 1
+        fi
+        
+        # Wait for RPC to be ready with robust health checking
+        echo "⏳ Waiting for RPC endpoint (up to 120 seconds)..."
+        RPC_READY=false
+        
+        for i in {1..120}; do
+          # Check if validator is still alive
+          if ! kill -0 $VALIDATOR_PID 2>/dev/null; then
+            echo "❌ Validator process died during startup"
+            echo "Last 50 lines of validator log:"
+            tail -50 /tmp/validator.log
+            exit 1
+          fi
+          
+          # Try to connect and check health
+          HEALTH_RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" \
              -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' \
-             http://localhost:8899/ > /dev/null 2>&1; then
-            echo "✅ RPC endpoint ready"
-            break
+             http://localhost:8899/ 2>/dev/null || echo "")
+          
+          if [ -n "$HEALTH_RESPONSE" ]; then
+            HEALTH_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.result // empty' 2>/dev/null || echo "")
+            if [ -n "$HEALTH_STATUS" ]; then
+              echo "✅ RPC endpoint ready (attempt $i)"
+              RPC_READY=true
+              break
+            fi
+          fi
+          
+          if [ $((i % 10)) -eq 0 ]; then
+            echo "  Still waiting... ($i/120)"
           fi
           sleep 1
         done
+        
+        if [ "$RPC_READY" = false ]; then
+          echo "❌ RPC endpoint never became ready"
+          echo "Validator process status: $(kill -0 $VALIDATOR_PID 2>/dev/null && echo 'running' || echo 'dead')"
+          echo "Last 100 lines of validator log:"
+          tail -100 /tmp/validator.log
+          kill $VALIDATOR_PID 2>/dev/null || true
+          exit 1
+        fi
         
         # Deploy program via RPC (using .o file directly)
         echo "📤 Deploying program via RPC..."
@@ -225,6 +266,8 @@ jobs:
         if [ -z "$PROGRAM_ID" ]; then
           echo "❌ Failed to deploy program"
           echo "Response: $DEPLOY_RESPONSE"
+          echo "Last 50 lines of validator log:"
+          tail -50 /tmp/validator.log
           kill $VALIDATOR_PID 2>/dev/null || true
           exit 1
         fi
