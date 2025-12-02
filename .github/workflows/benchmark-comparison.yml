@@ -207,12 +207,13 @@ jobs:
         chmod +x ./scripts/test_localnet_cluster.sh
         
         # Run the localnet cluster test with native binaries
-        # Balanced test: 10k transactions @ 5k/sec (completes in ~5 minutes)
+        # Reduced load for CI: 2k transactions @ 1k/sec (completes in ~3 minutes)
+        # CI runners have limited resources, so we use conservative settings
         if [ -f "build/slonana_validator" ]; then
           timeout 600s ./scripts/test_localnet_cluster.sh \
             --test-duration 30 \
-            --tx-count 10000 \
-            --tx-rate 5000 \
+            --tx-count 2000 \
+            --tx-rate 1000 \
             --skip-build
         else
           echo "⚠️  Slonana validator not built, skipping localnet test"
