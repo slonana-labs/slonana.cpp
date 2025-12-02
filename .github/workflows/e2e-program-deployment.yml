@@ -169,25 +169,17 @@ jobs:
             ;;
         esac
         
-        # Compile to eBPF with consistent architecture flags
+        # Compile to eBPF relocatable object (no linking step needed)
+        # eBPF programs are loaded as .o files, not shared libraries
         clang -target bpfel -O2 -fno-builtin -ffreestanding -nostdlib \
           -Wno-unused-command-line-argument \
           -c ${{ matrix.test_scenario.program }} -o examples/program.o
         
         # Verify object file architecture
         file examples/program.o
+        ls -lh examples/program.o
         
-        # Link to create .so using clang with lld
-        # Add -fno-pie and -Wl,-no-pie to prevent conflict with -shared
-        clang -target bpfel -fuse-ld=lld -nostdlib -fno-pie \
-          -Wl,-no-pie -Wl,-shared -Wl,-z,notext \
-          examples/program.o -o examples/program.so
-        
-        # Verify compilation
-        file examples/program.so
-        ls -lh examples/program.so
-        
-        echo "✅ Program compiled: $(stat -c%s examples/program.so) bytes"
+        echo "✅ eBPF program compiled: $(stat -c%s examples/program.o) bytes"
 
     - name: Create test script - ${{ matrix.test_scenario.name }}
       run: |
@@ -221,9 +213,9 @@ jobs:
           sleep 1
         done
         
-        # Deploy program via RPC
+        # Deploy program via RPC (using .o file directly)
         echo "📤 Deploying program via RPC..."
-        PROGRAM_DATA=$(base64 -w0 examples/program.so)
+        PROGRAM_DATA=$(base64 -w0 examples/program.o)
         DEPLOY_RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" \
           -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"sendTransaction\",\"params\":[\"$PROGRAM_DATA\"]}" \
           http://localhost:8899/)
@@ -305,7 +297,7 @@ jobs:
         name: e2e-test-${{ matrix.test_scenario.name }}-${{ github.run_number }}
         path: |
           /tmp/validator.log
-          examples/program.so
+          examples/program.o
         retention-days: 7
 
   e2e-summary:
