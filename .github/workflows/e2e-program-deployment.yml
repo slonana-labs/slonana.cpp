@@ -274,11 +274,20 @@ jobs:
         
         echo "✅ Program deployed: $PROGRAM_ID"
         
-        # Execute transactions
+        # Execute transactions with unique data for each transaction
         echo "🔄 Executing test transactions..."
         for i in {1..10}; do
+          # Generate unique transaction data with:
+          # - Transaction index
+          # - Nanosecond timestamp
+          # - Random data from /dev/urandom
+          # - Process ID
+          TIMESTAMP=$(date +%s%N)
+          RANDOM_DATA=$(head -c 16 /dev/urandom | base64 | tr -d '\n' | tr -d '=' | tr '+/' '-_')
+          UNIQUE_DATA="tx_${i}_${TIMESTAMP}_${RANDOM_DATA}_$$"
+          
           TX_RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" \
-            -d "{\"jsonrpc\":\"2.0\",\"id\":$i,\"method\":\"sendTransaction\",\"params\":[{\"programId\":\"$PROGRAM_ID\",\"data\":\"test$i\"}]}" \
+            -d "{\"jsonrpc\":\"2.0\",\"id\":$i,\"method\":\"sendTransaction\",\"params\":[{\"programId\":\"$PROGRAM_ID\",\"data\":\"$UNIQUE_DATA\"}]}" \
             http://localhost:8899/)
           
           TX_SIG=$(echo "$TX_RESPONSE" | jq -r '.result // empty')
@@ -289,6 +298,7 @@ jobs:
             echo "  ⚠️  TX $i failed: $TX_RESPONSE"
           fi
           
+          # Small delay to ensure timestamp differences
           sleep 0.1
         done
         
