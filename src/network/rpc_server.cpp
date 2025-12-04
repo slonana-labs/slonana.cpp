@@ -2793,48 +2793,23 @@ std::string SolanaRpcServer::process_transaction_submission(
 
         banking_stage_->submit_transaction(transaction);
 
-        } catch (const std::exception &e) {
-          return "error_banking_stage_submission_failed";
-        } catch (...) {
-          return "error_banking_stage_unknown_error";
-        }
-
         // **SAFE TRANSACTION SIGNATURE GENERATION**
-        std::string transaction_signature;
-        try {
+        std::string transaction_signature =
+            generate_transaction_signature(transaction_data);
+
+        // Validate signature was generated successfully
+        if (transaction_signature.empty() ||
+            transaction_signature.find("error") == 0) {
+          // Generate a safe fallback signature
           transaction_signature =
-              generate_transaction_signature(transaction_data);
-          std::cout << "RPC: [DEBUG] Generated transaction signature: "
-                    << transaction_signature << std::endl;
-
-          // Validate signature was generated successfully
-          if (transaction_signature.empty() ||
-              transaction_signature.find("error") == 0) {
-            std::cout
-                << "RPC: [WARNING] Invalid signature generated, using fallback"
-                << std::endl;
-            // Generate a safe fallback signature
-            transaction_signature =
-                "5" + encode_base58_signature(tx_signature).substr(1);
-          }
-
-        } catch (const std::exception &e) {
-          std::cout << "RPC: [ERROR] Signature generation exception: "
-                    << e.what() << std::endl;
-          return "error_signature_generation_failed";
+              "5" + encode_base58_signature(tx_signature).substr(1);
         }
 
         return transaction_signature;
 
       } catch (const std::exception &banking_error) {
-        std::cout << "RPC: [ERROR] Banking stage submission failed: "
-                  << banking_error.what() << std::endl;
         return "error_banking_submission_failed";
       }
-    } else {
-      std::cout << "RPC: [WARNING] Banking stage not available - falling back "
-                   "to SVM-only processing"
-                << std::endl;
     }
 
     // Robust transaction processing with detailed error handling
