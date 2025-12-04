@@ -2,6 +2,7 @@
 #include "common/fault_tolerance.h"
 #include "ledger/manager.h"
 #include "network/websocket_server.h"
+#include "network/gossip/crypto_utils.h"
 #include "staking/manager.h"
 #include "svm/engine.h"
 #include "svm/nonce_info.h"
