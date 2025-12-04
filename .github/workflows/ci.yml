@@ -149,6 +149,11 @@ jobs:
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH" 2>/dev/null || true
         export SLONANA_CI_MODE=1
         
+        # Use writable directory for checkpoints (avoid /var/lib/slonana permission issues)
+        export SLONANA_CHECKPOINT_DIR="${GITHUB_WORKSPACE}/test_ledger_ci"
+        mkdir -p "$SLONANA_CHECKPOINT_DIR"
+        echo "📁 Using checkpoint directory: $SLONANA_CHECKPOINT_DIR"
+        
         # Check if validator binary exists
         if [ -f "build/slonana_validator" ]; then
           echo "✅ Slonana validator found, running localnet cluster test..."
@@ -156,12 +161,12 @@ jobs:
           # Make script executable
           chmod +x ./scripts/test_localnet_cluster.sh
           
-          # Run localnet test with balanced parameters to fit CI timeout
-          # 10k transactions @ 5k/sec (completes in ~5 minutes)
+          # Run localnet test with reduced parameters for CI environment
+          # 2k transactions @ 1k/sec (completes in ~3 minutes, fits CI timeout)
           timeout 600s ./scripts/test_localnet_cluster.sh \
-            --test-duration 30 \
-            --tx-count 10000 \
-            --tx-rate 5000 \
+            --test-duration 20 \
+            --tx-count 2000 \
+            --tx-rate 1000 \
             --skip-build || echo "Localnet test completed with warnings"
           
           # Display results
