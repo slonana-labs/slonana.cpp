@@ -2748,150 +2748,54 @@ std::string SolanaRpcServer::process_transaction_submission(
 
     // **ENHANCED BANKING STAGE INTEGRATION WITH CRASH PROTECTION**
     if (banking_stage_) {
-      std::cout << "RPC: [DEBUG] Banking stage is available, submitting "
-                   "transaction..."
-                << std::endl;
-      std::cerr << "RPC: [DEBUG] Banking stage is available, submitting "
-                   "transaction..."
-                << std::endl;
-
       try {
-        // **ENHANCED TRANSACTION OBJECT CREATION WITH SAFETY CHECKS**
+        // **HIGH-PERFORMANCE TRANSACTION CREATION** - Minimal overhead for 1000+ TPS
         auto transaction = std::make_shared<ledger::Transaction>();
 
-        // Validate transaction pointer was created successfully
         if (!transaction) {
-          std::cout << "RPC: [ERROR] Failed to create transaction object"
-                    << std::endl;
           return "error_transaction_creation_failed";
         }
 
-        // **CRYPTOGRAPHIC SIGNATURE CREATION** - Use SHA-256 for uniqueness
-        std::vector<uint8_t> tx_signature;
-        try {
-          tx_signature.reserve(64); // Pre-allocate to prevent reallocation
-          tx_signature.resize(64);
-
-          // Add server-side uniqueness: counter + timestamp + transaction data
-          uint64_t tx_counter = transaction_counter_.fetch_add(1, std::memory_order_relaxed);
-          auto now = std::chrono::system_clock::now();
-          auto timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
-              now.time_since_epoch()).count();
+        // **FAST SIGNATURE GENERATION** - Single SHA-256 pass with counter + timestamp
+        std::vector<uint8_t> tx_signature(64);
+        
+        // Server-side uniqueness: atomic counter + nanosecond timestamp
+        uint64_t tx_counter = transaction_counter_.fetch_add(1, std::memory_order_relaxed);
+        auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
+        
+        // Single SHA-256 hash for speed
+        unsigned char hash[32];
+        EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+        if (ctx && EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) == 1) {
+          EVP_DigestUpdate(ctx, &tx_counter, sizeof(tx_counter));
+          EVP_DigestUpdate(ctx, &timestamp, sizeof(timestamp));
+          EVP_DigestUpdate(ctx, transaction_data.data(), transaction_data.length());
+          unsigned int len = 32;
+          EVP_DigestFinal_ex(ctx, hash, &len);
+          EVP_MD_CTX_free(ctx);
           
-          // Use SHA-256 hashing for cryptographic security and uniqueness
-          unsigned char hash[EVP_MAX_MD_SIZE];
-          unsigned int hash_len = 0;
-          
-          EVP_MD_CTX *ctx = EVP_MD_CTX_new();
-          if (ctx) {
-            if (EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) == 1) {
-              // Hash: counter + timestamp + transaction data for guaranteed uniqueness
-              EVP_DigestUpdate(ctx, &tx_counter, sizeof(tx_counter));
-              EVP_DigestUpdate(ctx, &timestamp, sizeof(timestamp));
-              EVP_DigestUpdate(ctx, transaction_data.data(), transaction_data.length());
-              EVP_DigestFinal_ex(ctx, hash, &hash_len);
-            }
-            EVP_MD_CTX_free(ctx);
-          }
-          
-          // If SHA-256 succeeded, use it to generate signature
-          if (hash_len > 0) {
-            // First 32 bytes from hash
-            for (size_t i = 0; i < 32 && i < hash_len; ++i) {
-              tx_signature[i] = hash[i];
-            }
-            
-            // Generate second half by hashing (hash + transaction_data)
-            EVP_MD_CTX *ctx2 = EVP_MD_CTX_new();
-            if (ctx2) {
-              if (EVP_DigestInit_ex(ctx2, EVP_sha256(), nullptr) == 1) {
-                EVP_DigestUpdate(ctx2, hash, hash_len);
-                EVP_DigestUpdate(ctx2, transaction_data.data(), transaction_data.length());
-                unsigned char hash2[EVP_MAX_MD_SIZE];
-                unsigned int hash2_len = 0;
-                EVP_DigestFinal_ex(ctx2, hash2, &hash2_len);
-                
-                for (size_t i = 0; i < 32 && i < hash2_len; ++i) {
-                  tx_signature[32 + i] = hash2[i];
-                }
-              }
-              EVP_MD_CTX_free(ctx2);
-            }
-          }
-
-          transaction->signatures.push_back(std::move(tx_signature));
-          std::cout << "RPC: [DEBUG] Created 64-byte cryptographic transaction signature"
-                    << std::endl;
-
-        } catch (const std::bad_alloc &e) {
-          std::cout << "RPC: [ERROR] Memory allocation failed for signature: "
-                    << e.what() << std::endl;
-          return "error_signature_allocation_failed";
-        } catch (const std::exception &e) {
-          std::cout << "RPC: [ERROR] Exception creating signature: " << e.what()
-                    << std::endl;
-          return "error_signature_creation_failed";
+          // Use hash for both halves of signature (sufficient for uniqueness)
+          std::memcpy(tx_signature.data(), hash, 32);
+          std::memcpy(tx_signature.data() + 32, hash, 32);
         }
 
-        // **SAFE MESSAGE DATA ASSIGNMENT** - Prevent buffer overruns
-        try {
-          // Limit transaction data size to prevent memory issues
-          size_t max_message_size = 1232; // Solana maximum transaction size
-          size_t data_size =
-              std::min(transaction_data.length(), max_message_size);
+        transaction->signatures.push_back(std::move(tx_signature));
 
-          transaction->message.clear();
-          transaction->message.reserve(data_size);
-          transaction->message.assign(transaction_data.begin(),
-                                      transaction_data.begin() + data_size);
+        // **FAST MESSAGE ASSIGNMENT** - Direct copy, no validation overhead
+        size_t data_size = std::min(transaction_data.length(), size_t(1232));
+        transaction->message.assign(transaction_data.begin(),
+                                    transaction_data.begin() + data_size);
 
-          std::cout << "RPC: [DEBUG] Set transaction message data ("
-                    << data_size << " bytes)" << std::endl;
-
-        } catch (const std::bad_alloc &e) {
-          std::cout << "RPC: [ERROR] Memory allocation failed for message: "
-                    << e.what() << std::endl;
-          return "error_message_allocation_failed";
-        } catch (const std::exception &e) {
-          std::cout << "RPC: [ERROR] Exception setting message data: "
-                    << e.what() << std::endl;
-          return "error_message_assignment_failed";
+        // **ASYNC SUBMISSION** - Queue and return immediately
+        if (!banking_stage_) {
+          return "error_banking_stage_unavailable";
         }
 
-        // **PROTECTED BANKING STAGE SUBMISSION** - Prevent crashes during
-        // submission
-        std::cout << "RPC: [DEBUG] Adding transaction to banking stage queue..."
-                  << std::endl;
-        try {
-          // Validate banking stage is still available and running
-          if (!banking_stage_) {
-            std::cout
-                << "RPC: [ERROR] Banking stage became null during processing"
-                << std::endl;
-            return "error_banking_stage_unavailable";
-          }
+        banking_stage_->submit_transaction(transaction);
 
-          // Submit transaction with additional safety checks
-          banking_stage_->submit_transaction(transaction);
-          std::cout << "RPC: [SUCCESS] Transaction submitted to banking stage "
-                       "successfully"
-                    << std::endl;
-
-        } catch (const std::runtime_error &e) {
-          std::cout << "RPC: [ERROR] Banking stage runtime error: " << e.what()
-                    << std::endl;
-          return "error_banking_stage_runtime_error";
-        } catch (const std::bad_alloc &e) {
-          std::cout << "RPC: [ERROR] Banking stage memory allocation error: "
-                    << e.what() << std::endl;
-          return "error_banking_stage_memory_error";
         } catch (const std::exception &e) {
-          std::cout << "RPC: [ERROR] Banking stage submission exception: "
-                    << e.what() << std::endl;
           return "error_banking_stage_submission_failed";
         } catch (...) {
-          std::cout << "RPC: [ERROR] Unknown banking stage submission error"
-                    << std::endl;
           return "error_banking_stage_unknown_error";
         }
 
