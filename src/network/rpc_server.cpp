@@ -2903,7 +2903,7 @@ std::string SolanaRpcServer::process_transaction_submission(
                 << std::endl;
             // Generate a safe fallback signature
             transaction_signature =
-                "5" + encode_base58_signature(dummy_signature).substr(1);
+                "5" + encode_base58_signature(tx_signature).substr(1);
           }
 
         } catch (const std::exception &e) {
