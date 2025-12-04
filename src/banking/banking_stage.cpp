@@ -627,8 +627,21 @@ bool BankingStage::shutdown() {
 
 void BankingStage::submit_transaction(TransactionPtr transaction) {
   // **HIGH-PERFORMANCE TRANSACTION SUBMISSION** - Optimized for 1k+ TPS
-  if (!running_ || !transaction) {
-    return; // Fast rejection without logging overhead
+  if (!running_) {
+    std::cerr << "Banking: Transaction rejected - banking stage not running" << std::endl;
+    return;
+  }
+  
+  if (!transaction) {
+    std::cerr << "Banking: Transaction rejected - null transaction" << std::endl;
+    return;
+  }
+
+  // **DIAGNOSTIC LOGGING** - Track transaction submission (first 10 only to avoid log spam)
+  static std::atomic<size_t> submitted_count{0};
+  size_t current_count = submitted_count.fetch_add(1);
+  if (current_count < 10 || current_count % 100 == 0) {
+    std::cout << "Banking: Transaction #" << current_count << " submitted to banking stage" << std::endl;
   }
 
   try {
@@ -670,6 +683,10 @@ void BankingStage::submit_transaction(TransactionPtr transaction) {
         }
         priority_queue_.push({priority, transaction});
         queue_cv_.notify_one();
+        
+        if (current_count < 5) {
+          std::cout << "Banking: Transaction queued in priority queue (priority=" << priority << ")" << std::endl;
+        }
         return; // Fast path success
       }
     }
@@ -678,11 +695,18 @@ void BankingStage::submit_transaction(TransactionPtr transaction) {
     {
       std::lock_guard<std::mutex> lock(queue_mutex_);
       transaction_queue_.push(transaction);
+      
+      if (current_count < 5) {
+        std::cout << "Banking: Transaction queued in standard queue (queue size=" << transaction_queue_.size() << ")" << std::endl;
+      }
     }
     queue_cv_.notify_one();
 
+  } catch (const std::exception& e) {
+    std::cerr << "Banking: Transaction submission failed: " << e.what() << std::endl;
+    return;
   } catch (...) {
-    // Silent error handling for maximum performance
+    std::cerr << "Banking: Transaction submission failed with unknown error" << std::endl;
     return;
   }
 }
@@ -862,6 +886,9 @@ void BankingStage::initialize_pipeline() {
 }
 
 void BankingStage::process_batches() {
+  std::cout << "Banking: Batch processor thread started" << std::endl;
+  size_t iteration_count = 0;
+  
   while (!should_stop_) {
     process_transaction_queue();
     create_batch_if_needed();
@@ -874,8 +901,23 @@ void BankingStage::process_batches() {
       handle_resource_pressure();
     }
 
+    // **DIAGNOSTIC LOGGING** - Log batch processor health every 100 iterations
+    iteration_count++;
+    if (iteration_count % 100 == 0) {
+      size_t queue_size = 0;
+      {
+        std::lock_guard<std::mutex> lock(queue_mutex_);
+        queue_size = transaction_queue_.size();
+      }
+      std::cout << "Banking: Batch processor iteration " << iteration_count 
+                << " - queue_size=" << queue_size 
+                << " batches_processed=" << total_batches_processed_.load() << std::endl;
+    }
+
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
+  
+  std::cout << "Banking: Batch processor thread stopping" << std::endl;
 }
 
 void BankingStage::create_batch_if_needed() {
@@ -886,19 +928,26 @@ void BankingStage::create_batch_if_needed() {
   }
 
   bool should_process_batch = false;
+  std::string trigger_reason;
 
   // Check if batch is full or timeout reached
   if (current_batch_->size() >= batch_size_) {
     should_process_batch = true;
+    trigger_reason = "batch_full";
   } else if (!current_batch_->empty()) {
     auto age =
         std::chrono::steady_clock::now() - current_batch_->get_creation_time();
     if (age >= batch_timeout_) {
       should_process_batch = true;
+      trigger_reason = "timeout";
     }
   }
 
   if (should_process_batch) {
+    size_t batch_size = current_batch_->size();
+    std::cout << "Banking: Processing batch with " << batch_size 
+              << " transactions (trigger=" << trigger_reason << ")" << std::endl;
+    
     submit_batch(current_batch_);
     total_batches_processed_++;
     current_batch_ = std::make_shared<TransactionBatch>();
@@ -948,6 +997,16 @@ void BankingStage::process_transaction_queue() {
 
     if (!current_batch_) {
       current_batch_ = std::make_shared<TransactionBatch>();
+    }
+
+    // **DIAGNOSTIC LOGGING** - Track batch additions
+    static size_t last_logged_batch_size = 0;
+    size_t new_batch_size = current_batch_->size() + transactions_to_process.size();
+    
+    if (last_logged_batch_size == 0 || new_batch_size >= batch_size_ || new_batch_size % 50 == 0) {
+      std::cout << "Banking: Adding " << transactions_to_process.size() 
+                << " transactions to current batch (new size=" << new_batch_size << ")" << std::endl;
+      last_logged_batch_size = new_batch_size;
     }
 
     for (auto &transaction : transactions_to_process) {
