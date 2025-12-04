@@ -487,6 +487,7 @@ private:
   // Transaction utilities
   std::string generate_transaction_signature(const std::string &transaction_data) const;
   std::string encode_base58_signature(const std::vector<uint8_t> &signature_bytes) const;
+  mutable std::atomic<uint64_t> transaction_counter_{0}; // For unique transaction IDs
   
   // Fault tolerance mechanisms
   CircuitBreaker external_service_breaker_;

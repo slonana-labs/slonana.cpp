@@ -2772,6 +2772,12 @@ std::string SolanaRpcServer::process_transaction_submission(
           tx_signature.reserve(64); // Pre-allocate to prevent reallocation
           tx_signature.resize(64);
 
+          // Add server-side uniqueness: counter + timestamp + transaction data
+          uint64_t tx_counter = transaction_counter_.fetch_add(1, std::memory_order_relaxed);
+          auto now = std::chrono::system_clock::now();
+          auto timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
+              now.time_since_epoch()).count();
+          
           // Use SHA-256 hashing for cryptographic security and uniqueness
           unsigned char hash[EVP_MAX_MD_SIZE];
           unsigned int hash_len = 0;
@@ -2779,7 +2785,9 @@ std::string SolanaRpcServer::process_transaction_submission(
           EVP_MD_CTX *ctx = EVP_MD_CTX_new();
           if (ctx) {
             if (EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) == 1) {
-              // Hash the transaction data
+              // Hash: counter + timestamp + transaction data for guaranteed uniqueness
+              EVP_DigestUpdate(ctx, &tx_counter, sizeof(tx_counter));
+              EVP_DigestUpdate(ctx, &timestamp, sizeof(timestamp));
               EVP_DigestUpdate(ctx, transaction_data.data(), transaction_data.length());
               EVP_DigestFinal_ex(ctx, hash, &hash_len);
             }
@@ -4724,9 +4732,16 @@ std::string SolanaRpcServer::generate_transaction_signature(
   try {
     // Generate unique Ed25519-style signature based on transaction data
     // Uses SHA-256 hashing for cryptographic security and uniqueness
+    // Includes server-side counter and timestamp for guaranteed uniqueness
 
     // Create a 64-byte signature using SHA-256 hashing for uniqueness
     std::vector<uint8_t> signature_bytes(64);
+    
+    // Add server-side uniqueness: counter + timestamp + transaction data
+    uint64_t tx_counter = transaction_counter_.fetch_add(1, std::memory_order_relaxed);
+    auto now = std::chrono::system_clock::now();
+    auto timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        now.time_since_epoch()).count();
     
     // Use OpenSSL SHA-256 to hash the transaction data for uniqueness
     unsigned char hash[EVP_MAX_MD_SIZE];
@@ -4735,7 +4750,9 @@ std::string SolanaRpcServer::generate_transaction_signature(
     EVP_MD_CTX *ctx = EVP_MD_CTX_new();
     if (ctx) {
       if (EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) == 1) {
-        // Hash the transaction data
+        // Hash: counter + timestamp + transaction data for guaranteed uniqueness
+        EVP_DigestUpdate(ctx, &tx_counter, sizeof(tx_counter));
+        EVP_DigestUpdate(ctx, &timestamp, sizeof(timestamp));
         EVP_DigestUpdate(ctx, transaction_data.data(), transaction_data.length());
         EVP_DigestFinal_ex(ctx, hash, &hash_len);
       }
