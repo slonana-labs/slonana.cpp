@@ -194,7 +194,7 @@ jobs:
         # Start validator with debug logging
         echo "🚀 Starting validator..."
         RUST_LOG=debug ./build/slonana_validator \
-          --rpc-port 8899 \
+          --rpc-bind-address 127.0.0.1:8899 \
           --log-level debug \
           > /tmp/validator.log 2>&1 &
         
