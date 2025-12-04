@@ -30,7 +30,7 @@ NODE3_TPU=38003
 
 # Transaction test settings - balanced for CI timeout constraints
 TX_COUNT=10000   # 10k transactions (adjustable via -c flag)
-TX_RATE=5000     # 5k transactions per second target
+TX_RATE=0        # 0 = No rate limiting - test actual validator capacity (1000+ TPS)
 TX_BATCH_SIZE=100  # Balanced batch size for reliability
 TEST_DURATION=30
 WAIT_FOR_SLOT_SYNC=true  # Wait for nodes to sync slots before testing
