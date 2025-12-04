@@ -682,6 +682,42 @@ common::Result<bool> SolanaValidator::initialize_components() {
                           "VAL_CONNECT_001", {{"exception", e.what()}});
       return common::Result<bool>("Failed to connect banking stage to ledger");
     }
+    
+    // **HIGH-PERFORMANCE BANKING CONFIGURATION** - Optimize for 1000+ TPS
+    try {
+      LOG_INFO("  ⚡ Configuring banking stage for high-throughput processing...");
+      
+      // Aggressive batch processing for maximum throughput
+      banking_stage_->set_batch_size(250);  // Process up to 250 transactions per batch
+      banking_stage_->set_batch_timeout(std::chrono::milliseconds(50));  // 50ms max wait
+      banking_stage_->enable_ultra_high_throughput_mode(true);
+      banking_stage_->set_batch_processing_size(100);  // Batch RPC submissions
+      
+      // Parallel processing configuration
+      banking_stage_->set_parallel_stages(4);  // 4 parallel validation/execution stages
+      banking_stage_->set_max_concurrent_batches(32);  // Allow 32 concurrent batches
+      banking_stage_->set_worker_thread_count(8);  // 8 worker threads
+      
+      // Adaptive batching for dynamic workload
+      banking_stage_->enable_adaptive_batching(true);
+      
+      // Fee market and MEV protection
+      banking_stage_->enable_fee_market(true);
+      banking_stage_->enable_mev_protection(true);
+      
+      LOG_INFO("    ✅ Banking stage configured for high-performance:");
+      LOG_INFO("       - Batch size: 250 transactions");
+      LOG_INFO("       - Batch timeout: 50ms");
+      LOG_INFO("       - Parallel stages: 4");
+      LOG_INFO("       - Concurrent batches: 32");
+      LOG_INFO("       - Worker threads: 8");
+      LOG_INFO("       - Expected throughput: 1000+ TPS");
+    } catch (const std::exception &e) {
+      LOG_VALIDATOR_ERROR("Failed to configure banking stage performance settings",
+                          "VAL_BANK_CONFIG_001", {{"exception", e.what()}});
+      // Continue anyway with default settings
+      LOG_WARN("    Banking stage will use default performance settings");
+    }
 
     // Connect RPC server to validator components
     try {
