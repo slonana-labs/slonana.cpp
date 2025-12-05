@@ -1023,10 +1023,12 @@ bool BankingStage::validate_batch(std::shared_ptr<TransactionBatch> batch) {
   // Validate all transactions in the batch with enhanced safety checks
   if (!batch) {
     LOG_ERROR("Null batch in validate_batch");
+    std::cerr << "Banking: [VALIDATE] ERROR - Null batch pointer" << std::endl;
     return false;
   }
 
   auto &transactions = batch->get_transactions();
+  std::cout << "Banking: [VALIDATE] Validating batch with " << transactions.size() << " transactions" << std::endl;
   std::vector<bool> results(transactions.size());
 
   // Use parallel algorithms for performance-critical transaction validation
@@ -1075,23 +1077,31 @@ bool BankingStage::validate_batch(std::shared_ptr<TransactionBatch> batch) {
 
   // Count failed transactions
   size_t local_failed_count = std::count(results.begin(), results.end(), false);
+  size_t passed_count = results.size() - local_failed_count;
+  
+  std::cout << "Banking: [VALIDATE] Validation complete - " << passed_count << " passed, " 
+            << local_failed_count << " failed out of " << results.size() << " transactions" << std::endl;
 
   // Thread-safe counter update - Update failed transactions atomically
   failed_transactions_.fetch_add(local_failed_count, std::memory_order_relaxed);
 
   batch->set_results(results);
-  return std::all_of(results.begin(), results.end(),
+  bool all_valid = std::all_of(results.begin(), results.end(),
                      [](bool valid) { return valid; });
+  std::cout << "Banking: [VALIDATE] Batch validation result: " << (all_valid ? "SUCCESS" : "FAILURE") << std::endl;
+  return all_valid;
 }
 
 bool BankingStage::execute_batch(std::shared_ptr<TransactionBatch> batch) {
   // Execute all transactions in the batch with enhanced safety
   if (!batch) {
     LOG_ERROR("Null batch in execute_batch");
+    std::cerr << "Banking: [EXECUTE] ERROR - Null batch pointer" << std::endl;
     return false;
   }
 
   auto &transactions = batch->get_transactions();
+  std::cout << "Banking: [EXECUTE] Executing batch with " << transactions.size() << " transactions" << std::endl;
   std::vector<bool> results(transactions.size());
 
   // Use parallel algorithms for performance-critical transaction execution
@@ -1144,6 +1154,9 @@ bool BankingStage::execute_batch(std::shared_ptr<TransactionBatch> batch) {
       std::count(results.begin(), results.end(), true);
   size_t local_failed_count = results.size() - local_processed_count;
 
+  std::cout << "Banking: [EXECUTE] Execution complete - " << local_processed_count << " succeeded, " 
+            << local_failed_count << " failed out of " << results.size() << " transactions" << std::endl;
+
   // Thread-safe counter updates - Update counters atomically
   total_transactions_processed_.fetch_add(local_processed_count,
                                           std::memory_order_relaxed);
@@ -1158,15 +1171,24 @@ bool BankingStage::commit_batch(std::shared_ptr<TransactionBatch> batch) {
   // Production-ready commitment process that records transactions in the ledger
   if (!batch) {
     LOG_ERROR("Null batch in commit_batch");
+    std::cerr << "Banking: [COMMIT] ERROR - Null batch pointer" << std::endl;
     return false;
   }
 
   auto &transactions = batch->get_transactions();
+  std::cout << "Banking: [COMMIT] Starting commit for batch with " << transactions.size() << " transactions" << std::endl;
   bool all_committed = true;
 
   // **THREAD-SAFE LEDGER ACCESS** - Use mutex to protect ledger operations
   std::unique_lock<std::mutex> ledger_lock(ledger_mutex_, std::defer_lock);
 
+  if (!ledger_manager_) {
+    std::cerr << "Banking: [COMMIT] ERROR - ledger_manager_ is NULL! Cannot commit transactions." << std::endl;
+    std::cerr << "Banking: [COMMIT] This means transactions are being processed but not persisted to ledger." << std::endl;
+    std::cerr << "Banking: [COMMIT] Check that ledger_manager is properly initialized in validator startup." << std::endl;
+    return false;
+  }
+  
   if (ledger_manager_) {
     try {
       // Acquire lock for ledger operations to prevent race conditions
