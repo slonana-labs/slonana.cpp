@@ -562,16 +562,26 @@ send_batch_transactions() {
     local start_idx=$2
     local batch_size=$3
     
-    # Use parallel xargs for maximum throughput - spawn many curl at once
-    # Generate all transaction data first, then send in massive parallel burst
-    seq 0 $((batch_size - 1)) | xargs -P 100 -I {} bash -c '
-        idx=$(('$start_idx' + {}))
-        tx_data=$(generate_test_transaction $idx)
-        curl -s --max-time 0.05 --connect-timeout 0.05 "'$endpoint'" \
-            -H "Content-Type: application/json" \
-            -d "{\"jsonrpc\":\"2.0\",\"id\":$idx,\"method\":\"sendTransaction\",\"params\":[\"$tx_data\"]}" \
-            >/dev/null 2>&1 || true
-    '
+    # Fire-and-forget: background the entire xargs so we don't wait for completion
+    # This achieves true parallel submission without blocking on curl responses
+    {
+        seq 0 $((batch_size - 1)) | xargs -P 100 -I {} bash -c '
+            idx=$(('$start_idx' + {}))
+            tx_data=$(generate_test_transaction $idx)
+            curl -s --max-time 0.05 --connect-timeout 0.05 "'$endpoint'" \
+                -H "Content-Type: application/json" \
+                -d "{\"jsonrpc\":\"2.0\",\"id\":$idx,\"method\":\"sendTransaction\",\"params\":[\"$tx_data\"]}" \
+                >/dev/null 2>&1 || true
+        '
+    } &
+    
+    # Limit total background jobs to prevent system overload
+    # Check every 5 batches and wait if too many concurrent batches
+    local job_count=$(jobs -r | wc -l)
+    if [[ $job_count -gt 20 ]]; then
+        # Wait for some jobs to complete
+        sleep 0.05
+    fi
 }
 
 # Export the generate_test_transaction function so xargs subshell can use it
