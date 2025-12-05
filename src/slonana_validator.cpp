@@ -157,6 +157,19 @@ common::Result<bool> SolanaValidator::start() {
   std::cout << "  ✅ Validator core started successfully" << std::endl;
 
   // Start network services
+  // **CRITICAL FIX**: Start banking stage BEFORE RPC server
+  // This ensures the banking stage is ready to process transactions
+  // before the RPC server starts accepting transaction submissions
+  std::cout << "  🏦 Starting banking stage..." << std::endl;
+  if (!banking_stage_->start()) {
+    return common::Result<bool>("Failed to start banking stage");
+  }
+  std::cout << "  ✅ Banking stage started successfully" << std::endl;
+  
+  // Add a small delay to ensure banking stage threads are fully initialized
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  std::cout << "  ⏱️  Banking stage initialization complete" << std::endl;
+
   if (config_.enable_gossip) {
     std::cout << "  🌐 Starting gossip protocol..." << std::endl;
     auto gossip_result = gossip_protocol_->start();
@@ -175,13 +188,6 @@ common::Result<bool> SolanaValidator::start() {
     std::cout << "  ✅ RPC server started on " << config_.rpc_bind_address
               << std::endl;
   }
-
-  // Start banking stage for transaction processing
-  std::cout << "  🏦 Starting banking stage..." << std::endl;
-  if (!banking_stage_->start()) {
-    return common::Result<bool>("Failed to start banking stage");
-  }
-  std::cout << "  ✅ Banking stage started successfully" << std::endl;
 
   // **FIX: Ensure block notification callback is properly connected**
   // This ensures that when banking stage commits transactions to blocks,

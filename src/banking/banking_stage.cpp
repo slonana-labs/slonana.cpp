@@ -998,6 +998,14 @@ void BankingStage::process_transaction_queue() {
     if (!current_batch_) {
       current_batch_ = std::make_shared<TransactionBatch>();
     }
+    
+    // **DIAGNOSTIC**: Log when adding transactions to batch
+    static std::atomic<size_t> batch_add_count{0};
+    size_t current_add = batch_add_count.fetch_add(1);
+    if (current_add < 5 || current_add % 50 == 0 || transactions_to_process.size() >= batch_size_) {
+      std::cout << "Banking: Adding " << transactions_to_process.size() 
+                << " transactions to current batch (new size=" << (current_batch_->size() + transactions_to_process.size()) << ")" << std::endl;
+    }
 
     // **DIAGNOSTIC LOGGING** - Track batch additions
     static size_t last_logged_batch_size = 0;
