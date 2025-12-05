@@ -1,5 +1,6 @@
 #include "banking/banking_stage.h"
 #include "common/logging.h"
+#include "network/gossip.h"
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
@@ -1302,6 +1303,59 @@ bool BankingStage::commit_batch(std::shared_ptr<TransactionBatch> batch) {
             } else {
               std::cout << "Banking: No block notification callback registered"
                         << std::endl;
+            }
+            
+            // **GOSSIP PROTOCOL BROADCAST** - Broadcast block to other nodes in the cluster
+            // This is CRITICAL for replication: without this, blocks only exist on the leader node
+            if (gossip_protocol_) {
+              try {
+                // Create a network message with the block data
+                network::NetworkMessage block_message;
+                block_message.type = network::MessageType::BLOCK_NOTIFICATION;
+                block_message.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
+                
+                // Serialize the block into the payload
+                // Format: [slot (8 bytes)][block_hash (32 bytes)][transaction_count (8 bytes)][transactions...]
+                std::vector<uint8_t> payload;
+                
+                // Add slot
+                uint64_t slot = new_block.slot;
+                for (int i = 0; i < 8; ++i) {
+                  payload.push_back((slot >> (i * 8)) & 0xFF);
+                }
+                
+                // Add block hash
+                payload.insert(payload.end(), new_block.block_hash.begin(), new_block.block_hash.end());
+                
+                // Add transaction count
+                uint64_t tx_count = new_block.transactions.size();
+                for (int i = 0; i < 8; ++i) {
+                  payload.push_back((tx_count >> (i * 8)) & 0xFF);
+                }
+                
+                // Note: For now we're just broadcasting the block metadata (slot, hash, tx count)
+                // Other nodes can request full transaction details via RPC if needed
+                
+                block_message.payload = std::move(payload);
+                
+                // Broadcast to all peers in the gossip network
+                auto broadcast_result = gossip_protocol_->broadcast_message(block_message);
+                if (broadcast_result.is_ok()) {
+                  std::cout << "Banking: [GOSSIP] Successfully broadcast block at slot " 
+                           << new_block.slot << " with " << new_block.transactions.size() 
+                           << " transactions to cluster peers" << std::endl;
+                } else {
+                  std::cerr << "Banking: [GOSSIP] WARNING - Failed to broadcast block: " 
+                           << broadcast_result.error() << std::endl;
+                }
+              } catch (const std::exception &gossip_error) {
+                std::cerr << "Banking: [GOSSIP] ERROR - Block broadcast failed: " 
+                         << gossip_error.what() << std::endl;
+              }
+            } else {
+              std::cout << "Banking: [GOSSIP] WARNING - No gossip protocol configured, "
+                       << "block will not be replicated to other nodes!" << std::endl;
             }
             
             // **FEE MARKET UPDATE** - Adjust base fee based on block utilization

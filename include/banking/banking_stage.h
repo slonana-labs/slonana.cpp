@@ -19,6 +19,12 @@
 #include <vector>
 
 namespace slonana {
+
+// Forward declarations for gossip protocol
+namespace network {
+class GossipProtocol;
+}
+
 namespace banking {
 
 /**
@@ -228,6 +234,11 @@ public:
   void set_block_notification_callback(BlockNotificationCallback callback) {
     block_notification_callback_ = callback;
   }
+  
+  // **GOSSIP PROTOCOL INTEGRATION** - Enable block broadcasting
+  void set_gossip_protocol(std::shared_ptr<network::GossipProtocol> gossip) {
+    gossip_protocol_ = gossip;
+  }
 
   // Pipeline configuration
   void set_parallel_stages(size_t stages) { parallel_stages_ = stages; }
@@ -341,6 +352,9 @@ private:
   // Callbacks
   CompletionCallback completion_callback_;
   BlockNotificationCallback block_notification_callback_;
+  
+  // **GOSSIP PROTOCOL** - For broadcasting blocks to other nodes
+  std::shared_ptr<network::GossipProtocol> gossip_protocol_;
 
   // Resource monitoring
   std::unique_ptr<ResourceMonitor> resource_monitor_;

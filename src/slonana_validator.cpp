@@ -689,6 +689,19 @@ common::Result<bool> SolanaValidator::initialize_components() {
       return common::Result<bool>("Failed to connect banking stage to ledger");
     }
     
+    // **CRITICAL: Connect gossip protocol to banking stage for block replication**
+    // This enables blocks to be broadcast to other nodes in the cluster
+    try {
+      banking_stage_->set_gossip_protocol(gossip_protocol_);
+      LOG_INFO("    Banking stage connected to gossip protocol for block broadcasting");
+      std::cout << "  ✅ Block replication enabled: blocks will be broadcast to cluster peers" << std::endl;
+    } catch (const std::exception &e) {
+      LOG_VALIDATOR_ERROR("Failed to connect banking stage to gossip protocol",
+                          "VAL_CONNECT_GOSSIP_001", {{"exception", e.what()}});
+      // Don't fail initialization, but warn that replication won't work
+      std::cerr << "  ⚠️  WARNING: Block replication disabled - blocks will not be broadcast to peers!" << std::endl;
+    }
+    
     // **HIGH-PERFORMANCE BANKING CONFIGURATION** - Optimize for 1000+ TPS
     try {
       LOG_INFO("  ⚡ Configuring banking stage for high-throughput processing...");
