@@ -95,6 +95,65 @@ EOF
 log_success "Async agent deployed: $PROGRAM_ID"
 log_info "Binary: $PROGRAM_DIR/${PROGRAM_ID}.so"
 
+# Helper function to query and display account state
+query_account_state() {
+    local program_id="$1"
+    local tx_num="$2"
+    local rpc_url="${3:-http://localhost:8899}"
+    
+    echo ""
+    echo -e "${CYAN}📊 Account State After TX $tx_num:${NC}"
+    
+    # Query account via RPC
+    local response=$(curl -s -X POST "$rpc_url" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"jsonrpc\": \"2.0\",
+            \"id\": 1,
+            \"method\": \"getAccountInfo\",
+            \"params\": [
+                \"$program_id\",
+                {\"encoding\": \"base64\"}
+            ]
+        }" 2>/dev/null)
+    
+    # Extract and decode account data
+    if echo "$response" | grep -q "\"result\""; then
+        local data=$(echo "$response" | python3 -c "
+import json, sys, base64
+try:
+    data = json.load(sys.stdin)
+    if 'result' in data and data['result'] and 'value' in data['result']:
+        account = data['result']['value']
+        if account and 'data' in account:
+            # Decode base64 data to hex
+            account_data = account['data'][0] if isinstance(account['data'], list) else account['data']
+            raw_bytes = base64.b64decode(account_data)
+            hex_data = raw_bytes.hex()
+            
+            # Parse account state (async agent: events_processed, timer_id, watcher_id)
+            if len(raw_bytes) >= 24:
+                events = int.from_bytes(raw_bytes[0:8], 'little')
+                timer = int.from_bytes(raw_bytes[8:16], 'little')
+                watcher = int.from_bytes(raw_bytes[16:24], 'little')
+                print(f'{{\"events_processed\": {events}, \"timer_id\": {timer}, \"watcher_id\": {watcher}, \"data_hex\": \"{hex_data}\"}}')
+            else:
+                print(f'{{\"data_hex\": \"{hex_data}\", \"data_length\": {len(raw_bytes)}}}')
+        else:
+            print('{\"error\": \"No data in account\"}')
+    else:
+        print('{\"error\": \"Account not found or RPC error\"}')
+except Exception as e:
+    print(f'{{\"error\": \"{str(e)}\"}}')
+" 2>/dev/null)
+        
+        # Display formatted JSON
+        echo "$data" | python3 -m json.tool 2>/dev/null || echo "$data"
+    else
+        echo -e "${YELLOW}  ⚠️  Account state query failed or account not yet initialized${NC}"
+    fi
+}
+
 # Step 3: Test initialization (creates timer, watcher, ring buffer)
 log_step "3/5 Testing async initialization..."
 
@@ -112,6 +171,9 @@ else
     log_error "Async initialization failed"
 fi
 
+# Query state after TX1
+query_account_state "$PROGRAM_ID" "1"
+
 # Step 4: Test timer and watcher events
 log_step "4/5 Testing timer and watcher events..."
 
@@ -123,6 +185,7 @@ echo "$TX2" | grep -E "Transaction:|Status:" || true
 if echo "$TX2" | grep -q "SUCCESS\|success"; then
     log_success "Timer tick processing: PASSED"
 fi
+query_account_state "$PROGRAM_ID" "2"
 
 echo ""
 echo -e "${YELLOW}TX3: Process Watcher Trigger${NC}"
@@ -132,6 +195,7 @@ echo "$TX3" | grep -E "Transaction:|Status:" || true
 if echo "$TX3" | grep -q "SUCCESS\|success"; then
     log_success "Watcher trigger processing: PASSED"
 fi
+query_account_state "$PROGRAM_ID" "3"
 
 echo ""
 echo -e "${YELLOW}TX4: Execute ML Inference${NC}"
@@ -141,6 +205,7 @@ echo "$TX4" | grep -E "Transaction:|Status:|Signal" || true
 if echo "$TX4" | grep -q "SUCCESS\|success"; then
     log_success "ML inference execution: PASSED"
 fi
+query_account_state "$PROGRAM_ID" "4"
 
 echo ""
 echo -e "${YELLOW}TX5: Query State${NC}"
@@ -150,6 +215,7 @@ echo "$TX5" | grep -E "Transaction:|Status:|State" || true
 if echo "$TX5" | grep -q "SUCCESS\|success"; then
     log_success "State query: PASSED"
 fi
+query_account_state "$PROGRAM_ID" "5"
 
 echo ""
 echo -e "${YELLOW}TX6: Cleanup (cancel timer, remove watcher)${NC}"
@@ -159,6 +225,7 @@ echo "$TX6" | grep -E "Transaction:|Status:" || true
 if echo "$TX6" | grep -q "SUCCESS\|success"; then
     log_success "Cleanup: PASSED"
 fi
+query_account_state "$PROGRAM_ID" "6"
 
 # Step 5: Verify async features
 log_step "5/5 Verifying async BPF extensions..."
