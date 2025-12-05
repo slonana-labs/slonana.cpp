@@ -562,26 +562,20 @@ send_batch_transactions() {
     local start_idx=$2
     local batch_size=$3
     
-    # Fire-and-forget for maximum throughput - no waiting
-    # Use shorter timeout (100ms) and don't wait for responses
-    for i in $(seq 0 $((batch_size - 1))); do
-        local idx=$((start_idx + i))
-        local tx_data=$(generate_test_transaction $idx)
-        
-        # Fire off request without waiting - true parallel execution
-        curl -s --max-time 0.1 "$endpoint" -H "Content-Type: application/json" \
+    # Use parallel xargs for maximum throughput - spawn many curl at once
+    # Generate all transaction data first, then send in massive parallel burst
+    seq 0 $((batch_size - 1)) | xargs -P 100 -I {} bash -c '
+        idx=$(('$start_idx' + {}))
+        tx_data=$(generate_test_transaction $idx)
+        curl -s --max-time 0.05 --connect-timeout 0.05 "'$endpoint'" \
+            -H "Content-Type: application/json" \
             -d "{\"jsonrpc\":\"2.0\",\"id\":$idx,\"method\":\"sendTransaction\",\"params\":[\"$tx_data\"]}" \
-            >/dev/null 2>&1 &
-        
-        # Limit concurrent processes to avoid overwhelming system
-        # Check every 50 transactions and wait for background jobs if too many
-        if [[ $((i % 50)) -eq 49 ]]; then
-            while [[ $(jobs -r | wc -l) -gt 200 ]]; do
-                sleep 0.01
-            done
-        fi
-    done
+            >/dev/null 2>&1 || true
+    '
 }
+
+# Export the generate_test_transaction function so xargs subshell can use it
+export -f generate_test_transaction
 
 # Generate and verify test transactions - High Throughput Mode
 generate_transactions() {
