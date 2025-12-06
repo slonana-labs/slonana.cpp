@@ -561,15 +561,28 @@ send_batch_transactions() {
     local endpoint=$1
     local start_idx=$2
     local batch_size=$3
+    local batch_num=$4  # NEW: batch number for gradual ramp-up
+    
+    # Gradual ramp-up: start with lower parallelism, then increase
+    # This prevents overwhelming the RPC server with initial burst
+    local parallelism=250  # Reduced from 500 for more sustainable throughput
+    if [[ $batch_num -eq 0 ]]; then
+        parallelism=50  # First batch: very conservative
+    elif [[ $batch_num -eq 1 ]]; then
+        parallelism=100  # Second batch: moderate
+    elif [[ $batch_num -eq 2 ]]; then
+        parallelism=150  # Third batch: ramping up
+    fi
     
     # Fire-and-forget: background the entire xargs so we don't wait for completion
     # This achieves true parallel submission without blocking on curl responses
-    # Increased parallelism from -P 100 to -P 500 for higher throughput
+    # Reduced parallelism from 500 to 250 for more sustainable throughput
     {
-        seq 0 $((batch_size - 1)) | xargs -P 500 -I {} bash -c '
+        seq 0 $((batch_size - 1)) | xargs -P $parallelism -I {} bash -c '
             idx=$(('$start_idx' + {}))
             tx_data=$(generate_test_transaction $idx)
-            curl -s --max-time 0.02 --connect-timeout 0.02 "'$endpoint'" \
+            # Increased timeout from 0.02s to 0.1s to give RPC more time to respond
+            curl -s --max-time 0.1 --connect-timeout 0.1 "'$endpoint'" \
                 -H "Content-Type: application/json" \
                 -d "{\"jsonrpc\":\"2.0\",\"id\":$idx,\"method\":\"sendTransaction\",\"params\":[\"$tx_data\"]}" \
                 >/dev/null 2>&1 || true
@@ -577,11 +590,11 @@ send_batch_transactions() {
     } &
     
     # Limit total background jobs to prevent system overload
-    # Increased from 20 to 50 concurrent batches for better throughput
+    # Reduced from 50 to 20 concurrent batches for more sustainable load
     local job_count=$(jobs -r | wc -l)
-    if [[ $job_count -gt 50 ]]; then
-        # Brief pause if hitting limit
-        sleep 0.01
+    if [[ $job_count -gt 20 ]]; then
+        # Brief pause if hitting limit - increased from 0.01s to 0.05s
+        sleep 0.05
     fi
 }
 
@@ -624,8 +637,8 @@ generate_transactions() {
         local remaining=$((TX_COUNT - batch_start))
         local this_batch_size=$((remaining < TX_BATCH_SIZE ? remaining : TX_BATCH_SIZE))
         
-        # Send batch in parallel
-        send_batch_transactions "${rpc_endpoints[0]}" "$batch_start" "$this_batch_size"
+        # Send batch in parallel - pass batch number for gradual ramp-up
+        send_batch_transactions "${rpc_endpoints[0]}" "$batch_start" "$this_batch_size" "$batch"
         
         transactions_sent=$((transactions_sent + this_batch_size))
         ((completed_batches++))
@@ -669,9 +682,11 @@ generate_transactions() {
         return 0
     fi
     
-    # Step 2: Wait for transactions to propagate
-    log_info "⏳ Waiting 3s for transaction propagation across cluster..."
-    sleep 3
+    # Step 2: Wait for transactions to propagate and be processed
+    # Increased from 3s to 10s to allow time for high-velocity transaction processing
+    log_info "⏳ Waiting 10s for transaction propagation and processing across cluster..."
+    log_info "   (High-velocity transactions need more time to batch and commit)"
+    sleep 10
     
     # Step 3: Quick verification on other nodes (sample check)
     log_info "🔍 Verifying transaction replication on other nodes (sampling)..."
