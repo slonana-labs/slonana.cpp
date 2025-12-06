@@ -28,10 +28,10 @@ NODE3_RPC=38899
 NODE3_GOSSIP=38001
 NODE3_TPU=38003
 
-# Transaction test settings - balanced for CI timeout constraints
+# Transaction test settings - optimized for maximum throughput
 TX_COUNT=10000   # 10k transactions (adjustable via -c flag)
 TX_RATE=0        # 0 = No rate limiting - test actual validator capacity (1000+ TPS)
-TX_BATCH_SIZE=100  # Balanced batch size for reliability
+TX_BATCH_SIZE=500  # Increased batch size for higher throughput (was 100)
 TEST_DURATION=30
 WAIT_FOR_SLOT_SYNC=true  # Wait for nodes to sync slots before testing
 
@@ -564,11 +564,12 @@ send_batch_transactions() {
     
     # Fire-and-forget: background the entire xargs so we don't wait for completion
     # This achieves true parallel submission without blocking on curl responses
+    # Increased parallelism from -P 100 to -P 500 for higher throughput
     {
-        seq 0 $((batch_size - 1)) | xargs -P 100 -I {} bash -c '
+        seq 0 $((batch_size - 1)) | xargs -P 500 -I {} bash -c '
             idx=$(('$start_idx' + {}))
             tx_data=$(generate_test_transaction $idx)
-            curl -s --max-time 0.05 --connect-timeout 0.05 "'$endpoint'" \
+            curl -s --max-time 0.02 --connect-timeout 0.02 "'$endpoint'" \
                 -H "Content-Type: application/json" \
                 -d "{\"jsonrpc\":\"2.0\",\"id\":$idx,\"method\":\"sendTransaction\",\"params\":[\"$tx_data\"]}" \
                 >/dev/null 2>&1 || true
@@ -576,11 +577,11 @@ send_batch_transactions() {
     } &
     
     # Limit total background jobs to prevent system overload
-    # Check every 5 batches and wait if too many concurrent batches
+    # Increased from 20 to 50 concurrent batches for better throughput
     local job_count=$(jobs -r | wc -l)
-    if [[ $job_count -gt 20 ]]; then
-        # Wait for some jobs to complete
-        sleep 0.05
+    if [[ $job_count -gt 50 ]]; then
+        # Brief pause if hitting limit
+        sleep 0.01
     fi
 }
 
