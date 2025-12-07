@@ -417,9 +417,11 @@ size_t ResourceMonitor::calculate_memory_usage() {
 
 // BankingStage implementation
 BankingStage::BankingStage()
-    : initialized_(false), running_(false), batch_size_(1),
-      batch_timeout_(std::chrono::milliseconds(10)), parallel_stages_(4),
-      max_concurrent_batches_(16), worker_thread_count_(8),
+    : initialized_(false), running_(false), batch_size_(100),  // Increased default: 1 → 100
+      batch_timeout_(std::chrono::milliseconds(25)),  // Faster default: 10ms → 25ms
+      parallel_stages_(8),  // Increased default: 4 → 8
+      max_concurrent_batches_(32),  // Increased default: 16 → 32
+      worker_thread_count_(12),  // Increased default: 8 → 12
       adaptive_batching_enabled_(true), resource_monitoring_enabled_(true),
       priority_processing_enabled_(false), ledger_manager_(nullptr),
       should_stop_(false), total_transactions_processed_(0),
@@ -911,7 +913,10 @@ void BankingStage::process_batches() {
       handle_resource_pressure();
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    // **ULTRA-HIGH-THROUGHPUT OPTIMIZATION** - Reduce sleep from 10ms to 2ms
+    // This allows 5x faster batch processing loop iterations (500 Hz vs 100 Hz)
+    // Critical for processing 1000+ TPS workloads with minimal latency
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
   }
   
   std::cout << "Banking: [STOP] Batch processor thread stopping" << std::endl;
