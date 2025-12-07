@@ -565,25 +565,25 @@ send_batch_transactions() {
     
     # Gradual ramp-up: start with lower parallelism, then increase
     # This prevents overwhelming the RPC server with initial burst
-    # Aggressively optimized for 1000+ TPS
-    local parallelism=750  # Ultra-high speed for sustained throughput (50% increase)
+    # Maximum parallelism for 1000+ TPS target
+    local parallelism=1000  # Maximum speed for sustained throughput (33% increase from 750)
     if [[ $batch_num -eq 0 ]]; then
-        parallelism=200  # First batch: moderate start (2x previous)
+        parallelism=300  # First batch: moderate start (50% increase)
     elif [[ $batch_num -eq 1 ]]; then
-        parallelism=400  # Second batch: fast ramp (1.6x previous)
+        parallelism=600  # Second batch: fast ramp (2x)
     elif [[ $batch_num -eq 2 ]]; then
-        parallelism=600  # Third batch: approaching max (1.5x previous)
+        parallelism=800  # Third batch: approaching max (1.33x)
     fi
     
     # Fire-and-forget: background the entire xargs so we don't wait for completion
     # This achieves true parallel submission without blocking on curl responses
-    # Optimized for 1000+ TPS with aggressive parallelism
+    # Optimized for 1000+ TPS with maximum parallelism
     {
         seq 0 $((batch_size - 1)) | xargs -P $parallelism -I {} bash -c '
             idx=$(('$start_idx' + {}))
             tx_data=$(generate_test_transaction $idx)
-            # Ultra-fast timeout: 0.03s (30ms) for maximum throughput
-            curl -s --max-time 0.03 --connect-timeout 0.03 "'$endpoint'" \
+            # Very fast timeout: 0.02s (20ms) for maximum throughput
+            curl -s --max-time 0.02 --connect-timeout 0.02 "'$endpoint'" \
                 -H "Content-Type: application/json" \
                 -d "{\"jsonrpc\":\"2.0\",\"id\":$idx,\"method\":\"sendTransaction\",\"params\":[\"$tx_data\"]}" \
                 >/dev/null 2>&1 || true
@@ -591,11 +591,11 @@ send_batch_transactions() {
     } &
     
     # Limit total background jobs to prevent system overload
-    # Increased to 40 concurrent batches for ultra-high throughput
+    # Increased to 50 concurrent batches for maximum throughput
     local job_count=$(jobs -r | wc -l)
-    if [[ $job_count -gt 40 ]]; then
-        # Minimal pause if hitting limit
-        sleep 0.01
+    if [[ $job_count -gt 50 ]]; then
+        # Very minimal pause if hitting limit
+        sleep 0.005
     fi
 }
 
@@ -684,10 +684,11 @@ generate_transactions() {
     fi
     
     # Step 2: Wait for transactions to propagate and be processed
-    # Increased from 3s to 10s to allow time for high-velocity transaction processing
-    log_info "⏳ Waiting 10s for transaction propagation and processing across cluster..."
-    log_info "   (High-velocity transactions need more time to batch and commit)"
-    sleep 10
+    # Increased from 10s to 20s to allow time for high-velocity transaction processing
+    # With 1000+ TPS submission, banking stage needs more time to batch and commit
+    log_info "⏳ Waiting 20s for transaction propagation and processing across cluster..."
+    log_info "   (High-velocity transactions need extended time to batch, process, and replicate)"
+    sleep 20
     
     # Step 3: Quick verification on other nodes (sample check)
     log_info "🔍 Verifying transaction replication on other nodes (sampling)..."
