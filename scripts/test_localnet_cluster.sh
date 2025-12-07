@@ -565,25 +565,25 @@ send_batch_transactions() {
     
     # Gradual ramp-up: start with lower parallelism, then increase
     # This prevents overwhelming the RPC server with initial burst
-    # Maximum parallelism for 1000+ TPS target
-    local parallelism=1000  # Maximum speed for sustained throughput (33% increase from 750)
+    # Balanced parallelism for reliable 700+ TPS
+    local parallelism=750  # Proven speed for sustained throughput
     if [[ $batch_num -eq 0 ]]; then
-        parallelism=300  # First batch: moderate start (50% increase)
+        parallelism=200  # First batch: conservative start
     elif [[ $batch_num -eq 1 ]]; then
-        parallelism=600  # Second batch: fast ramp (2x)
+        parallelism=400  # Second batch: moderate ramp
     elif [[ $batch_num -eq 2 ]]; then
-        parallelism=800  # Third batch: approaching max (1.33x)
+        parallelism=600  # Third batch: approaching max
     fi
     
     # Fire-and-forget: background the entire xargs so we don't wait for completion
     # This achieves true parallel submission without blocking on curl responses
-    # Optimized for 1000+ TPS with maximum parallelism
+    # Optimized for reliable high throughput
     {
         seq 0 $((batch_size - 1)) | xargs -P $parallelism -I {} bash -c '
             idx=$(('$start_idx' + {}))
             tx_data=$(generate_test_transaction $idx)
-            # Very fast timeout: 0.02s (20ms) for maximum throughput
-            curl -s --max-time 0.02 --connect-timeout 0.02 "'$endpoint'" \
+            # Balanced timeout: 0.03s (30ms) for reliable throughput
+            curl -s --max-time 0.03 --connect-timeout 0.03 "'$endpoint'" \
                 -H "Content-Type: application/json" \
                 -d "{\"jsonrpc\":\"2.0\",\"id\":$idx,\"method\":\"sendTransaction\",\"params\":[\"$tx_data\"]}" \
                 >/dev/null 2>&1 || true
@@ -591,11 +591,11 @@ send_batch_transactions() {
     } &
     
     # Limit total background jobs to prevent system overload
-    # Increased to 50 concurrent batches for maximum throughput
+    # Balanced at 40 concurrent batches for reliable throughput
     local job_count=$(jobs -r | wc -l)
-    if [[ $job_count -gt 50 ]]; then
-        # Very minimal pause if hitting limit
-        sleep 0.005
+    if [[ $job_count -gt 40 ]]; then
+        # Minimal pause if hitting limit
+        sleep 0.01
     fi
 }
 
