@@ -865,7 +865,7 @@ void SolanaValidator::on_gossip_message(
         }
         offset += 8;
         
-        std::cout << "Gossip: Received BLOCK_NOTIFICATION for slot " << slot 
+        std::cout << "Gossip: [" << config_.gossip_bind_address << "] Received BLOCK_NOTIFICATION for slot " << slot 
                  << " with " << tx_count << " transactions (payload size: " 
                  << message.payload.size() << " bytes)" << std::endl;
         

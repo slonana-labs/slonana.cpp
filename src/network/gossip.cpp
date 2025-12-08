@@ -103,7 +103,8 @@ common::Result<bool> GossipProtocol::start() {
   {
     std::lock_guard<std::mutex> lock(global_message_queue_mutex);
     registered_protocols[impl_->node_id_] = this;
-    std::cout << "Gossip: Registered node " << impl_->node_id_ << " for message reception" << std::endl;
+    std::cout << "Gossip: Registered node " << impl_->node_id_ << " for message reception (total nodes: " 
+              << registered_protocols.size() << ")" << std::endl;
   }
   
   // Start message receive thread
@@ -205,7 +206,16 @@ GossipProtocol::broadcast_message(const NetworkMessage &message) {
 
   std::cout << "Broadcast message of type " << static_cast<int>(message.type)
             << " from node " << impl_->node_id_ << " to " << successful_sends
-            << " peer node(s)" << std::endl;
+            << " peer node(s) (total registered: " << registered_protocols.size() << ")" << std::endl;
+  
+  // Debug: Show all registered nodes
+  if (successful_sends == 0 && registered_protocols.size() > 1) {
+    std::cout << "  WARNING: No peers to broadcast to, but " << registered_protocols.size() 
+              << " nodes registered. Registered nodes:" << std::endl;
+    for (const auto& [node_id, protocol] : registered_protocols) {
+      std::cout << "    - " << node_id << (node_id == impl_->node_id_ ? " (self)" : "") << std::endl;
+    }
+  }
 
   return common::Result<bool>(successful_sends >= 0);  // Allow broadcast even with 0 peers
 }
