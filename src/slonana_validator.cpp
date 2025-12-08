@@ -849,28 +849,35 @@ void SolanaValidator::on_gossip_message(
     const network::NetworkMessage &message) {
   switch (message.type) {
   case network::MessageType::BLOCK_NOTIFICATION: {
-    // Deserialize and process block from gossip
-    // Format: [slot (8 bytes)][block_hash (32 bytes)][tx_count (8 bytes)]
+    // Deserialize and process block from gossip with full transaction data
+    // Format: [slot (8 bytes)][block_hash (32 bytes)][tx_count (8 bytes)][transactions...]
+    // Each transaction: [sig_count (4 bytes)][signatures...][message_len (4 bytes)][message...][hash (32 bytes)]
     if (message.payload.size() >= 48) {  // slot + hash + tx_count minimum
       try {
+        size_t offset = 0;
+        
         // Extract slot
         uint64_t slot = 0;
         for (int i = 0; i < 8; ++i) {
-          slot |= (static_cast<uint64_t>(message.payload[i]) << (i * 8));
+          slot |= (static_cast<uint64_t>(message.payload[offset + i]) << (i * 8));
         }
+        offset += 8;
         
         // Extract block hash
-        std::vector<uint8_t> block_hash(message.payload.begin() + 8, 
-                                        message.payload.begin() + 40);
+        std::vector<uint8_t> block_hash(message.payload.begin() + offset, 
+                                        message.payload.begin() + offset + 32);
+        offset += 32;
         
         // Extract transaction count
         uint64_t tx_count = 0;
         for (int i = 0; i < 8; ++i) {
-          tx_count |= (static_cast<uint64_t>(message.payload[40 + i]) << (i * 8));
+          tx_count |= (static_cast<uint64_t>(message.payload[offset + i]) << (i * 8));
         }
+        offset += 8;
         
         std::cout << "Gossip: Received BLOCK_NOTIFICATION for slot " << slot 
-                 << " with " << tx_count << " transactions" << std::endl;
+                 << " with " << tx_count << " transactions (payload size: " 
+                 << message.payload.size() << " bytes)" << std::endl;
         
         // Apply the block to our ledger
         // For localnet testing, we trust blocks from other nodes
@@ -882,36 +889,88 @@ void SolanaValidator::on_gossip_message(
             return;
           }
           
-          // Create a block structure for ledger with placeholder transactions
+          // Create a block structure for ledger with full transaction data
           ledger::Block received_block;
           received_block.slot = slot;
           received_block.block_hash = block_hash;
           received_block.previous_block_hash = block_hash;  // Simplified for testing
           received_block.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
           
-          // Create placeholder transactions to match the transaction count
-          // In a full implementation, we would fetch actual transaction data from the leader
-          // For localnet testing, we just need the count to be correct for getTransactionCount RPC
+          // Deserialize each transaction from the payload
           for (uint64_t i = 0; i < tx_count; ++i) {
-            ledger::Transaction placeholder_tx;
-            // Create a unique transaction ID based on slot and index
-            placeholder_tx.signature = std::vector<uint8_t>(64, 0);
-            placeholder_tx.signature[0] = static_cast<uint8_t>(slot & 0xFF);
-            placeholder_tx.signature[1] = static_cast<uint8_t>((slot >> 8) & 0xFF);
-            placeholder_tx.signature[2] = static_cast<uint8_t>(i & 0xFF);
-            placeholder_tx.signature[3] = static_cast<uint8_t>((i >> 8) & 0xFF);
+            if (offset >= message.payload.size()) {
+              std::cerr << "Gossip: ERROR - Payload truncated at transaction " << i << std::endl;
+              break;
+            }
             
-            received_block.transactions.push_back(placeholder_tx);
+            ledger::Transaction tx;
+            
+            // Extract signature count
+            if (offset + 4 > message.payload.size()) {
+              std::cerr << "Gossip: ERROR - Cannot read signature count for transaction " << i << std::endl;
+              break;
+            }
+            uint32_t sig_count = 0;
+            for (int j = 0; j < 4; ++j) {
+              sig_count |= (static_cast<uint32_t>(message.payload[offset + j]) << (j * 8));
+            }
+            offset += 4;
+            
+            // Extract each signature (64 bytes each)
+            for (uint32_t s = 0; s < sig_count; ++s) {
+              if (offset + 64 > message.payload.size()) {
+                std::cerr << "Gossip: ERROR - Cannot read signature " << s 
+                         << " for transaction " << i << std::endl;
+                break;
+              }
+              ledger::Signature sig(message.payload.begin() + offset,
+                                   message.payload.begin() + offset + 64);
+              tx.signatures.push_back(sig);
+              offset += 64;
+            }
+            
+            // Extract message length
+            if (offset + 4 > message.payload.size()) {
+              std::cerr << "Gossip: ERROR - Cannot read message length for transaction " << i << std::endl;
+              break;
+            }
+            uint32_t msg_len = 0;
+            for (int j = 0; j < 4; ++j) {
+              msg_len |= (static_cast<uint32_t>(message.payload[offset + j]) << (j * 8));
+            }
+            offset += 4;
+            
+            // Extract message data
+            if (offset + msg_len > message.payload.size()) {
+              std::cerr << "Gossip: ERROR - Cannot read message data for transaction " << i 
+                       << " (need " << msg_len << " bytes)" << std::endl;
+              break;
+            }
+            tx.message = std::vector<uint8_t>(message.payload.begin() + offset,
+                                             message.payload.begin() + offset + msg_len);
+            offset += msg_len;
+            
+            // Extract transaction hash (32 bytes)
+            if (offset + 32 > message.payload.size()) {
+              std::cerr << "Gossip: ERROR - Cannot read hash for transaction " << i << std::endl;
+              break;
+            }
+            tx.hash = ledger::Hash(message.payload.begin() + offset,
+                                  message.payload.begin() + offset + 32);
+            offset += 32;
+            
+            received_block.transactions.push_back(tx);
           }
           
           // Store the block in our ledger
           auto store_result = ledger_manager_->store_block(received_block);
           if (store_result.is_ok()) {
-            impl_->stats_.transactions_processed += tx_count;
+            impl_->stats_.transactions_processed += received_block.transactions.size();
             impl_->stats_.blocks_processed++;
             
             std::cout << "Gossip: Stored replicated block at slot " << slot 
-                     << " with " << tx_count << " transactions to ledger" << std::endl;
+                     << " with " << received_block.transactions.size() 
+                     << " transactions (full data) to ledger" << std::endl;
           } else {
             std::cerr << "Gossip: Failed to store block: " << store_result.error() << std::endl;
           }

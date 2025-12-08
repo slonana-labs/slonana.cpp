@@ -1322,6 +1322,7 @@ bool BankingStage::commit_batch(std::shared_ptr<TransactionBatch> batch) {
                 
                 // Serialize the block into the payload
                 // Format: [slot (8 bytes)][block_hash (32 bytes)][transaction_count (8 bytes)][transactions...]
+                // Each transaction: [sig_count (4 bytes)][signatures...][message_len (4 bytes)][message...][hash (32 bytes)]
                 std::vector<uint8_t> payload;
                 
                 // Add slot
@@ -1339,8 +1340,31 @@ bool BankingStage::commit_batch(std::shared_ptr<TransactionBatch> batch) {
                   payload.push_back((tx_count >> (i * 8)) & 0xFF);
                 }
                 
-                // Note: For now we're just broadcasting the block metadata (slot, hash, tx count)
-                // Other nodes can request full transaction details via RPC if needed
+                // Add full transaction data for each transaction
+                for (const auto& tx : new_block.transactions) {
+                  // Add signature count
+                  uint32_t sig_count = static_cast<uint32_t>(tx.signatures.size());
+                  for (int i = 0; i < 4; ++i) {
+                    payload.push_back((sig_count >> (i * 8)) & 0xFF);
+                  }
+                  
+                  // Add each signature (64 bytes each)
+                  for (const auto& sig : tx.signatures) {
+                    payload.insert(payload.end(), sig.begin(), sig.end());
+                  }
+                  
+                  // Add message length
+                  uint32_t msg_len = static_cast<uint32_t>(tx.message.size());
+                  for (int i = 0; i < 4; ++i) {
+                    payload.push_back((msg_len >> (i * 8)) & 0xFF);
+                  }
+                  
+                  // Add message data
+                  payload.insert(payload.end(), tx.message.begin(), tx.message.end());
+                  
+                  // Add transaction hash (32 bytes)
+                  payload.insert(payload.end(), tx.hash.begin(), tx.hash.end());
+                }
                 
                 block_message.payload = std::move(payload);
                 
