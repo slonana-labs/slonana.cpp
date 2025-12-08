@@ -810,19 +810,9 @@ void SolanaValidator::on_block_received(const ledger::Block &block) {
   std::cout << "Processed block at slot " << block.slot << " with "
             << block.transactions.size() << " transactions" << std::endl;
 
-  // Broadcast block to network
-  if (gossip_protocol_ && running_.load()) {
-    network::NetworkMessage message;
-    message.type = network::MessageType::BLOCK_NOTIFICATION;
-    message.sender = validator_identity_;
-    message.payload = block.serialize();
-    message.timestamp = static_cast<uint64_t>(
-        std::max(0L, std::chrono::duration_cast<std::chrono::seconds>(
-                         std::chrono::system_clock::now().time_since_epoch())
-                         .count()));
-
-    gossip_protocol_->broadcast_message(message);
-  }
+  // NOTE: Block broadcast is handled by banking_stage with full transaction data
+  // Do NOT broadcast here to avoid duplicate/incomplete messages
+  // Banking stage serializes complete transaction data for proper replication
 }
 
 void SolanaValidator::on_vote_received(const validator::Vote &vote) {
