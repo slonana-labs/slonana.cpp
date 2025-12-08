@@ -893,7 +893,7 @@ void SolanaValidator::on_gossip_message(
           ledger::Block received_block;
           received_block.slot = slot;
           received_block.block_hash = block_hash;
-          received_block.previous_block_hash = block_hash;  // Simplified for testing
+          received_block.parent_hash = block_hash;  // Use parent_hash field name
           received_block.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
           
           // Deserialize each transaction from the payload
