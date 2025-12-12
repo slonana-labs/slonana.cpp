@@ -223,7 +223,30 @@ find_package(OpenSSL REQUIRED)
 # Find CURL for HTTPS support
 find_package(CURL REQUIRED)
 
-target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto sodium CURL::libcurl)
+# Find libsodium for cryptographic operations
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(SODIUM QUIET libsodium)
+endif()
+
+if(SODIUM_FOUND)
+    target_include_directories(slonana_core SYSTEM PUBLIC ${SODIUM_INCLUDE_DIRS})
+    target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto ${SODIUM_LIBRARIES} CURL::libcurl)
+else()
+    # Try to find sodium directly
+    find_library(SODIUM_LIBRARY NAMES sodium libsodium)
+    find_path(SODIUM_INCLUDE_DIR NAMES sodium.h)
+    
+    if(SODIUM_LIBRARY AND SODIUM_INCLUDE_DIR)
+        message(STATUS "Found libsodium: ${SODIUM_LIBRARY}")
+        target_include_directories(slonana_core SYSTEM PUBLIC ${SODIUM_INCLUDE_DIR})
+        target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto ${SODIUM_LIBRARY} CURL::libcurl)
+    else()
+        message(WARNING "libsodium not found. Please install: sudo apt-get install libsodium-dev")
+        # Link without sodium for now - build will fail if sodium headers are used
+        target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto CURL::libcurl)
+    endif()
+endif()
 
 # Link nlohmann_json if found as package
 find_package(nlohmann_json 3.2.0 QUIET)
@@ -595,6 +618,12 @@ add_executable(slonana_syscalls_sysvar_tests
     "${CMAKE_SOURCE_DIR}/tests/test_syscalls_sysvar.cpp"
 )
 target_link_libraries(slonana_syscalls_sysvar_tests slonana_core)
+
+# Real Validator Deployment Tests - NO MOCKS
+add_executable(test_real_validator_deployment
+    "${CMAKE_SOURCE_DIR}/tests/test_real_validator_deployment.cpp"
+)
+target_link_libraries(test_real_validator_deployment slonana_core)
 target_include_directories(slonana_syscalls_sysvar_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 add_test(NAME syscalls_sysvar_tests COMMAND slonana_syscalls_sysvar_tests)
 
@@ -648,6 +677,39 @@ target_link_libraries(slonana_fuzzing_bpf_runtime_tests slonana_core gtest_main)
 target_include_directories(slonana_fuzzing_bpf_runtime_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 add_test(NAME fuzzing_bpf_runtime_tests COMMAND slonana_fuzzing_bpf_runtime_tests)
 
+# ML Inference Tests (AI in eBPF/sBPF Runtime)
+add_executable(slonana_ml_inference_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_ml_inference.cpp"
+)
+target_link_libraries(slonana_ml_inference_tests slonana_core)
+target_include_directories(slonana_ml_inference_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME ml_inference_tests COMMAND slonana_ml_inference_tests)
+
+# Async BPF Execution Tests (Autonomous Program Execution)
+add_executable(slonana_async_bpf_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_async_bpf_execution.cpp"
+)
+target_link_libraries(slonana_async_bpf_tests slonana_core)
+target_include_directories(slonana_async_bpf_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME async_bpf_tests COMMAND slonana_async_bpf_tests)
+
+# Economic Opcodes Tests (Native Economic Primitives)
+add_executable(slonana_economic_opcodes_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_economic_opcodes.cpp"
+)
+target_link_libraries(slonana_economic_opcodes_tests slonana_core)
+target_include_directories(slonana_economic_opcodes_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME economic_opcodes_tests COMMAND slonana_economic_opcodes_tests)
+
+# ML BPF Integration Tests (End-to-End ML Trading Agent)
+add_executable(slonana_ml_bpf_integration_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_ml_bpf_integration.cpp"
+)
+target_link_libraries(slonana_ml_bpf_integration_tests slonana_core)
+target_include_directories(slonana_ml_bpf_integration_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME ml_bpf_integration_tests COMMAND slonana_ml_bpf_integration_tests)
 
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")

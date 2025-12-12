@@ -2,6 +2,45 @@
 
 This directory contains example code demonstrating best practices for using Slonana.cpp components.
 
+## ML Trading Agent Example
+
+### ml_trading_agent/
+
+A complete example demonstrating how to build an AI-powered trading agent that:
+- Compiles C++ code into sBPF bytecode (with native testing support)
+- Uses ML inference syscalls for real-time decisions (~10ns latency)
+- Deploys to a slonana validator
+- Executes autonomously via async timers and account watchers
+
+**Files:**
+- `ml_trading_agent.cpp` - Main sBPF program with ML inference and native test harness
+- `deploy_and_invoke.cpp` - Client to deploy and invoke the agent via SVM transactions
+- `train_model.py` - Python script to train and export decision tree models
+- `CMakeLists.txt` - CMake build configuration
+- `README.md` - Detailed documentation with architecture diagram
+
+**Quick Start:**
+```bash
+cd ml_trading_agent
+mkdir build && cd build
+cmake ..
+make
+./ml_trading_agent_test    # Run native tests
+./deploy_and_invoke        # Run deployment demo
+```
+
+**Key Features:**
+- Decision tree inference in ~10ns
+- Feature extraction from oracle data
+- Fixed-point arithmetic (eBPF compatible)
+- State management for agent persistence
+- Python model training integration
+- Comprehensive test coverage
+
+See [ml_trading_agent/README.md](ml_trading_agent/README.md) for full documentation.
+
+---
+
 ## Lock-Free Queue Examples
 
 ### queue_backpressure_example.cpp

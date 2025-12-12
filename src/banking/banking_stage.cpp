@@ -1,5 +1,6 @@
 #include "banking/banking_stage.h"
 #include "common/logging.h"
+#include "network/gossip.h"
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
@@ -416,9 +417,11 @@ size_t ResourceMonitor::calculate_memory_usage() {
 
 // BankingStage implementation
 BankingStage::BankingStage()
-    : initialized_(false), running_(false), batch_size_(1),
-      batch_timeout_(std::chrono::milliseconds(10)), parallel_stages_(4),
-      max_concurrent_batches_(16), worker_thread_count_(8),
+    : initialized_(false), running_(false), batch_size_(100),  // Increased default: 1 → 100
+      batch_timeout_(std::chrono::milliseconds(25)),  // Faster default: 10ms → 25ms
+      parallel_stages_(8),  // Increased default: 4 → 8
+      max_concurrent_batches_(32),  // Increased default: 16 → 32
+      worker_thread_count_(12),  // Increased default: 8 → 12
       adaptive_batching_enabled_(true), resource_monitoring_enabled_(true),
       priority_processing_enabled_(false), ledger_manager_(nullptr),
       should_stop_(false), total_transactions_processed_(0),
@@ -627,9 +630,20 @@ bool BankingStage::shutdown() {
 
 void BankingStage::submit_transaction(TransactionPtr transaction) {
   // **HIGH-PERFORMANCE TRANSACTION SUBMISSION** - Optimized for 1k+ TPS
-  if (!running_ || !transaction) {
-    return; // Fast rejection without logging overhead
+  if (!running_) {
+    std::cout << "Banking: [REJECT] Transaction rejected - banking stage not running (running_=" << running_ << ")" << std::endl;
+    return;
   }
+  
+  if (!transaction) {
+    std::cout << "Banking: [REJECT] Transaction rejected - null transaction" << std::endl;
+    return;
+  }
+
+  // **DIAGNOSTIC LOGGING** - Track ALL transaction submissions for debugging
+  static std::atomic<size_t> submitted_count{0};
+  size_t current_count = submitted_count.fetch_add(1);
+  std::cout << "Banking: [SUBMIT] Transaction #" << current_count << " submitted to banking stage (running=" << running_ << ")" << std::endl;
 
   try {
     // **FEE-BASED PRIORITY CALCULATION** - Use fee market for intelligent ordering
@@ -670,6 +684,10 @@ void BankingStage::submit_transaction(TransactionPtr transaction) {
         }
         priority_queue_.push({priority, transaction});
         queue_cv_.notify_one();
+        
+        if (current_count < 5) {
+          std::cout << "Banking: Transaction queued in priority queue (priority=" << priority << ")" << std::endl;
+        }
         return; // Fast path success
       }
     }
@@ -678,11 +696,17 @@ void BankingStage::submit_transaction(TransactionPtr transaction) {
     {
       std::lock_guard<std::mutex> lock(queue_mutex_);
       transaction_queue_.push(transaction);
+      size_t queue_size = transaction_queue_.size();
+      std::cout << "Banking: [QUEUE] Transaction #" << current_count << " queued in standard queue (queue size=" << queue_size << ")" << std::endl;
     }
     queue_cv_.notify_one();
+    std::cout << "Banking: [NOTIFY] Notified worker thread for transaction #" << current_count << std::endl;
 
+  } catch (const std::exception& e) {
+    std::cerr << "Banking: Transaction submission failed: " << e.what() << std::endl;
+    return;
   } catch (...) {
-    // Silent error handling for maximum performance
+    std::cerr << "Banking: Transaction submission failed with unknown error" << std::endl;
     return;
   }
 }
@@ -862,7 +886,22 @@ void BankingStage::initialize_pipeline() {
 }
 
 void BankingStage::process_batches() {
+  std::cout << "Banking: [START] Batch processor thread started (should_stop_=" << should_stop_ << ", running_=" << running_ << ")" << std::endl;
+  size_t iteration_count = 0;
+  
   while (!should_stop_) {
+    iteration_count++;
+    if (iteration_count <= 10 || iteration_count % 10 == 0) {
+      size_t queue_size = 0;
+      {
+        std::lock_guard<std::mutex> lock(queue_mutex_);
+        queue_size = transaction_queue_.size();
+      }
+      std::cout << "Banking: [LOOP] Batch processor iteration " << iteration_count 
+                << " - queue_size=" << queue_size 
+                << " batches_processed=" << total_batches_processed_.load() << std::endl;
+    }
+    
     process_transaction_queue();
     create_batch_if_needed();
 
@@ -874,8 +913,13 @@ void BankingStage::process_batches() {
       handle_resource_pressure();
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    // **ULTRA-HIGH-THROUGHPUT OPTIMIZATION** - Reduce sleep from 10ms to 2ms
+    // This allows 5x faster batch processing loop iterations (500 Hz vs 100 Hz)
+    // Critical for processing 1000+ TPS workloads with minimal latency
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
   }
+  
+  std::cout << "Banking: [STOP] Batch processor thread stopping" << std::endl;
 }
 
 void BankingStage::create_batch_if_needed() {
@@ -883,25 +927,34 @@ void BankingStage::create_batch_if_needed() {
 
   if (!current_batch_) {
     current_batch_ = std::make_shared<TransactionBatch>();
+    std::cout << "Banking: [BATCH] Created new batch" << std::endl;
   }
 
   bool should_process_batch = false;
+  std::string trigger_reason;
 
   // Check if batch is full or timeout reached
   if (current_batch_->size() >= batch_size_) {
     should_process_batch = true;
+    trigger_reason = "batch_full";
   } else if (!current_batch_->empty()) {
     auto age =
         std::chrono::steady_clock::now() - current_batch_->get_creation_time();
     if (age >= batch_timeout_) {
       should_process_batch = true;
+      trigger_reason = "timeout";
     }
   }
 
   if (should_process_batch) {
+    size_t batch_size = current_batch_->size();
+    std::cout << "Banking: [SUBMIT_BATCH] Processing batch with " << batch_size 
+              << " transactions (trigger=" << trigger_reason << ", batch_size_setting=" << batch_size_ << ")" << std::endl;
+    
     submit_batch(current_batch_);
     total_batches_processed_++;
     current_batch_ = std::make_shared<TransactionBatch>();
+    std::cout << "Banking: [BATCH_SUBMITTED] Batch submitted, created new batch. Total batches processed: " << total_batches_processed_.load() << std::endl;
   }
 }
 
@@ -913,10 +966,19 @@ void BankingStage::process_transaction_queue() {
     std::lock_guard<std::mutex> lock(queue_mutex_);
 
     size_t max_to_process = batch_size_;
+    size_t initial_queue_size = transaction_queue_.size();
+    if (initial_queue_size > 0) {
+      std::cout << "Banking: [PROCESS_QUEUE] Processing " << initial_queue_size << " transactions from queue (max=" << max_to_process << ")" << std::endl;
+    }
+    
     while (!transaction_queue_.empty() &&
            transactions_to_process.size() < max_to_process) {
       transactions_to_process.push_back(transaction_queue_.front());
       transaction_queue_.pop();
+    }
+    
+    if (!transactions_to_process.empty()) {
+      std::cout << "Banking: [EXTRACT] Extracted " << transactions_to_process.size() << " transactions from queue" << std::endl;
     }
   }
 
@@ -949,6 +1011,13 @@ void BankingStage::process_transaction_queue() {
     if (!current_batch_) {
       current_batch_ = std::make_shared<TransactionBatch>();
     }
+    
+    // **DIAGNOSTIC LOGGING** - Track batch additions
+    if (!transactions_to_process.empty()) {
+      size_t new_batch_size = current_batch_->size() + transactions_to_process.size();
+      std::cout << "Banking: [ADD_TO_BATCH] Adding " << transactions_to_process.size() 
+                << " transactions to current batch (new size=" << new_batch_size << ")" << std::endl;
+    }
 
     for (auto &transaction : transactions_to_process) {
       current_batch_->add_transaction(transaction);
@@ -960,10 +1029,12 @@ bool BankingStage::validate_batch(std::shared_ptr<TransactionBatch> batch) {
   // Validate all transactions in the batch with enhanced safety checks
   if (!batch) {
     LOG_ERROR("Null batch in validate_batch");
+    std::cerr << "Banking: [VALIDATE] ERROR - Null batch pointer" << std::endl;
     return false;
   }
 
   auto &transactions = batch->get_transactions();
+  std::cout << "Banking: [VALIDATE] Validating batch with " << transactions.size() << " transactions" << std::endl;
   std::vector<bool> results(transactions.size());
 
   // Use parallel algorithms for performance-critical transaction validation
@@ -1012,23 +1083,31 @@ bool BankingStage::validate_batch(std::shared_ptr<TransactionBatch> batch) {
 
   // Count failed transactions
   size_t local_failed_count = std::count(results.begin(), results.end(), false);
+  size_t passed_count = results.size() - local_failed_count;
+  
+  std::cout << "Banking: [VALIDATE] Validation complete - " << passed_count << " passed, " 
+            << local_failed_count << " failed out of " << results.size() << " transactions" << std::endl;
 
   // Thread-safe counter update - Update failed transactions atomically
   failed_transactions_.fetch_add(local_failed_count, std::memory_order_relaxed);
 
   batch->set_results(results);
-  return std::all_of(results.begin(), results.end(),
+  bool all_valid = std::all_of(results.begin(), results.end(),
                      [](bool valid) { return valid; });
+  std::cout << "Banking: [VALIDATE] Batch validation result: " << (all_valid ? "SUCCESS" : "FAILURE") << std::endl;
+  return all_valid;
 }
 
 bool BankingStage::execute_batch(std::shared_ptr<TransactionBatch> batch) {
   // Execute all transactions in the batch with enhanced safety
   if (!batch) {
     LOG_ERROR("Null batch in execute_batch");
+    std::cerr << "Banking: [EXECUTE] ERROR - Null batch pointer" << std::endl;
     return false;
   }
 
   auto &transactions = batch->get_transactions();
+  std::cout << "Banking: [EXECUTE] Executing batch with " << transactions.size() << " transactions" << std::endl;
   std::vector<bool> results(transactions.size());
 
   // Use parallel algorithms for performance-critical transaction execution
@@ -1081,6 +1160,9 @@ bool BankingStage::execute_batch(std::shared_ptr<TransactionBatch> batch) {
       std::count(results.begin(), results.end(), true);
   size_t local_failed_count = results.size() - local_processed_count;
 
+  std::cout << "Banking: [EXECUTE] Execution complete - " << local_processed_count << " succeeded, " 
+            << local_failed_count << " failed out of " << results.size() << " transactions" << std::endl;
+
   // Thread-safe counter updates - Update counters atomically
   total_transactions_processed_.fetch_add(local_processed_count,
                                           std::memory_order_relaxed);
@@ -1095,15 +1177,24 @@ bool BankingStage::commit_batch(std::shared_ptr<TransactionBatch> batch) {
   // Production-ready commitment process that records transactions in the ledger
   if (!batch) {
     LOG_ERROR("Null batch in commit_batch");
+    std::cerr << "Banking: [COMMIT] ERROR - Null batch pointer" << std::endl;
     return false;
   }
 
   auto &transactions = batch->get_transactions();
+  std::cout << "Banking: [COMMIT] Starting commit for batch with " << transactions.size() << " transactions" << std::endl;
   bool all_committed = true;
 
   // **THREAD-SAFE LEDGER ACCESS** - Use mutex to protect ledger operations
   std::unique_lock<std::mutex> ledger_lock(ledger_mutex_, std::defer_lock);
 
+  if (!ledger_manager_) {
+    std::cerr << "Banking: [COMMIT] ERROR - ledger_manager_ is NULL! Cannot commit transactions." << std::endl;
+    std::cerr << "Banking: [COMMIT] This means transactions are being processed but not persisted to ledger." << std::endl;
+    std::cerr << "Banking: [COMMIT] Check that ledger_manager is properly initialized in validator startup." << std::endl;
+    return false;
+  }
+  
   if (ledger_manager_) {
     try {
       // Acquire lock for ledger operations to prevent race conditions
@@ -1217,6 +1308,83 @@ bool BankingStage::commit_batch(std::shared_ptr<TransactionBatch> batch) {
             } else {
               std::cout << "Banking: No block notification callback registered"
                         << std::endl;
+            }
+            
+            // **GOSSIP PROTOCOL BROADCAST** - Broadcast block to other nodes in the cluster
+            // This is CRITICAL for replication: without this, blocks only exist on the leader node
+            if (gossip_protocol_) {
+              try {
+                // Create a network message with the block data
+                network::NetworkMessage block_message;
+                block_message.type = network::MessageType::BLOCK_NOTIFICATION;
+                block_message.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
+                
+                // Serialize the block into the payload
+                // Format: [slot (8 bytes)][block_hash (32 bytes)][transaction_count (8 bytes)][transactions...]
+                // Each transaction: [sig_count (4 bytes)][signatures...][message_len (4 bytes)][message...][hash (32 bytes)]
+                std::vector<uint8_t> payload;
+                
+                // Add slot
+                uint64_t slot = new_block.slot;
+                for (int i = 0; i < 8; ++i) {
+                  payload.push_back((slot >> (i * 8)) & 0xFF);
+                }
+                
+                // Add block hash
+                payload.insert(payload.end(), new_block.block_hash.begin(), new_block.block_hash.end());
+                
+                // Add transaction count
+                uint64_t tx_count = new_block.transactions.size();
+                for (int i = 0; i < 8; ++i) {
+                  payload.push_back((tx_count >> (i * 8)) & 0xFF);
+                }
+                
+                // Add full transaction data for each transaction
+                for (const auto& tx : new_block.transactions) {
+                  // Add signature count
+                  uint32_t sig_count = static_cast<uint32_t>(tx.signatures.size());
+                  for (int i = 0; i < 4; ++i) {
+                    payload.push_back((sig_count >> (i * 8)) & 0xFF);
+                  }
+                  
+                  // Add each signature (64 bytes each)
+                  for (const auto& sig : tx.signatures) {
+                    payload.insert(payload.end(), sig.begin(), sig.end());
+                  }
+                  
+                  // Add message length
+                  uint32_t msg_len = static_cast<uint32_t>(tx.message.size());
+                  for (int i = 0; i < 4; ++i) {
+                    payload.push_back((msg_len >> (i * 8)) & 0xFF);
+                  }
+                  
+                  // Add message data
+                  payload.insert(payload.end(), tx.message.begin(), tx.message.end());
+                  
+                  // Add transaction hash (32 bytes)
+                  payload.insert(payload.end(), tx.hash.begin(), tx.hash.end());
+                }
+                
+                block_message.payload = std::move(payload);
+                
+                // Broadcast to all peers in the gossip network
+                auto broadcast_result = gossip_protocol_->broadcast_message(block_message);
+                if (broadcast_result.is_ok()) {
+                  std::cout << "Banking: [GOSSIP] Successfully broadcast block at slot " 
+                           << new_block.slot << " with " << new_block.transactions.size() 
+                           << " transactions to cluster peers" << std::endl;
+                } else {
+                  std::cerr << "Banking: [GOSSIP] WARNING - Failed to broadcast block: " 
+                           << broadcast_result.error() << std::endl;
+                }
+              } catch (const std::exception &gossip_error) {
+                std::cerr << "Banking: [GOSSIP] ERROR - Block broadcast failed: " 
+                         << gossip_error.what() << std::endl;
+              }
+            } else {
+              std::cout << "Banking: [GOSSIP] WARNING - No gossip protocol configured, "
+                       << "block will not be replicated to other nodes!" << std::endl;
             }
             
             // **FEE MARKET UPDATE** - Adjust base fee based on block utilization

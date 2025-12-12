@@ -1,0 +1,13 @@
+{
+    "program_id": "28uVqZTfZqTy9vuPrHYX78M3iDRMZZf",
+    "deployed_at": "2025-12-01T13:49:24Z",
+    "transaction_signature": "CH7K5X51j9jFDJPWnPtC9uBC1j45UGkfk97gUohhxZfMK8eTHiAXyXGDfMv7Yqp8zjqqNtgBGpbVnEQermEuVbh",
+    "deployer": "d5c86493f29c957356082f925763f78fae96c74881a523ad3c4791ee8b8cccbd",
+    "slot": 399,
+    "file_hash": "f2d2f5dca8bf4800dc99aad1eef2f2fb3e2d983e0b469689ef1af0c18e68aeb7",
+    "file_size": 11768,
+    "source_file": "/home/runner/work/slonana.cpp/slonana.cpp/examples/ml_trading_agent/build/ml_trading_agent_sbpf.so",
+    "binary_location": "/home/runner/work/slonana.cpp/slonana.cpp/ledger/programs/28uVqZTfZqTy9vuPrHYX78M3iDRMZZf.so",
+    "binary_type": "ELF 64-bit eBPF",
+    "status": "deployed"
+}
