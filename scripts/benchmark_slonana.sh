@@ -518,14 +518,15 @@ setup_bootstrap_fallback() {
         log_verbose "Faucet: $faucet_pubkey"
         
         # Create genesis with correct parameters
+        # Increased funding 100x to ensure faucet never runs dry in CI
         solana-genesis \
             --ledger "$LEDGER_DIR" \
             --bootstrap-validator "$identity_pubkey" "$vote_pubkey" "$stake_pubkey" \
             --cluster-type development \
             --faucet-pubkey "$faucet_pubkey" \
-            --faucet-lamports 1000000000000 \
-            --bootstrap-validator-lamports 500000000000 \
-            --bootstrap-validator-stake-lamports 500000000
+            --faucet-lamports 100000000000000 \
+            --bootstrap-validator-lamports 50000000000000 \
+            --bootstrap-validator-stake-lamports 10000000000
     else
         log_verbose "Skipping genesis creation (missing dependencies or running in placeholder mode)"
     fi
@@ -1040,6 +1041,10 @@ start_validator() {
     
     log_success "✅ Validator is stable and ready for benchmarking"
     log_info "🎯 Validator successfully bound to RPC endpoint: http://localhost:$RPC_PORT"
+    
+    # Wait for validator to stabilize before test activity (prevent race conditions)
+    log_info "⏳ Waiting 5 seconds for validator to fully stabilize..."
+    sleep 5
     
     # **START ACTIVITY INJECTION**: Create sustained activity for CI environment
     inject_enhanced_activity

@@ -289,14 +289,15 @@ setup_validator() {
     log_verbose "Vote: $vote_pubkey"
     log_verbose "Stake: $stake_pubkey"
     
+    # Increased funding 100x to ensure faucet never runs dry in CI
     solana-genesis \
         --ledger "$LEDGER_DIR" \
         --bootstrap-validator "$identity_pubkey" "$vote_pubkey" "$stake_pubkey" \
         --cluster-type development \
         --faucet-pubkey "$faucet_keypair" \
-        --faucet-lamports 1000000000000 \
-        --bootstrap-validator-lamports 500000000000 \
-        --bootstrap-validator-stake-lamports 500000000
+        --faucet-lamports 100000000000000 \
+        --bootstrap-validator-lamports 50000000000000 \
+        --bootstrap-validator-stake-lamports 10000000000
 
     log_success "Validator environment setup complete"
 }
@@ -423,6 +424,10 @@ start_validator() {
             fi
             
             log_success "Validator is stable and ready for benchmarking"
+            
+            # Wait for validator to stabilize before test activity (prevent race conditions)
+            log_info "⏳ Waiting 5 seconds for validator to fully stabilize..."
+            sleep 5
             
             # Inject local transactions to create activity (prevent 0 blocks/txs scenario)
             inject_initial_activity
