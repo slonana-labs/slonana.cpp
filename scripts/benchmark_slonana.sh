@@ -526,7 +526,7 @@ setup_bootstrap_fallback() {
             --faucet-pubkey "$faucet_pubkey" \
             --faucet-lamports 100000000000000 \
             --bootstrap-validator-lamports 50000000000000 \
-            --bootstrap-validator-stake-lamports 10000000000
+            --bootstrap-validator-stake-lamports 50000000000
     else
         log_verbose "Skipping genesis creation (missing dependencies or running in placeholder mode)"
     fi

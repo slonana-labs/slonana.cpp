@@ -297,7 +297,7 @@ setup_validator() {
         --faucet-pubkey "$faucet_keypair" \
         --faucet-lamports 100000000000000 \
         --bootstrap-validator-lamports 50000000000000 \
-        --bootstrap-validator-stake-lamports 10000000000
+        --bootstrap-validator-stake-lamports 50000000000
 
     log_success "Validator environment setup complete"
 }
