@@ -388,10 +388,12 @@ start_validator() {
     log_verbose "  RPC Port: $RPC_PORT"
     log_verbose "  Gossip Port: $GOSSIP_PORT"
 
-    # Start test validator in background (much simpler than agave-validator)
+    # Start test validator in background with built-in faucet enabled
     "$VALIDATOR_BIN" \
         --ledger "$LEDGER_DIR" \
         --rpc-port "$RPC_PORT" \
+        --faucet-port 9900 \
+        --faucet-sol-limit 1000000 \
         --reset &
 
     VALIDATOR_PID=$!
