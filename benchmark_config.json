@@ -1,0 +1,7 @@
+{
+  "test_duration_seconds": 500,
+  "target_tps": [1000, 5000, 10000, 25000, 50000],
+  "concurrent_connections": [10, 50, 100],
+  "transaction_types": ["transfer", "token_transfer", "vote"],
+  "measurement_interval_seconds": 10
+}
