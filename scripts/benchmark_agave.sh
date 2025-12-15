@@ -289,14 +289,15 @@ setup_validator() {
     log_verbose "Vote: $vote_pubkey"
     log_verbose "Stake: $stake_pubkey"
     
+    # Increased faucet funding 100x (from 1T to 100T lamports) to prevent faucet depletion during high-throughput CI testing
     solana-genesis \
         --ledger "$LEDGER_DIR" \
         --bootstrap-validator "$identity_pubkey" "$vote_pubkey" "$stake_pubkey" \
         --cluster-type development \
         --faucet-pubkey "$faucet_keypair" \
-        --faucet-lamports 1000000000000 \
-        --bootstrap-validator-lamports 500000000000 \
-        --bootstrap-validator-stake-lamports 500000000
+        --faucet-lamports 100000000000000 \
+        --bootstrap-validator-lamports 50000000000000 \
+        --bootstrap-validator-stake-lamports 50000000000
 
     log_success "Validator environment setup complete"
 }
@@ -423,6 +424,10 @@ start_validator() {
             fi
             
             log_success "Validator is stable and ready for benchmarking"
+            
+            # Wait for validator to stabilize before test activity (prevent race conditions)
+            log_info "⏳ Waiting 5 seconds for validator to fully stabilize..."
+            sleep 5
             
             # Inject local transactions to create activity (prevent 0 blocks/txs scenario)
             inject_initial_activity
@@ -604,14 +609,18 @@ test_transaction_throughput() {
             if timeout 3s solana confirm "$sig" --commitment confirmed 2>&1 | grep -q "Transaction executed successfully"; then
                 ((success_count++))
             else
-                # Transaction failed validation - capture error
-                local error
-                error=$(timeout 2s solana confirm "$sig" 2>&1 | grep -oP 'Error:.*' || echo "Unknown validation error")
+                # Transaction failed validation - capture detailed error
+                local error full_output
+                full_output=$(timeout 2s solana confirm "$sig" 2>&1 || echo "Timeout or connection error")
+                error=$(echo "$full_output" | grep -oP 'Error:.*' || echo "$full_output")
                 ((failed_validation_count++))
                 
-                # Log first 5 validation errors for diagnostics
-                if [[ $failed_validation_count -le 5 ]]; then
-                    echo "Transaction $sig: $error" >> "$RESULTS_DIR/validation_errors.txt"
+                # Log first 10 validation errors for diagnostics with full details
+                if [[ $failed_validation_count -le 10 ]]; then
+                    echo "=== Transaction $sig validation failure ===" >> "$RESULTS_DIR/validation_errors.txt"
+                    echo "Error: $error" >> "$RESULTS_DIR/validation_errors.txt"
+                    echo "Full output: $full_output" >> "$RESULTS_DIR/validation_errors.txt"
+                    echo "" >> "$RESULTS_DIR/validation_errors.txt"
                     log_verbose "Validation failed: $error"
                 fi
             fi
