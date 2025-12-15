@@ -518,7 +518,7 @@ setup_bootstrap_fallback() {
         log_verbose "Faucet: $faucet_pubkey"
         
         # Create genesis with correct parameters
-        # Increased funding 100x to ensure faucet never runs dry in CI
+        # Increased faucet funding 100x (from 1T to 100T lamports) to prevent faucet depletion during high-throughput CI testing
         solana-genesis \
             --ledger "$LEDGER_DIR" \
             --bootstrap-validator "$identity_pubkey" "$vote_pubkey" "$stake_pubkey" \

@@ -289,7 +289,7 @@ setup_validator() {
     log_verbose "Vote: $vote_pubkey"
     log_verbose "Stake: $stake_pubkey"
     
-    # Increased funding 100x to ensure faucet never runs dry in CI
+    # Increased faucet funding 100x (from 1T to 100T lamports) to prevent faucet depletion during high-throughput CI testing
     solana-genesis \
         --ledger "$LEDGER_DIR" \
         --bootstrap-validator "$identity_pubkey" "$vote_pubkey" "$stake_pubkey" \
