@@ -609,14 +609,18 @@ test_transaction_throughput() {
             if timeout 3s solana confirm "$sig" --commitment confirmed 2>&1 | grep -q "Transaction executed successfully"; then
                 ((success_count++))
             else
-                # Transaction failed validation - capture error
-                local error
-                error=$(timeout 2s solana confirm "$sig" 2>&1 | grep -oP 'Error:.*' || echo "Unknown validation error")
+                # Transaction failed validation - capture detailed error
+                local error full_output
+                full_output=$(timeout 2s solana confirm "$sig" 2>&1 || echo "Timeout or connection error")
+                error=$(echo "$full_output" | grep -oP 'Error:.*' || echo "$full_output")
                 ((failed_validation_count++))
                 
-                # Log first 5 validation errors for diagnostics
-                if [[ $failed_validation_count -le 5 ]]; then
-                    echo "Transaction $sig: $error" >> "$RESULTS_DIR/validation_errors.txt"
+                # Log first 10 validation errors for diagnostics with full details
+                if [[ $failed_validation_count -le 10 ]]; then
+                    echo "=== Transaction $sig validation failure ===" >> "$RESULTS_DIR/validation_errors.txt"
+                    echo "Error: $error" >> "$RESULTS_DIR/validation_errors.txt"
+                    echo "Full output: $full_output" >> "$RESULTS_DIR/validation_errors.txt"
+                    echo "" >> "$RESULTS_DIR/validation_errors.txt"
                     log_verbose "Validation failed: $error"
                 fi
             fi

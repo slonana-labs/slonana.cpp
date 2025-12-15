@@ -450,6 +450,13 @@ jobs:
           
           echo "🔄 Syncing with remote branch $TARGET_BRANCH before push..."
           
+          # Ensure no unstaged changes exist before rebase (prevents rebase conflicts)
+          if ! git diff-index --quiet HEAD; then
+            echo "⚠️ Unstaged changes detected, committing them before sync..."
+            git add -A
+            git commit -m "ci: save benchmark artifacts before sync" || true
+          fi
+          
           # Fetch latest remote state
           git fetch origin "$TARGET_BRANCH"
           
