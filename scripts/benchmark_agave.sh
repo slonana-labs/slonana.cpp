@@ -393,7 +393,7 @@ start_validator() {
         --ledger "$LEDGER_DIR" \
         --rpc-port "$RPC_PORT" \
         --faucet-port 9900 \
-        --faucet-sol-limit 1000000 \
+        --faucet-sol 1000000 \
         --reset &
 
     VALIDATOR_PID=$!
