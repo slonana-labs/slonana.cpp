@@ -1,0 +1,27 @@
+{
+  "benchmark_date": "2025-12-15T04:39:50Z",
+  "environment": {
+    "runner": "GitHub Actions - ubuntu-latest",
+    "cores": 4,
+    "memory_gb": 15
+  },
+  "results": {
+    "agave": {
+      "tps": 0,
+      "rpc_latency_ms": 5,
+      "memory_usage_mb": 1533.2,
+      "cpu_usage_percent": 13.8
+    },
+    "slonana": {
+      "tps": 0,
+      "rpc_latency_ms": 5,
+      "memory_usage_mb": 21.8984,
+      "cpu_usage_percent": 6.0
+    },
+    "improvements": {
+      "tps_percent": 0,
+      "latency_percent": 0,
+      "memory_percent": 98.5
+    }
+  }
+}
