@@ -436,9 +436,9 @@ start_validator() {
             local faucet_check_attempts=0
             local faucet_ready=false
             while [[ $faucet_check_attempts -lt 10 ]]; do
-                if curl -s -X POST -H "Content-Type: application/json" \
-                   -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' \
-                   http://127.0.0.1:9900 > /dev/null 2>&1; then
+                # Simple HTTP check to see if faucet port is responding
+                if curl -s -f http://127.0.0.1:9900 > /dev/null 2>&1 || \
+                   curl -s http://127.0.0.1:9900 2>&1 | grep -q "Connection established"; then
                     log_success "✅ Faucet is responsive at http://127.0.0.1:9900"
                     faucet_ready=true
                     break
@@ -558,14 +558,17 @@ test_transaction_throughput() {
     local last_error=""
     while [[ $airdrop_attempts -lt 10 ]]; do  # Increased from 5 to 10
         last_error=$(solana airdrop 100 --keypair "$sender_keypair" 2>&1)
-        if [[ $? -eq 0 ]]; then
+        local airdrop_exit_code=$?
+        if [[ $airdrop_exit_code -eq 0 ]]; then
             airdrop_success=true
             log_success "✅ Airdrop successful on attempt $((airdrop_attempts + 1))"
             break
         fi
         ((airdrop_attempts++))
-        log_verbose "Airdrop attempt $airdrop_attempts failed, retrying..."
-        sleep 2  # Increased from 1s to 2s for better faucet recovery
+        log_verbose "Airdrop attempt $airdrop_attempts failed (exit code: $airdrop_exit_code), retrying..."
+        # Use exponential backoff: 1s, 2s, 4s, then cap at 4s
+        local delay=$((airdrop_attempts < 3 ? 2**airdrop_attempts : 4))
+        sleep $delay
     done
 
     if [[ "$airdrop_success" == "false" ]]; then
