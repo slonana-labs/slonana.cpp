@@ -81,11 +81,13 @@ jobs:
         which solana || { echo "❌ Solana CLI install failed"; exit 1; }
         which solana-keygen || { echo "❌ solana-keygen not found"; exit 1; }
         which solana-genesis || { echo "❌ solana-genesis not found"; exit 1; }
+        which solana-test-validator || { echo "❌ solana-test-validator not found"; exit 1; }
         
         echo "✅ Solana CLI installed successfully"
         solana --version
         solana-keygen --version
         solana-genesis --version
+        solana-test-validator --version
 
     - name: Ensure Solana/Agave binaries available for all steps
       run: |
@@ -121,14 +123,14 @@ jobs:
     - name: Make benchmark scripts executable
       run: |
         echo "🔍 Making benchmark scripts executable..."
-        chmod +x ./scripts/benchmark_agave.sh
-        chmod +x ./scripts/benchmark_slonana.sh
+        chmod +x ./scripts/benchmark_agave.sh || { echo "❌ Failed to chmod benchmark_agave.sh"; exit 1; }
+        chmod +x ./scripts/benchmark_slonana.sh || { echo "❌ Failed to chmod benchmark_slonana.sh"; exit 1; }
         
         # Verify scripts are executable
         if [[ -x "./scripts/benchmark_agave.sh" && -x "./scripts/benchmark_slonana.sh" ]]; then
           echo "✅ Both benchmark scripts are executable"
         else
-          echo "❌ Benchmark scripts are not executable"
+          echo "❌ Benchmark scripts are not executable after chmod"
           exit 1
         fi
 
@@ -179,6 +181,9 @@ jobs:
         
         # Ensure PATH includes Solana CLI (which includes Agave binaries)  
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+        
+        # Set ulimit to handle file descriptor warnings (ignore failures)
+        ulimit -n 1000000 2>/dev/null || true
         
         # Set environment variables for proper CI benchmarking
         export SLONANA_CI_MODE=1
@@ -244,6 +249,9 @@ jobs:
         
         # Ensure PATH includes Solana CLI (which includes Agave binaries)
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+        
+        # Set ulimit to handle file descriptor warnings (ignore failures)
+        ulimit -n 1000000 2>/dev/null || true
         
         # Set environment variables for proper CI benchmarking
         export SLONANA_CI_MODE=1
