@@ -428,8 +428,28 @@ start_validator() {
             log_success "Validator is stable and ready for benchmarking"
             
             # Wait for validator to stabilize before test activity (prevent race conditions)
-            log_info "⏳ Waiting 5 seconds for validator to fully stabilize..."
-            sleep 5
+            log_info "⏳ Waiting 10 seconds for validator and faucet to fully stabilize..."
+            sleep 10
+            
+            # Verify faucet is responsive before continuing
+            log_info "🔍 Verifying faucet accessibility..."
+            local faucet_check_attempts=0
+            local faucet_ready=false
+            while [[ $faucet_check_attempts -lt 10 ]]; do
+                if curl -s -X POST -H "Content-Type: application/json" \
+                   -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' \
+                   http://127.0.0.1:9900 > /dev/null 2>&1; then
+                    log_success "✅ Faucet is responsive at http://127.0.0.1:9900"
+                    faucet_ready=true
+                    break
+                fi
+                ((faucet_check_attempts++))
+                sleep 1
+            done
+            
+            if [[ "$faucet_ready" == "false" ]]; then
+                log_warning "⚠️ Faucet not responding after 10 attempts, but continuing..."
+            fi
             
             # Inject local transactions to create activity (prevent 0 blocks/txs scenario)
             inject_initial_activity
@@ -532,21 +552,27 @@ test_transaction_throughput() {
     echo "0" > "$RESULTS_DIR/submitted_requests.txt"
 
     # Airdrop SOL to sender with more aggressive retry
-    log_verbose "Requesting airdrop..."
+    log_info "Requesting airdrop for sender account..."
     local airdrop_attempts=0
     local airdrop_success=false
+    local last_error=""
     while [[ $airdrop_attempts -lt 10 ]]; do  # Increased from 5 to 10
-        if solana airdrop 100 --keypair "$sender_keypair" > /dev/null 2>&1; then
+        last_error=$(solana airdrop 100 --keypair "$sender_keypair" 2>&1)
+        if [[ $? -eq 0 ]]; then
             airdrop_success=true
+            log_success "✅ Airdrop successful on attempt $((airdrop_attempts + 1))"
             break
         fi
         ((airdrop_attempts++))
         log_verbose "Airdrop attempt $airdrop_attempts failed, retrying..."
-        sleep 1  # Reduced from 2s to 1s
+        sleep 2  # Increased from 1s to 2s for better faucet recovery
     done
 
     if [[ "$airdrop_success" == "false" ]]; then
-        log_warning "All airdrop attempts failed, using zero-TPS results"
+        log_warning "❌ All $airdrop_attempts airdrop attempts failed"
+        log_warning "Last error: $last_error"
+        log_warning "Faucet may not be running or accessible at http://127.0.0.1:9900"
+        log_warning "Using zero-TPS results due to airdrop failure"
         log_success "Transaction throughput test completed (airdrop failed)"
         log_info "Effective TPS: 0"
         log_info "Successful transactions: 0"
