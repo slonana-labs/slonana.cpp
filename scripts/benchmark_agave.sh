@@ -656,11 +656,12 @@ test_transaction_throughput() {
             fi
         fi
         
-        # Longer sleep in CI to avoid overwhelming the validator
+        # Minimal sleep to allow validator to process - don't throttle unnecessarily
+        # The validator can handle many more TPS than this
         if [[ "${CI:-}" == "true" || "${SLONANA_CI_MODE:-}" == "1" ]]; then
-            sleep 0.8  # Slower pace for CI
+            sleep 0.05  # 20 TPS target for CI (was 0.8s = 1.25 TPS)
         else
-            sleep 0.3
+            sleep 0.01  # 100 TPS target for local
         fi
     done
 
