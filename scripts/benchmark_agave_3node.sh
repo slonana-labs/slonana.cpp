@@ -191,7 +191,7 @@ check_dependencies() {
     done
 
     # Check for system utilities
-    for util in curl jq bc; do
+    for util in curl jq; do
         if ! command -v "$util" &> /dev/null; then
             log_error "Required utility not found: $util"
             exit 3
