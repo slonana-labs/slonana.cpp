@@ -339,9 +339,9 @@ start_validator_node() {
     log_verbose "  Gossip Port: $gossip_port"
     log_verbose "  TPU Port: $tpu_port"
 
-    # Set CI environment variables
-    export SLONANA_CI_MODE=1
-    export CI=true
+    # Set CI environment variables if not already set
+    export SLONANA_CI_MODE=${SLONANA_CI_MODE:-1}
+    export CI=${CI:-true}
 
     # Build validator command
     local cmd=("$VALIDATOR_BIN")

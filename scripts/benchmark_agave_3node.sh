@@ -15,7 +15,7 @@ RESULTS_DIR=""
 VALIDATOR_BIN="agave-validator"
 TEST_DURATION=300  # 5 minutes for thorough testing
 BOOTSTRAP_ONLY=false
-VERBOSE=false
+VERBOSE=true
 
 # 3-Node cluster port configuration
 NODE1_RPC=8899
@@ -66,7 +66,7 @@ log_verbose() {
 }
 
 # CI optimization
-if [[ "${CI:-}" == "true" || "${SLONANA_CI_MODE:-}" == "1" ]]; then
+if [[ -n "${CI:-}" || -n "${GITHUB_ACTIONS:-}" || -n "${CONTINUOUS_INTEGRATION:-}" ]]; then
     TEST_DURATION=300  # Keep 5 minutes for thorough CI testing
     log_info "🔧 CI environment detected - using ${TEST_DURATION}s test duration"
 fi
@@ -369,8 +369,8 @@ wait_for_node_ready() {
             log_success "Node $node_num is ready!"
             return 0
         fi
-        sleep 2
-        wait_time=$((wait_time + 2))
+        sleep 3
+        wait_time=$((wait_time + 3))
     done
 
     log_error "Node $node_num failed to start within ${timeout}s timeout"

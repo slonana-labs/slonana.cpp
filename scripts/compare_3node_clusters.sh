@@ -165,23 +165,23 @@ if [[ "$SKIP_AGAVE" == "false" ]] && [[ "$SKIP_SLONANA" == "false" ]] && \
     echo "Performance Comparison:"
     echo "──────────────────────"
     
-    # TPS comparison
-    if (( $(echo "$slonana_tps > $agave_tps" | bc -l) )); then
-        tps_diff=$(echo "scale=2; (($slonana_tps - $agave_tps) / $agave_tps) * 100" | bc -l)
+    # TPS comparison (using awk for portability)
+    if awk "BEGIN {exit !($slonana_tps > $agave_tps)}"; then
+        tps_diff=$(awk "BEGIN {printf \"%.2f\", (($slonana_tps - $agave_tps) / $agave_tps) * 100}")
         echo -e "  ${GREEN}✓${NC} Slonana TPS is ${tps_diff}% higher than Agave"
-    elif (( $(echo "$agave_tps > $slonana_tps" | bc -l) )); then
-        tps_diff=$(echo "scale=2; (($agave_tps - $slonana_tps) / $slonana_tps) * 100" | bc -l)
+    elif awk "BEGIN {exit !($agave_tps > $slonana_tps)}"; then
+        tps_diff=$(awk "BEGIN {printf \"%.2f\", (($agave_tps - $slonana_tps) / $slonana_tps) * 100}")
         echo -e "  ${YELLOW}○${NC} Agave TPS is ${tps_diff}% higher than Slonana"
     else
         echo "  ≈ TPS is equal"
     fi
     
-    # Latency comparison
-    if (( agave_latency < slonana_latency )); then
-        latency_diff=$(echo "scale=2; (($slonana_latency - $agave_latency) / $agave_latency) * 100" | bc -l)
+    # Latency comparison (using awk for portability)
+    if awk "BEGIN {exit !($agave_latency < $slonana_latency)}"; then
+        latency_diff=$(awk "BEGIN {printf \"%.2f\", (($slonana_latency - $agave_latency) / $agave_latency) * 100}")
         echo -e "  ${YELLOW}○${NC} Agave latency is ${latency_diff}% lower than Slonana"
-    elif (( slonana_latency < agave_latency )); then
-        latency_diff=$(echo "scale=2; (($agave_latency - $slonana_latency) / $slonana_latency) * 100" | bc -l)
+    elif awk "BEGIN {exit !($slonana_latency < $agave_latency)}"; then
+        latency_diff=$(awk "BEGIN {printf \"%.2f\", (($agave_latency - $slonana_latency) / $slonana_latency) * 100}")
         echo -e "  ${GREEN}✓${NC} Slonana latency is ${latency_diff}% lower than Agave"
     else
         echo "  ≈ Latency is equal"
