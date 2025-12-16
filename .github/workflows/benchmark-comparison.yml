@@ -7,6 +7,13 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write  # Required to push benchmark results back to the repository
+
+concurrency:
+  group: benchmark-${{ github.ref }}
+  cancel-in-progress: false  # Let running jobs finish; queue new ones
+
 jobs:
   benchmark-comparison:
     runs-on: ubuntu-latest
@@ -74,11 +81,13 @@ jobs:
         which solana || { echo "❌ Solana CLI install failed"; exit 1; }
         which solana-keygen || { echo "❌ solana-keygen not found"; exit 1; }
         which solana-genesis || { echo "❌ solana-genesis not found"; exit 1; }
+        which solana-test-validator || { echo "❌ solana-test-validator not found"; exit 1; }
         
         echo "✅ Solana CLI installed successfully"
         solana --version
         solana-keygen --version
         solana-genesis --version
+        solana-test-validator --version
 
     - name: Ensure Solana/Agave binaries available for all steps
       run: |
@@ -114,14 +123,14 @@ jobs:
     - name: Make benchmark scripts executable
       run: |
         echo "🔍 Making benchmark scripts executable..."
-        chmod +x ./scripts/benchmark_agave.sh
-        chmod +x ./scripts/benchmark_slonana.sh
+        chmod +x ./scripts/benchmark_agave.sh || { echo "❌ Failed to chmod benchmark_agave.sh"; exit 1; }
+        chmod +x ./scripts/benchmark_slonana.sh || { echo "❌ Failed to chmod benchmark_slonana.sh"; exit 1; }
         
         # Verify scripts are executable
         if [[ -x "./scripts/benchmark_agave.sh" && -x "./scripts/benchmark_slonana.sh" ]]; then
           echo "✅ Both benchmark scripts are executable"
         else
-          echo "❌ Benchmark scripts are not executable"
+          echo "❌ Benchmark scripts are not executable after chmod"
           exit 1
         fi
 
@@ -172,6 +181,9 @@ jobs:
         
         # Ensure PATH includes Solana CLI (which includes Agave binaries)  
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+        
+        # Set ulimit to handle file descriptor warnings (ignore failures)
+        ulimit -n 1000000 2>/dev/null || true
         
         # Set environment variables for proper CI benchmarking
         export SLONANA_CI_MODE=1
@@ -237,6 +249,9 @@ jobs:
         
         # Ensure PATH includes Solana CLI (which includes Agave binaries)
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+        
+        # Set ulimit to handle file descriptor warnings (ignore failures)
+        ulimit -n 1000000 2>/dev/null || true
         
         # Set environment variables for proper CI benchmarking
         export SLONANA_CI_MODE=1
@@ -432,17 +447,50 @@ jobs:
 
           Automated benchmark comparison run on $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           
-          # Handle detached HEAD state in CI environments
+          # Determine target branch
           if [ -n "$GITHUB_HEAD_REF" ]; then
-            # For pull requests, push to the PR branch
-            git push origin HEAD:$GITHUB_HEAD_REF
+            TARGET_BRANCH="$GITHUB_HEAD_REF"
           elif [ -n "$GITHUB_REF_NAME" ]; then
-            # For direct branch pushes, use the branch name
-            git push origin HEAD:$GITHUB_REF_NAME
+            TARGET_BRANCH="$GITHUB_REF_NAME"
           else
-            # Fallback for other cases
-            git push origin HEAD:main
+            TARGET_BRANCH="main"
           fi
+          
+          echo "🔄 Syncing with remote branch $TARGET_BRANCH before push..."
+          
+          # Ensure no unstaged or staged changes exist before rebase (prevents rebase conflicts)
+          if ! git diff-index --quiet HEAD || ! git diff-index --quiet --cached HEAD; then
+            echo "⚠️ Uncommitted changes detected (staged or unstaged), committing them before sync..."
+            git add -A
+            git commit -m "ci: save benchmark artifacts before sync" || true
+          fi
+          
+          # Fetch latest remote state
+          git fetch origin "$TARGET_BRANCH"
+          
+          # Try fast-forward merge first (safest)
+          if git merge --ff-only "origin/$TARGET_BRANCH" 2>/dev/null; then
+            echo "✅ Fast-forward merge successful"
+          else
+            echo "⚠️ Cannot fast-forward, attempting rebase..."
+            # Rebase our commit on top of remote changes
+            if git rebase "origin/$TARGET_BRANCH"; then
+              echo "✅ Rebase successful"
+            else
+              echo "❌ Rebase failed with conflicts. Aborting to prevent data loss."
+              git rebase --abort
+              echo "::warning::Benchmark results could not be pushed due to conflicts. Attempting to preserve results in a recovery branch."
+              RECOVERY_BRANCH="benchmark-results-recovery-${GITHUB_RUN_ID:-manual}-$(date +%s)"
+              git checkout -b "$RECOVERY_BRANCH"
+              git push origin "$RECOVERY_BRANCH"
+              echo "::notice::Benchmark results have been saved to the recovery branch '$RECOVERY_BRANCH'. Please resolve conflicts and merge manually if needed."
+              exit 1  # Fail the job explicitly rather than force-pushing
+            fi
+          fi
+          
+          # Push only if we successfully synced
+          echo "📤 Pushing to origin/$TARGET_BRANCH..."
+          git push origin "HEAD:$TARGET_BRANCH"
         fi
 
     - name: Upload benchmark artifacts
