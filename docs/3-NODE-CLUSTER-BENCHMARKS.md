@@ -32,8 +32,8 @@ Each validator node uses dedicated ports to avoid conflicts:
 
 #### Node 3
 - RPC Port: 9099
-- Gossip Port: 8003 (Note: Different from gossip port 8001/8002)
-- TPU Port Range: 8007-8027
+- Gossip Port: 8010
+- TPU Port Range: 8012-8032
 
 ### Keypair Structure
 
