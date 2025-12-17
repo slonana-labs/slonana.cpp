@@ -57,6 +57,18 @@ jobs:
         profile: minimal
         override: true
 
+    - name: Install agave-ledger-tool
+      run: |
+        echo "🔍 Installing agave-ledger-tool..."
+        cargo install agave-ledger-tool --locked
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        export PATH="$HOME/.cargo/bin:$PATH"
+        
+        # Verify installation
+        which agave-ledger-tool || { echo "❌ agave-ledger-tool install failed"; exit 1; }
+        echo "✅ agave-ledger-tool installed successfully"
+        agave-ledger-tool --version
+
     - name: Cache cargo registry and binaries
       uses: actions/cache@v3
       with:
