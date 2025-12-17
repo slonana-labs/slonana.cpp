@@ -57,6 +57,19 @@ jobs:
         profile: minimal
         override: true
 
+    - name: Install LLVM and Clang for agave-ledger-tool
+      run: |
+        echo "🔍 Installing LLVM and Clang dependencies..."
+        sudo apt-get update
+        sudo apt-get install -y clang libclang-dev llvm-dev
+        
+        # Verify LLVM/Clang installation
+        which clang || { echo "❌ clang install failed"; exit 1; }
+        which llvm-config || { echo "❌ llvm-config not found"; exit 1; }
+        echo "✅ LLVM and Clang installed successfully"
+        clang --version
+        llvm-config --version
+
     - name: Install agave-ledger-tool
       run: |
         echo "🔍 Installing agave-ledger-tool..."
