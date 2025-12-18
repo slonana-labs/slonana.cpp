@@ -57,6 +57,29 @@ jobs:
         profile: minimal
         override: true
 
+    - name: Install LLVM and Clang for agave-ledger-tool
+      run: |
+        echo "🔍 Installing LLVM and Clang dependencies..."
+        sudo apt-get update -qq
+        sudo apt-get install -qq -y clang libclang-dev llvm-dev
+        
+        # Verify LLVM/Clang installation
+        which clang || { echo "❌ clang install failed"; exit 1; }
+        which llvm-config || { echo "❌ llvm-config not found"; exit 1; }
+        echo "✅ LLVM and Clang installed successfully"
+
+    - name: Install agave-ledger-tool
+      run: |
+        echo "🔍 Installing agave-ledger-tool..."
+        cargo install agave-ledger-tool --locked
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        export PATH="$HOME/.cargo/bin:$PATH"
+        
+        # Verify installation
+        which agave-ledger-tool || { echo "❌ agave-ledger-tool install failed"; exit 1; }
+        echo "✅ agave-ledger-tool installed successfully"
+        agave-ledger-tool --version
+
     - name: Cache cargo registry and binaries
       uses: actions/cache@v3
       with:
@@ -175,7 +198,7 @@ jobs:
         echo "✅ All dependencies validated successfully - ready for benchmarking!"
 
     - name: Run Slonana validator benchmark
-      timeout-minutes: 20
+      timeout-minutes: 15
       run: |
         echo "🔍 Running Slonana validator benchmark..."
         
@@ -185,25 +208,39 @@ jobs:
         # Set ulimit to handle file descriptor warnings (ignore failures)
         ulimit -n 1000000 2>/dev/null || true
         
+        # Debug resource limits
+        echo "📊 Resource limits:"
+        echo "  File descriptors: $(ulimit -n)"
+        echo "  Max processes: $(ulimit -u)"
+        
         # Set environment variables for proper CI benchmarking
         export SLONANA_CI_MODE=1
         export CI=true
         
         if [ -f "build/slonana_validator" ]; then
-          timeout 900s ./scripts/benchmark_slonana.sh \
+          timeout 10m ./scripts/benchmark_slonana.sh \
             --ledger test_ledgers/slonana \
             --results benchmark_results/slonana \
             --validator-bin build/slonana_validator \
             --test-duration 60 \
-            --verbose
+            --verbose || { 
+              echo "❌ Slonana benchmark failed or timed out"
+              # Ensure we have some results even if partial
+              [ -f benchmark_results/slonana/benchmark_results.json ] || echo '{"validator_type":"slonana","error":"timeout"}' > benchmark_results/slonana/benchmark_results.json
+              exit 1
+            }
         else
           echo "Slonana validator not found, using placeholder mode..."
-          timeout 900s ./scripts/benchmark_slonana.sh \
+          timeout 10m ./scripts/benchmark_slonana.sh \
             --ledger test_ledgers/slonana \
             --results benchmark_results/slonana \
             --test-duration 60 \
             --use-placeholder \
-            --verbose
+            --verbose || { 
+              echo "❌ Slonana benchmark failed or timed out"
+              [ -f benchmark_results/slonana/benchmark_results.json ] || echo '{"validator_type":"slonana","error":"timeout"}' > benchmark_results/slonana/benchmark_results.json
+              exit 1
+            }
         fi
 
     - name: Run 3-Node Localnet Cluster Test
@@ -243,7 +280,7 @@ jobs:
         ./scripts/test_localnet_cluster.sh --cleanup-only 2>/dev/null || true
 
     - name: Run Agave validator benchmark
-      timeout-minutes: 20
+      timeout-minutes: 15
       run: |
         echo "🔍 Running Agave validator benchmark..."
         
@@ -253,16 +290,26 @@ jobs:
         # Set ulimit to handle file descriptor warnings (ignore failures)
         ulimit -n 1000000 2>/dev/null || true
         
+        # Debug resource limits
+        echo "📊 Resource limits:"
+        echo "  File descriptors: $(ulimit -n)"
+        echo "  Max processes: $(ulimit -u)"
+        
         # Set environment variables for proper CI benchmarking
         export SLONANA_CI_MODE=1
         export CI=true
         
-        timeout 900s ./scripts/benchmark_agave.sh \
+        timeout 10m ./scripts/benchmark_agave.sh \
           --ledger test_ledgers/agave \
           --results benchmark_results/agave \
           --validator-bin solana-test-validator \
           --test-duration 60 \
-          --verbose
+          --verbose || { 
+            echo "❌ Agave benchmark failed or timed out"
+            # Ensure we have some results even if partial
+            [ -f benchmark_results/agave/benchmark_results.json ] || echo '{"validator_type":"agave","error":"timeout"}' > benchmark_results/agave/benchmark_results.json
+            exit 1
+          }
           
     - name: Generate comparison report
       run: |

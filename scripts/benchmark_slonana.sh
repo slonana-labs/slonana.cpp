@@ -6,6 +6,9 @@ set -eo pipefail
 # Automated benchmarking script for Slonana C++ validator
 # Provides comprehensive performance testing with real transaction processing
 
+# Trap interruptions and errors
+trap 'echo "❌ Benchmark interrupted or failed. Exit code: $?"; cleanup_emergency; exit 1' SIGINT SIGTERM ERR
+
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -393,6 +396,12 @@ check_dependencies() {
     done
 
     log_success "Dependencies check completed"
+    
+    # Debug resource limits
+    log_verbose "🔍 Resource limits:"
+    log_verbose "  File descriptors (ulimit -n): $(ulimit -n)"
+    log_verbose "  Max processes (ulimit -u): $(ulimit -u)"
+    log_verbose "  Max memory (ulimit -m): $(ulimit -m 2>/dev/null || echo 'unlimited')"
 }
 
 # Setup validator environment
@@ -2242,6 +2251,13 @@ EOF
 }
 
 # Generate emergency results if benchmark is interrupted
+# Emergency cleanup for trap handlers
+cleanup_emergency() {
+    log_warning "Executing emergency cleanup..."
+    generate_emergency_results
+    cleanup_validator
+}
+
 generate_emergency_results() {
     if [[ ! -f "$RESULTS_DIR/benchmark_results.json" ]] && [[ -f "$RESULTS_DIR/rpc_latency_ms.txt" ]]; then
         log_info "⚠️  Generating emergency results due to early termination..."

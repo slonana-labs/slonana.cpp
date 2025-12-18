@@ -5,6 +5,9 @@ set -euo pipefail
 # Automated benchmarking script for Anza/Agave validator
 # Provides comprehensive performance testing with real transaction processing
 
+# Trap interruptions and errors
+trap 'echo "❌ Benchmark interrupted or failed. Exit code: $?"; cleanup_emergency; exit 1' SIGINT SIGTERM ERR
+
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -235,6 +238,12 @@ check_dependencies() {
     log_success "All dependencies available"
     log_verbose "✅ Found: $(which $VALIDATOR_BIN)"
     log_verbose "✅ Found: $(which solana)"
+    
+    # Debug resource limits
+    log_verbose "🔍 Resource limits:"
+    log_verbose "  File descriptors (ulimit -n): $(ulimit -n)"
+    log_verbose "  Max processes (ulimit -u): $(ulimit -u)"
+    log_verbose "  Max memory (ulimit -m): $(ulimit -m 2>/dev/null || echo 'unlimited')"
     log_verbose "✅ Found: $(which solana-keygen)"
 }
 
@@ -809,6 +818,13 @@ handle_sigint() {
     
     cleanup_validator
     exit 0
+}
+
+# Emergency cleanup for trap handlers
+cleanup_emergency() {
+    log_warning "Executing emergency cleanup..."
+    generate_emergency_results
+    cleanup_validator
 }
 
 # Generate emergency results when interrupted
