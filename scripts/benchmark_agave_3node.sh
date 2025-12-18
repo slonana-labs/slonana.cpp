@@ -396,7 +396,7 @@ start_cluster() {
     
     # Give bootstrap node time to stabilize
     log_info "Allowing bootstrap node to stabilize..."
-    sleep 10
+    sleep 15
 
     # Start Node 2
     start_validator_node 2 || exit 4
