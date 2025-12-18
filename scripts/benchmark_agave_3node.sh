@@ -562,16 +562,23 @@ test_transaction_throughput() {
 
     # Fund sender account
     log_info "Funding sender account..."
+    local max_airdrop_attempts=10
     local airdrop_attempts=0
-    while [[ $airdrop_attempts -lt 5 ]]; do
+    local funded=false
+    while [[ $airdrop_attempts -lt $max_airdrop_attempts ]]; do
         if solana airdrop 1000 --keypair "$sender_keypair" 2>/dev/null; then
             log_success "Sender funded successfully"
+            funded=true
             break
         fi
         ((airdrop_attempts++))
         sleep 2
     done
 
+    if [[ "$funded" != true ]]; then
+        log_error "Failed to fund sender account after ${max_airdrop_attempts} attempts; aborting benchmark."
+        exit 1
+    fi
     # Run transaction test with load balancing
     local txn_count=0
     local success_count=0
