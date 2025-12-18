@@ -166,7 +166,11 @@ parse_arguments() {
         exit 2
     fi
 
-    # Create absolute paths
+    # Create directories and get absolute paths
+    if ! mkdir -p "$CLUSTER_DIR" "$RESULTS_DIR"; then
+        log_error "Failed to create cluster/results directories"
+        exit 2
+    fi
     CLUSTER_DIR="$(realpath "$CLUSTER_DIR")"
     RESULTS_DIR="$(realpath "$RESULTS_DIR")"
 }

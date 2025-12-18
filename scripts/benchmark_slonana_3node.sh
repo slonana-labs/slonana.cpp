@@ -72,6 +72,11 @@ if [[ -n "${CI:-}" || -n "${GITHUB_ACTIONS:-}" || -n "${CONTINUOUS_INTEGRATION:-
     log_info "🔧 CI environment detected - using ${TEST_DURATION}s test duration"
 fi
 
+# Helper function to configure Solana PATH
+configure_solana_path() {
+    export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+}
+
 show_help() {
     cat << EOF
 $SCRIPT_NAME - Slonana 3-Node Cluster Benchmark Script
@@ -173,6 +178,11 @@ parse_arguments() {
     fi
 
     # Create absolute paths
+    # Create directories and get absolute paths
+    if ! mkdir -p "$CLUSTER_DIR" "$RESULTS_DIR"; then
+        log_error "Failed to create cluster/results directories"
+        exit 2
+    fi
     CLUSTER_DIR="$(realpath "$CLUSTER_DIR")"
     RESULTS_DIR="$(realpath "$RESULTS_DIR")"
     BUILD_DIR="$(realpath "$BUILD_DIR")"
@@ -201,7 +211,7 @@ check_dependencies() {
     fi
 
     # Check for Solana CLI tools
-    export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+    configure_solana_path
     
     for tool in solana-keygen solana solana-genesis; do
         if ! command -v "$tool" &> /dev/null; then
@@ -445,7 +455,7 @@ setup_vote_accounts() {
     log_info "Setting up vote accounts and stake delegation..."
 
     # Configure Solana CLI to use Node 1
-    export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+    configure_solana_path
     solana config set --url "http://localhost:$NODE1_RPC" > /dev/null
 
     # Create vote accounts for each validator
@@ -575,7 +585,7 @@ test_transaction_throughput() {
     log_info "Testing transaction throughput with load balancing..."
 
     # Configure Solana CLI
-    export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+    configure_solana_path
     solana config set --url "http://localhost:$NODE1_RPC" > /dev/null
 
     # Generate keypairs
@@ -587,15 +597,23 @@ test_transaction_throughput() {
 
     # Fund sender account
     log_info "Funding sender account..."
+    local max_airdrop_attempts=10
     local airdrop_attempts=0
-    while [[ $airdrop_attempts -lt 10 ]]; do
+    local funded=false
+    while [[ $airdrop_attempts -lt $max_airdrop_attempts ]]; do
         if solana airdrop 1000 --keypair "$sender_keypair" 2>/dev/null; then
             log_success "Sender funded successfully"
+            funded=true
             break
         fi
         ((airdrop_attempts++))
         sleep 2
     done
+
+    if [[ "$funded" != true ]]; then
+        log_error "Failed to fund sender account after ${max_airdrop_attempts} attempts; aborting benchmark."
+        exit 1
+    fi
 
     # Run transaction test with load balancing
     local txn_count=0
