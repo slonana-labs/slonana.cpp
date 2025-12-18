@@ -147,12 +147,12 @@ Each benchmark produces a JSON results file with the following structure:
 ### Agave Benchmark
 - `agave-validator` binary
 - Solana CLI tools (`solana`, `solana-keygen`, `solana-genesis`)
-- System utilities: `curl`, `jq`, `bc`
+- System utilities: `curl`, `jq`, `awk`
 
 ### Slonana Benchmark
 - Built `slonana_validator` binary in `build/` directory
 - Solana CLI tools (same as Agave)
-- System utilities: `curl`, `jq`, `bc`
+- System utilities: `curl`, `jq`, `awk`
 
 ### Installation
 
