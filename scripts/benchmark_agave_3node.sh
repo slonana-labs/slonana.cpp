@@ -365,9 +365,18 @@ wait_for_node_ready() {
     local wait_time=0
 
     while [[ $wait_time -lt $timeout ]]; do
+        # First check HTTP health endpoint
         if curl -s "http://localhost:$rpc_port/health" > /dev/null 2>&1; then
-            log_success "Node $node_num is ready!"
-            return 0
+            # Then verify JSON-RPC interface is responsive via getVersion
+            local rpc_response
+            rpc_response="$(curl -s -X POST "http://localhost:$rpc_port" \
+                -H "Content-Type: application/json" \
+                -d '{"jsonrpc":"2.0","id":1,"method":"getVersion","params":[]}')" || rpc_response=""
+
+            if [[ -n "$rpc_response" ]] && echo "$rpc_response" | grep -q '"result"'; then
+                log_success "Node $node_num is ready (health + JSON-RPC)!"
+                return 0
+            fi
         fi
         sleep 3
         wait_time=$((wait_time + 3))
