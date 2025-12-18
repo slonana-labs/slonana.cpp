@@ -80,6 +80,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Ensure at least one benchmark will run
+if [[ "$SKIP_AGAVE" == "true" && "$SKIP_SLONANA" == "true" ]]; then
+    log_error "Both --skip-agave and --skip-slonana were provided; no benchmarks to run."
+    log_error "Please run without at least one of these flags. Use --help for usage."
+    exit 1
+fi
 # Setup workspace
 log_info "Setting up comparison workspace..."
 rm -rf "$WORKSPACE_DIR"
