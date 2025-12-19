@@ -144,6 +144,12 @@ local.toml
 # Benchmark results
 benchmark_results.*
 *.benchmark
+benchmark_config.json
+benchmark_data/
+benchmark_networking_*
+detailed_benchmark_results.txt
+slonana_micro_results.json
+focused_comparison/
 
 # Python files (for dev tools)
 __pycache__/
@@ -160,3 +166,62 @@ test_ledger/
 test_results/
 _codeql_build_dir/
 _codeql_detected_source_root
+
+# Test executables and artifacts
+slonana_benchmarks
+slonana_cluster_tests
+slonana_consensus_timing_tests
+slonana_enhanced_svm_tests
+slonana_genesis_tests
+slonana_hardware_wallet_tests
+slonana_monitoring_tests
+slonana_proof_of_history_tests
+slonana_snapshot_tests
+slonana_spl_extended_tests
+slonana_wallet_tests
+slonana_websocket_tests
+slonana-genesis
+
+# Load test data
+load_test_*/
+load_test_results.json
+
+# Test and debug scripts
+test_*.sh
+debug_*.sh
+deep_debug.sh
+prove_*.sh
+revolutionary_*.sh
+practical_*.sh
+tps_*.sh
+ultra_*.sh
+comprehensive_test.sh
+final_test.sh
+generate_*.sh
+run_benchmarks.sh
+
+# Phase build artifacts
+phase3_build/
+phase3_cmake.txt
+
+# Build directories
+build-comprehensive/
+
+# Test integration binaries
+test_integration_standalone
+test_rpc_simple
+test_rpc_simple.cpp
+test_solana_mcp
+test_solana_mcp.cpp
+test_svm_compatibility_standalone
+test_svm_compatibility_standalone.cpp
+test_transaction_crash_fix.cpp
+
+# Antifragility test data
+antifragility-test/
+
+# Validator comparison data
+validator_comparison/
+
+# E2E test data
+e2e-test-data/
