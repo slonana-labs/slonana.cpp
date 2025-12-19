@@ -7,6 +7,13 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write  # Required to push benchmark results back to the repository
+
+concurrency:
+  group: benchmark-${{ github.ref }}
+  cancel-in-progress: false  # Let running jobs finish; queue new ones
+
 jobs:
   benchmark-comparison:
     runs-on: ubuntu-latest
@@ -34,6 +41,8 @@ jobs:
           protobuf-compiler \
           libudev-dev \
           libusb-1.0-0-dev \
+          nlohmann-json3-dev \
+          libsodium-dev \
           curl \
           wget \
           git \
@@ -48,6 +57,29 @@ jobs:
         profile: minimal
         override: true
 
+    - name: Install LLVM and Clang for agave-ledger-tool
+      run: |
+        echo "🔍 Installing LLVM and Clang dependencies..."
+        sudo apt-get update -qq
+        sudo apt-get install -qq -y clang libclang-dev llvm-dev
+        
+        # Verify LLVM/Clang installation
+        which clang || { echo "❌ clang install failed"; exit 1; }
+        which llvm-config || { echo "❌ llvm-config not found"; exit 1; }
+        echo "✅ LLVM and Clang installed successfully"
+
+    - name: Install agave-ledger-tool
+      run: |
+        echo "🔍 Installing agave-ledger-tool..."
+        cargo install agave-ledger-tool --locked
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        export PATH="$HOME/.cargo/bin:$PATH"
+        
+        # Verify installation
+        which agave-ledger-tool || { echo "❌ agave-ledger-tool install failed"; exit 1; }
+        echo "✅ agave-ledger-tool installed successfully"
+        agave-ledger-tool --version
+
     - name: Cache cargo registry and binaries
       uses: actions/cache@v3
       with:
@@ -61,8 +93,9 @@ jobs:
 
     - name: Install Solana CLI
       run: |
-        echo "🔍 Installing Solana CLI..."
-        sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+        echo "🔍 Installing Solana CLI with full tool suite..."
+        # Pin to specific version for reproducibility and to ensure all tools are available
+        sh -c "$(curl -sSfL https://release.anza.xyz/v1.18.22/install)"
         echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
         
@@ -70,10 +103,14 @@ jobs:
         echo "🔍 Verifying Solana CLI installation..."
         which solana || { echo "❌ Solana CLI install failed"; exit 1; }
         which solana-keygen || { echo "❌ solana-keygen not found"; exit 1; }
+        which solana-genesis || { echo "❌ solana-genesis not found"; exit 1; }
+        which solana-test-validator || { echo "❌ solana-test-validator not found"; exit 1; }
         
         echo "✅ Solana CLI installed successfully"
         solana --version
         solana-keygen --version
+        solana-genesis --version
+        solana-test-validator --version
 
     - name: Ensure Solana/Agave binaries available for all steps
       run: |
@@ -109,14 +146,14 @@ jobs:
     - name: Make benchmark scripts executable
       run: |
         echo "🔍 Making benchmark scripts executable..."
-        chmod +x ./scripts/benchmark_agave.sh
-        chmod +x ./scripts/benchmark_slonana.sh
+        chmod +x ./scripts/benchmark_agave.sh || { echo "❌ Failed to chmod benchmark_agave.sh"; exit 1; }
+        chmod +x ./scripts/benchmark_slonana.sh || { echo "❌ Failed to chmod benchmark_slonana.sh"; exit 1; }
         
         # Verify scripts are executable
         if [[ -x "./scripts/benchmark_agave.sh" && -x "./scripts/benchmark_slonana.sh" ]]; then
           echo "✅ Both benchmark scripts are executable"
         else
-          echo "❌ Benchmark scripts are not executable"
+          echo "❌ Benchmark scripts are not executable after chmod"
           exit 1
         fi
 
@@ -130,12 +167,14 @@ jobs:
         echo "🔍 Checking required binaries..."
         which solana || { echo "❌ solana not found"; exit 1; }
         which solana-keygen || { echo "❌ solana-keygen not found"; exit 1; }
+        which solana-genesis || { echo "❌ solana-genesis not found"; exit 1; }
         which solana-test-validator || { echo "❌ solana-test-validator not found"; exit 1; }
         which agave-ledger-tool || { echo "❌ agave-ledger-tool not found"; exit 1; }
         
         echo "✅ All required binaries found:"
         echo "  solana: $(which solana)"
         echo "  solana-keygen: $(which solana-keygen)"
+        echo "  solana-genesis: $(which solana-genesis)"
         echo "  solana-test-validator: $(which solana-test-validator)"
         echo "  agave-ledger-tool: $(which agave-ledger-tool)"
         echo ""
@@ -152,109 +191,238 @@ jobs:
         # Version validation
         echo "🔍 Version information:"
         solana --version
+        solana-genesis --version
         solana-test-validator --version
         echo ""
         
         echo "✅ All dependencies validated successfully - ready for benchmarking!"
 
     - name: Run Slonana validator benchmark
-      timeout-minutes: 20
+      timeout-minutes: 15
       run: |
         echo "🔍 Running Slonana validator benchmark..."
         
         # Ensure PATH includes Solana CLI (which includes Agave binaries)  
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
         
+        # Set ulimit to handle file descriptor warnings (ignore failures)
+        ulimit -n 1000000 2>/dev/null || true
+        
+        # Debug resource limits
+        echo "📊 Resource limits:"
+        echo "  File descriptors: $(ulimit -n)"
+        echo "  Max processes: $(ulimit -u)"
+        
         # Set environment variables for proper CI benchmarking
         export SLONANA_CI_MODE=1
         export CI=true
         
         if [ -f "build/slonana_validator" ]; then
-          timeout 900s ./scripts/benchmark_slonana.sh \
+          timeout 10m ./scripts/benchmark_slonana.sh \
             --ledger test_ledgers/slonana \
             --results benchmark_results/slonana \
             --validator-bin build/slonana_validator \
             --test-duration 60 \
-            --verbose
+            --verbose || { 
+              echo "❌ Slonana benchmark failed or timed out"
+              # Ensure we have some results even if partial
+              [ -f benchmark_results/slonana/benchmark_results.json ] || echo '{"validator_type":"slonana","error":"timeout"}' > benchmark_results/slonana/benchmark_results.json
+              exit 1
+            }
         else
           echo "Slonana validator not found, using placeholder mode..."
-          timeout 900s ./scripts/benchmark_slonana.sh \
+          timeout 10m ./scripts/benchmark_slonana.sh \
             --ledger test_ledgers/slonana \
             --results benchmark_results/slonana \
             --test-duration 60 \
             --use-placeholder \
-            --verbose
+            --verbose || { 
+              echo "❌ Slonana benchmark failed or timed out"
+              [ -f benchmark_results/slonana/benchmark_results.json ] || echo '{"validator_type":"slonana","error":"timeout"}' > benchmark_results/slonana/benchmark_results.json
+              exit 1
+            }
         fi
 
+    - name: Run 3-Node Localnet Cluster Test
+      timeout-minutes: 15
+      run: |
+        echo "🌐 Running 3-Node Localnet Cluster Test..."
+        echo "   This tests actual network TPS with peer-to-peer communication"
+        
+        # Ensure PATH includes Solana CLI
+        export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+        
+        # Make the localnet test script executable
+        chmod +x ./scripts/test_localnet_cluster.sh
+        
+        # Run the localnet cluster test with native binaries
+        # Reduced load for CI: 2k transactions @ 1k/sec (completes in ~3 minutes)
+        # CI runners have limited resources, so we use conservative settings
+        if [ -f "build/slonana_validator" ]; then
+          timeout 600s ./scripts/test_localnet_cluster.sh \
+            --test-duration 30 \
+            --tx-count 2000 \
+            --tx-rate 1000 \
+            --skip-build
+        else
+          echo "⚠️  Slonana validator not built, skipping localnet test"
+          echo "   Building is required for localnet cluster testing"
+        fi
+        
+        # Show test results
+        if [ -f "/tmp/slonana_localnet_cluster/test_report.txt" ]; then
+          echo ""
+          echo "📊 Localnet Cluster Test Report:"
+          cat /tmp/slonana_localnet_cluster/test_report.txt
+        fi
+        
+        # Cleanup the cluster
+        ./scripts/test_localnet_cluster.sh --cleanup-only 2>/dev/null || true
+
     - name: Run Agave validator benchmark
-      timeout-minutes: 20
+      timeout-minutes: 15
       run: |
         echo "🔍 Running Agave validator benchmark..."
         
         # Ensure PATH includes Solana CLI (which includes Agave binaries)
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
         
+        # Set ulimit to handle file descriptor warnings (ignore failures)
+        ulimit -n 1000000 2>/dev/null || true
+        
+        # Debug resource limits
+        echo "📊 Resource limits:"
+        echo "  File descriptors: $(ulimit -n)"
+        echo "  Max processes: $(ulimit -u)"
+        
         # Set environment variables for proper CI benchmarking
         export SLONANA_CI_MODE=1
         export CI=true
         
-        timeout 900s ./scripts/benchmark_agave.sh \
+        timeout 10m ./scripts/benchmark_agave.sh \
           --ledger test_ledgers/agave \
           --results benchmark_results/agave \
           --validator-bin solana-test-validator \
           --test-duration 60 \
-          --verbose
+          --verbose || { 
+            echo "❌ Agave benchmark failed or timed out"
+            # Ensure we have some results even if partial
+            [ -f benchmark_results/agave/benchmark_results.json ] || echo '{"validator_type":"agave","error":"timeout"}' > benchmark_results/agave/benchmark_results.json
+            exit 1
+          }
           
     - name: Generate comparison report
       run: |
         echo "📊 Generating benchmark comparison report..."
 
-        AGAVE_RESULTS=$(cat benchmark_results/agave/benchmark_results.json)
-        SLONANA_RESULTS=$(cat benchmark_results/slonana/benchmark_results.json)
+        # Validate result files exist and contain valid JSON, default to safe values if missing
+        AGAVE_FILE="benchmark_results/agave/benchmark_results.json"
+        SLONANA_FILE="benchmark_results/slonana/benchmark_results.json"
 
-        AGAVE_TPS=$(echo $AGAVE_RESULTS | jq -r '.effective_tps')
-        AGAVE_LATENCY=$(echo $AGAVE_RESULTS | jq -r '.rpc_latency_ms')
-        AGAVE_MEMORY=$(echo $AGAVE_RESULTS | jq -r '.memory_usage_mb')
-        AGAVE_CPU=$(echo $AGAVE_RESULTS | jq -r '.cpu_usage_percent')
+        if [ -s "$AGAVE_FILE" ] && jq -e . >/dev/null 2>&1 <"$AGAVE_FILE"; then
+          AGAVE_TPS=$(jq -r '.effective_tps // 0' "$AGAVE_FILE")
+          AGAVE_LATENCY=$(jq -r '.rpc_latency_ms // 0' "$AGAVE_FILE")
+          AGAVE_MEMORY=$(jq -r '.memory_usage_mb // 0' "$AGAVE_FILE")
+          AGAVE_CPU=$(jq -r '.cpu_usage_percent // 0' "$AGAVE_FILE")
+        else
+          echo "⚠️ Agave results missing/invalid, defaulting metrics to 0"
+          AGAVE_TPS=0; AGAVE_LATENCY=0; AGAVE_MEMORY=0; AGAVE_CPU=0
+        fi
 
-        SLONANA_TPS=$(echo $SLONANA_RESULTS | jq -r '.effective_tps')
-        SLONANA_LATENCY=$(echo $SLONANA_RESULTS | jq -r '.rpc_latency_ms')
-        SLONANA_MEMORY=$(echo $SLONANA_RESULTS | jq -r '.memory_usage_mb')
-        SLONANA_CPU=$(echo $SLONANA_RESULTS | jq -r '.cpu_usage_percent')
+        if [ -s "$SLONANA_FILE" ] && jq -e . >/dev/null 2>&1 <"$SLONANA_FILE"; then
+          SLONANA_TPS=$(jq -r '.effective_tps // 0' "$SLONANA_FILE")
+          SLONANA_LATENCY=$(jq -r '.rpc_latency_ms // 0' "$SLONANA_FILE")
+          SLONANA_MEMORY=$(jq -r '.memory_usage_mb // 0' "$SLONANA_FILE")
+          SLONANA_CPU=$(jq -r '.cpu_usage_percent // 0' "$SLONANA_FILE")
+        else
+          echo "⚠️ Slonana results missing/invalid, defaulting metrics to 0"
+          SLONANA_TPS=0; SLONANA_LATENCY=0; SLONANA_MEMORY=0; SLONANA_CPU=0
+        fi
 
-        TPS_IMPROVEMENT=$(echo "scale=1; ($SLONANA_TPS - $AGAVE_TPS) * 100 / $AGAVE_TPS" | bc -l)
-        LATENCY_IMPROVEMENT=$(echo "scale=1; ($AGAVE_LATENCY - $SLONANA_LATENCY) * 100 / $AGAVE_LATENCY" | bc -l)
-        MEMORY_IMPROVEMENT=$(echo "scale=1; ($AGAVE_MEMORY - $SLONANA_MEMORY) * 100 / $AGAVE_MEMORY" | bc -l)
+        # Convert null to 0 for any null values that slipped through
+        AGAVE_TPS=${AGAVE_TPS:-0}; [ "$AGAVE_TPS" = "null" ] && AGAVE_TPS=0
+        AGAVE_LATENCY=${AGAVE_LATENCY:-0}; [ "$AGAVE_LATENCY" = "null" ] && AGAVE_LATENCY=0
+        AGAVE_MEMORY=${AGAVE_MEMORY:-0}; [ "$AGAVE_MEMORY" = "null" ] && AGAVE_MEMORY=0
+        AGAVE_CPU=${AGAVE_CPU:-0}; [ "$AGAVE_CPU" = "null" ] && AGAVE_CPU=0
+        SLONANA_TPS=${SLONANA_TPS:-0}; [ "$SLONANA_TPS" = "null" ] && SLONANA_TPS=0
+        SLONANA_LATENCY=${SLONANA_LATENCY:-0}; [ "$SLONANA_LATENCY" = "null" ] && SLONANA_LATENCY=0
+        SLONANA_MEMORY=${SLONANA_MEMORY:-0}; [ "$SLONANA_MEMORY" = "null" ] && SLONANA_MEMORY=0
+        SLONANA_CPU=${SLONANA_CPU:-0}; [ "$SLONANA_CPU" = "null" ] && SLONANA_CPU=0
 
-        cat > benchmark_comparison.json << EOF
-        {
-          "benchmark_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-          "environment": {
-            "runner": "GitHub Actions - ubuntu-latest",
-            "cores": $(nproc),
-            "memory_gb": $(echo "$(free -m | awk '/^Mem:/{print $2}') / 1024" | bc)
-          },
-          "results": {
-            "agave": {
-              "tps": $AGAVE_TPS,
-              "rpc_latency_ms": $AGAVE_LATENCY,
-              "memory_usage_mb": $AGAVE_MEMORY,
-              "cpu_usage_percent": $AGAVE_CPU
+        echo "📊 Parsed values:"
+        echo "   Agave:   TPS=$AGAVE_TPS, Latency=$AGAVE_LATENCY, Memory=$AGAVE_MEMORY, CPU=$AGAVE_CPU"
+        echo "   Slonana: TPS=$SLONANA_TPS, Latency=$SLONANA_LATENCY, Memory=$SLONANA_MEMORY, CPU=$SLONANA_CPU"
+
+        # Safe improvement calculations - guard against divide-by-zero
+        if [ "$AGAVE_TPS" != "0" ] && [ -n "$AGAVE_TPS" ]; then
+          TPS_IMPROVEMENT=$(echo "scale=1; ($SLONANA_TPS - $AGAVE_TPS) * 100 / $AGAVE_TPS" | bc -l 2>/dev/null || echo "0")
+        else
+          TPS_IMPROVEMENT="0"
+          echo "⚠️ Agave TPS is 0, setting TPS improvement to 0%"
+        fi
+
+        if [ "$AGAVE_LATENCY" != "0" ] && [ -n "$AGAVE_LATENCY" ]; then
+          LATENCY_IMPROVEMENT=$(echo "scale=1; ($AGAVE_LATENCY - $SLONANA_LATENCY) * 100 / $AGAVE_LATENCY" | bc -l 2>/dev/null || echo "0")
+        else
+          LATENCY_IMPROVEMENT="0"
+          echo "⚠️ Agave Latency is 0, setting latency improvement to 0%"
+        fi
+
+        if [ "$AGAVE_MEMORY" != "0" ] && [ -n "$AGAVE_MEMORY" ]; then
+          MEMORY_IMPROVEMENT=$(echo "scale=1; ($AGAVE_MEMORY - $SLONANA_MEMORY) * 100 / $AGAVE_MEMORY" | bc -l 2>/dev/null || echo "0")
+        else
+          MEMORY_IMPROVEMENT="0"
+          echo "⚠️ Agave Memory is 0, setting memory improvement to 0%"
+        fi
+
+        # Ensure improvement values are valid numbers (not empty)
+        TPS_IMPROVEMENT=${TPS_IMPROVEMENT:-0}
+        LATENCY_IMPROVEMENT=${LATENCY_IMPROVEMENT:-0}
+        MEMORY_IMPROVEMENT=${MEMORY_IMPROVEMENT:-0}
+
+        # Use jq to create valid JSON (safer than heredoc)
+        jq -n \
+          --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+          --argjson cores "$(nproc)" \
+          --argjson memory_gb "$(echo "$(free -m | awk '/^Mem:/{print $2}') / 1024" | bc)" \
+          --argjson agave_tps "${AGAVE_TPS}" \
+          --argjson agave_latency "${AGAVE_LATENCY}" \
+          --argjson agave_memory "${AGAVE_MEMORY}" \
+          --argjson agave_cpu "${AGAVE_CPU}" \
+          --argjson slonana_tps "${SLONANA_TPS}" \
+          --argjson slonana_latency "${SLONANA_LATENCY}" \
+          --argjson slonana_memory "${SLONANA_MEMORY}" \
+          --argjson slonana_cpu "${SLONANA_CPU}" \
+          --argjson tps_imp "${TPS_IMPROVEMENT}" \
+          --argjson latency_imp "${LATENCY_IMPROVEMENT}" \
+          --argjson memory_imp "${MEMORY_IMPROVEMENT}" \
+          '{
+            benchmark_date: $date,
+            environment: {
+              runner: "GitHub Actions - ubuntu-latest",
+              cores: $cores,
+              memory_gb: $memory_gb
             },
-            "slonana": {
-              "tps": $SLONANA_TPS,
-              "rpc_latency_ms": $SLONANA_LATENCY,
-              "memory_usage_mb": $SLONANA_MEMORY,
-              "cpu_usage_percent": $SLONANA_CPU
-            },
-            "improvements": {
-              "tps_percent": $TPS_IMPROVEMENT,
-              "latency_percent": $LATENCY_IMPROVEMENT,
-              "memory_percent": $MEMORY_IMPROVEMENT
+            results: {
+              agave: {
+                tps: $agave_tps,
+                rpc_latency_ms: $agave_latency,
+                memory_usage_mb: $agave_memory,
+                cpu_usage_percent: $agave_cpu
+              },
+              slonana: {
+                tps: $slonana_tps,
+                rpc_latency_ms: $slonana_latency,
+                memory_usage_mb: $slonana_memory,
+                cpu_usage_percent: $slonana_cpu
+              },
+              improvements: {
+                tps_percent: $tps_imp,
+                latency_percent: $latency_imp,
+                memory_percent: $memory_imp
+              }
             }
-          }
-        }
-        EOF
+          }' > benchmark_comparison.json
 
         echo "📈 Benchmark comparison completed!"
         echo "Agave TPS: $AGAVE_TPS | Slonana TPS: $SLONANA_TPS (${TPS_IMPROVEMENT}% improvement)"
@@ -326,17 +494,50 @@ jobs:
 
           Automated benchmark comparison run on $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           
-          # Handle detached HEAD state in CI environments
+          # Determine target branch
           if [ -n "$GITHUB_HEAD_REF" ]; then
-            # For pull requests, push to the PR branch
-            git push origin HEAD:$GITHUB_HEAD_REF
+            TARGET_BRANCH="$GITHUB_HEAD_REF"
           elif [ -n "$GITHUB_REF_NAME" ]; then
-            # For direct branch pushes, use the branch name
-            git push origin HEAD:$GITHUB_REF_NAME
+            TARGET_BRANCH="$GITHUB_REF_NAME"
           else
-            # Fallback for other cases
-            git push origin HEAD:main
+            TARGET_BRANCH="main"
           fi
+          
+          echo "🔄 Syncing with remote branch $TARGET_BRANCH before push..."
+          
+          # Ensure no unstaged or staged changes exist before rebase (prevents rebase conflicts)
+          if ! git diff-index --quiet HEAD || ! git diff-index --quiet --cached HEAD; then
+            echo "⚠️ Uncommitted changes detected (staged or unstaged), committing them before sync..."
+            git add -A
+            git commit -m "ci: save benchmark artifacts before sync" || true
+          fi
+          
+          # Fetch latest remote state
+          git fetch origin "$TARGET_BRANCH"
+          
+          # Try fast-forward merge first (safest)
+          if git merge --ff-only "origin/$TARGET_BRANCH" 2>/dev/null; then
+            echo "✅ Fast-forward merge successful"
+          else
+            echo "⚠️ Cannot fast-forward, attempting rebase..."
+            # Rebase our commit on top of remote changes
+            if git rebase "origin/$TARGET_BRANCH"; then
+              echo "✅ Rebase successful"
+            else
+              echo "❌ Rebase failed with conflicts. Aborting to prevent data loss."
+              git rebase --abort
+              echo "::warning::Benchmark results could not be pushed due to conflicts. Attempting to preserve results in a recovery branch."
+              RECOVERY_BRANCH="benchmark-results-recovery-${GITHUB_RUN_ID:-manual}-$(date +%s)"
+              git checkout -b "$RECOVERY_BRANCH"
+              git push origin "$RECOVERY_BRANCH"
+              echo "::notice::Benchmark results have been saved to the recovery branch '$RECOVERY_BRANCH'. Please resolve conflicts and merge manually if needed."
+              exit 1  # Fail the job explicitly rather than force-pushing
+            fi
+          fi
+          
+          # Push only if we successfully synced
+          echo "📤 Pushing to origin/$TARGET_BRANCH..."
+          git push origin "HEAD:$TARGET_BRANCH"
         fi
 
     - name: Upload benchmark artifacts

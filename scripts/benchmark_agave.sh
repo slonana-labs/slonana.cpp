@@ -5,6 +5,9 @@ set -euo pipefail
 # Automated benchmarking script for Anza/Agave validator
 # Provides comprehensive performance testing with real transaction processing
 
+# Trap interruptions and errors
+trap 'echo "❌ Benchmark interrupted or failed. Exit code: $?"; cleanup_emergency; exit 1' SIGINT SIGTERM ERR
+
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -235,6 +238,12 @@ check_dependencies() {
     log_success "All dependencies available"
     log_verbose "✅ Found: $(which $VALIDATOR_BIN)"
     log_verbose "✅ Found: $(which solana)"
+    
+    # Debug resource limits
+    log_verbose "🔍 Resource limits:"
+    log_verbose "  File descriptors (ulimit -n): $(ulimit -n)"
+    log_verbose "  Max processes (ulimit -u): $(ulimit -u)"
+    log_verbose "  Max memory (ulimit -m): $(ulimit -m 2>/dev/null || echo 'unlimited')"
     log_verbose "✅ Found: $(which solana-keygen)"
 }
 
@@ -289,14 +298,15 @@ setup_validator() {
     log_verbose "Vote: $vote_pubkey"
     log_verbose "Stake: $stake_pubkey"
     
+    # Increased faucet funding 100x (from 1T to 100T lamports) to prevent faucet depletion during high-throughput CI testing
     solana-genesis \
         --ledger "$LEDGER_DIR" \
         --bootstrap-validator "$identity_pubkey" "$vote_pubkey" "$stake_pubkey" \
         --cluster-type development \
         --faucet-pubkey "$faucet_keypair" \
-        --faucet-lamports 1000000000000 \
-        --bootstrap-validator-lamports 500000000000 \
-        --bootstrap-validator-stake-lamports 500000000
+        --faucet-lamports 100000000000000 \
+        --bootstrap-validator-lamports 50000000000000 \
+        --bootstrap-validator-stake-lamports 50000000000
 
     log_success "Validator environment setup complete"
 }
@@ -387,11 +397,12 @@ start_validator() {
     log_verbose "  RPC Port: $RPC_PORT"
     log_verbose "  Gossip Port: $GOSSIP_PORT"
 
-    # Start test validator in background (much simpler than agave-validator)
+    # Start test validator in background with built-in faucet enabled
     "$VALIDATOR_BIN" \
         --ledger "$LEDGER_DIR" \
         --rpc-port "$RPC_PORT" \
-        --quiet \
+        --faucet-port 9900 \
+        --faucet-sol 1000000 \
         --reset &
 
     VALIDATOR_PID=$!
@@ -424,6 +435,30 @@ start_validator() {
             fi
             
             log_success "Validator is stable and ready for benchmarking"
+            
+            # Wait for validator to stabilize before test activity (prevent race conditions)
+            log_info "⏳ Waiting 10 seconds for validator and faucet to fully stabilize..."
+            sleep 10
+            
+            # Verify faucet is responsive before continuing
+            log_info "🔍 Verifying faucet accessibility..."
+            local faucet_check_attempts=0
+            local faucet_ready=false
+            while [[ $faucet_check_attempts -lt 10 ]]; do
+                # Simple HTTP check to see if faucet port is responding
+                if curl -s -f http://127.0.0.1:9900 > /dev/null 2>&1 || \
+                   curl -s http://127.0.0.1:9900 2>&1 | grep -q "Connection established"; then
+                    log_success "✅ Faucet is responsive at http://127.0.0.1:9900"
+                    faucet_ready=true
+                    break
+                fi
+                ((faucet_check_attempts++))
+                sleep 1
+            done
+            
+            if [[ "$faucet_ready" == "false" ]]; then
+                log_warning "⚠️ Faucet not responding after 10 attempts, but continuing..."
+            fi
             
             # Inject local transactions to create activity (prevent 0 blocks/txs scenario)
             inject_initial_activity
@@ -526,21 +561,30 @@ test_transaction_throughput() {
     echo "0" > "$RESULTS_DIR/submitted_requests.txt"
 
     # Airdrop SOL to sender with more aggressive retry
-    log_verbose "Requesting airdrop..."
+    log_info "Requesting airdrop for sender account..."
     local airdrop_attempts=0
     local airdrop_success=false
+    local last_error=""
     while [[ $airdrop_attempts -lt 10 ]]; do  # Increased from 5 to 10
-        if solana airdrop 100 --keypair "$sender_keypair" > /dev/null 2>&1; then
+        last_error=$(solana airdrop 100 --keypair "$sender_keypair" 2>&1)
+        local airdrop_exit_code=$?
+        if [[ $airdrop_exit_code -eq 0 ]]; then
             airdrop_success=true
+            log_success "✅ Airdrop successful on attempt $((airdrop_attempts + 1))"
             break
         fi
         ((airdrop_attempts++))
-        log_verbose "Airdrop attempt $airdrop_attempts failed, retrying..."
-        sleep 1  # Reduced from 2s to 1s
+        log_verbose "Airdrop attempt $airdrop_attempts failed (exit code: $airdrop_exit_code), retrying..."
+        # Use exponential backoff: 1s, 2s, 4s, then cap at 4s
+        local delay=$((airdrop_attempts < 3 ? 2**airdrop_attempts : 4))
+        sleep $delay
     done
 
     if [[ "$airdrop_success" == "false" ]]; then
-        log_warning "All airdrop attempts failed, using zero-TPS results"
+        log_warning "❌ All $airdrop_attempts airdrop attempts failed"
+        log_warning "Last error: $last_error"
+        log_warning "Faucet may not be running or accessible at http://127.0.0.1:9900"
+        log_warning "Using zero-TPS results due to airdrop failure"
         log_success "Transaction throughput test completed (airdrop failed)"
         log_info "Effective TPS: 0"
         log_info "Successful transactions: 0"
@@ -580,6 +624,10 @@ test_transaction_throughput() {
     # Add timeout protection for the entire transaction loop
     local loop_timeout=$((start_time + TEST_DURATION + 5))  # Extra 5s buffer
     local end_time=$((start_time + TEST_DURATION))
+    local failed_validation_count=0
+    
+    # Clear validation errors file
+    > "$RESULTS_DIR/validation_errors.txt"
     
     while [[ $(date +%s) -lt $end_time ]]; do
         # Safety check to prevent infinite loops
@@ -588,21 +636,41 @@ test_transaction_throughput() {
             break
         fi
         
-        # Single transaction per iteration in CI to avoid overload
-        if timeout 3s solana transfer "$recipient_pubkey" 0.001 \
+        # Submit transaction with simpler approach (no JSON parsing needed)
+        if timeout 5s solana transfer "$recipient_pubkey" 0.001 \
             --keypair "$sender_keypair" \
             --allow-unfunded-recipient \
             --fee-payer "$sender_keypair" \
-            --no-wait > /dev/null 2>&1; then
+            --no-wait \
+            > /dev/null 2>&1; then
             ((success_count++))
-        fi
-        ((txn_count++))
-        
-        # Longer sleep in CI to avoid overwhelming the validator
-        if [[ "${CI:-}" == "true" || "${SLONANA_CI_MODE:-}" == "1" ]]; then
-            sleep 0.8  # Slower pace for CI
+            ((txn_count++))
         else
-            sleep 0.3
+            # Transaction failed - count it but don't block
+            ((failed_validation_count++))
+            ((txn_count++))
+            
+            # Log first 10 failures for diagnostics
+            if [[ $failed_validation_count -le 10 ]]; then
+                local error_output
+                error_output=$(solana transfer "$recipient_pubkey" 0.001 \
+                    --keypair "$sender_keypair" \
+                    --allow-unfunded-recipient \
+                    --fee-payer "$sender_keypair" \
+                    --no-wait 2>&1 || echo "Transfer command failed")
+                echo "=== Transaction failure #$failed_validation_count ===" >> "$RESULTS_DIR/validation_errors.txt"
+                echo "$error_output" >> "$RESULTS_DIR/validation_errors.txt"
+                echo "" >> "$RESULTS_DIR/validation_errors.txt"
+                log_verbose "Transfer failed: $error_output"
+            fi
+        fi
+        
+        # Minimal sleep to allow validator to process - don't throttle unnecessarily
+        # The validator can handle many more TPS than this
+        if [[ "${CI:-}" == "true" || "${SLONANA_CI_MODE:-}" == "1" ]]; then
+            sleep 0.05  # 20 TPS target for CI (was 0.8s = 1.25 TPS)
+        else
+            sleep 0.01  # 100 TPS target for local
         fi
     done
 
@@ -614,11 +682,21 @@ test_transaction_throughput() {
     echo "$effective_tps" > "$RESULTS_DIR/effective_tps.txt"
     echo "$success_count" > "$RESULTS_DIR/successful_transactions.txt"
     echo "$txn_count" > "$RESULTS_DIR/submitted_requests.txt"
+    echo "$failed_validation_count" > "$RESULTS_DIR/failed_validation_count.txt"
 
     log_success "Transaction throughput test completed"
     log_info "Effective TPS: $effective_tps"
     log_info "Successful transactions: $success_count"
+    log_info "Failed validations: $failed_validation_count"
     log_info "Total submitted: $txn_count"
+    
+    # Show sample validation errors if any
+    if [[ $failed_validation_count -gt 0 && -f "$RESULTS_DIR/validation_errors.txt" ]]; then
+        log_warning "Sample validation errors (first 5):"
+        head -n 5 "$RESULTS_DIR/validation_errors.txt" | while read -r line; do
+            log_warning "  $line"
+        done
+    fi
 }
 
 # Generate comprehensive results summary
@@ -740,6 +818,13 @@ handle_sigint() {
     
     cleanup_validator
     exit 0
+}
+
+# Emergency cleanup for trap handlers
+cleanup_emergency() {
+    log_warning "Executing emergency cleanup..."
+    generate_emergency_results
+    cleanup_validator
 }
 
 # Generate emergency results when interrupted

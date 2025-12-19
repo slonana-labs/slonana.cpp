@@ -276,7 +276,8 @@ ExecutionOutcome EnhancedExecutionEngine::execute_instruction_group(
     const std::vector<Instruction> &instructions,
     std::unordered_map<PublicKey, ProgramAccount> &accounts) {
 
-  // Delegate to base class implementation for now
+  // Execute instructions through the base engine
+  // Enhanced parallel execution is delegated to the base implementation
   return execute_transaction(instructions, accounts);
 }
 

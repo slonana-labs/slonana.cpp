@@ -2,8 +2,10 @@
 #include <arpa/inet.h>
 #include <chrono>
 #include <cstring>
+#include <curl/curl.h>
 #include <fstream>
 #include <iostream>
+#include <mutex>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <regex>
@@ -14,10 +16,68 @@
 namespace slonana {
 namespace network {
 
-HttpClient::HttpClient()
-    : timeout_seconds_(30), user_agent_("slonana-cpp/1.0") {}
+// Constants for configuration
+constexpr size_t PROGRESS_REPORT_INTERVAL = 102400;  // 100KB
+constexpr long DEFAULT_DOWNLOAD_TIMEOUT = 300L;      // 5 minutes
 
-HttpClient::~HttpClient() {}
+// Thread-safe CURL initialization
+static std::once_flag curl_init_flag;
+static void init_curl_once() {
+  curl_global_init(CURL_GLOBAL_DEFAULT);
+}
+
+// Callback function for CURL to write response data
+static size_t curl_write_callback(void *contents, size_t size, size_t nmemb,
+                                   void *userp) {
+  std::string *buffer = static_cast<std::string *>(userp);
+  size_t total_size = size * nmemb;
+  buffer->append(static_cast<char *>(contents), total_size);
+  return total_size;
+}
+
+// Callback function for CURL to write to file
+static size_t curl_file_write_callback(void *contents, size_t size,
+                                        size_t nmemb, void *userp) {
+  std::ofstream *file = static_cast<std::ofstream *>(userp);
+  size_t total_size = size * nmemb;
+  file->write(static_cast<char *>(contents), total_size);
+  return total_size;
+}
+
+// Progress callback structure for file downloads
+struct ProgressCallbackData {
+  std::function<void(size_t, size_t)> callback;
+  size_t last_reported = 0;
+};
+
+static int curl_progress_callback(void *clientp, curl_off_t dltotal,
+                                   curl_off_t dlnow,
+                                   curl_off_t /* ultotal */,
+                                   curl_off_t /* ulnow */) {
+  ProgressCallbackData *data = static_cast<ProgressCallbackData *>(clientp);
+  if (data && data->callback && dltotal > 0) {
+    // Report progress at intervals to avoid excessive callbacks
+    if (static_cast<size_t>(dlnow) - data->last_reported > PROGRESS_REPORT_INTERVAL) {
+      data->callback(static_cast<size_t>(dlnow), static_cast<size_t>(dltotal));
+      data->last_reported = static_cast<size_t>(dlnow);
+    }
+  }
+  return 0;
+}
+
+HttpClient::HttpClient()
+    : timeout_seconds_(30), user_agent_("slonana-cpp/1.0") {
+  // Thread-safe initialization of CURL using std::call_once
+  std::call_once(curl_init_flag, init_curl_once);
+}
+
+HttpClient::~HttpClient() {
+  // Note: curl_global_cleanup() is intentionally not called here because
+  // it's a global cleanup function that should only be called once when
+  // all CURL usage is complete. In a long-running application with multiple
+  // HttpClient instances, premature cleanup would break other instances.
+  // The OS will clean up when the process exits.
+}
 
 HttpResponse
 HttpClient::get(const std::string &url,
@@ -53,32 +113,82 @@ HttpResponse HttpClient::solana_rpc_call(const std::string &rpc_url,
 bool HttpClient::download_file(
     const std::string &url, const std::string &local_path,
     std::function<void(size_t, size_t)> progress_callback) {
-  std::cout << "Downloading snapshot from: " << url << std::endl;
-  std::cout << "Saving to: " << local_path << std::endl;
+  std::cout << "📥 Downloading file using CURL (HTTPS supported)" << std::endl;
+  std::cout << "   URL: " << url << std::endl;
+  std::cout << "   Destination: " << local_path << std::endl;
 
-  auto response = get(url);
-  if (!response.success) {
-    std::cerr << "Failed to download file: " << response.error_message
-              << std::endl;
+  CURL *curl = curl_easy_init();
+  if (!curl) {
+    std::cerr << "Failed to initialize CURL" << std::endl;
     return false;
   }
 
-  // Save to file
+  // Open file for writing
   std::ofstream file(local_path, std::ios::binary);
   if (!file.is_open()) {
     std::cerr << "Failed to open file for writing: " << local_path << std::endl;
+    curl_easy_cleanup(curl);
     return false;
   }
 
-  file.write(response.body.data(), response.body.size());
-  file.close();
+  // Setup progress callback if provided
+  ProgressCallbackData progress_data;
+  progress_data.callback = progress_callback;
 
+  // Configure CURL
+  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_file_write_callback);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &file);
+  curl_easy_setopt(curl, CURLOPT_USERAGENT, user_agent_.c_str());
+  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds_ > 0 ? static_cast<long>(timeout_seconds_) : DEFAULT_DOWNLOAD_TIMEOUT);
+  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L);
+  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+
+  // Enable progress callback
   if (progress_callback) {
-    progress_callback(response.body.size(), response.body.size());
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, curl_progress_callback);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &progress_data);
   }
 
-  std::cout << "Download completed: " << response.body.size() << " bytes"
-            << std::endl;
+  // Perform the request
+  CURLcode res = curl_easy_perform(curl);
+  file.close();
+
+  if (res != CURLE_OK) {
+    std::cerr << "CURL download failed: " << curl_easy_strerror(res) << std::endl;
+    curl_easy_cleanup(curl);
+    // Remove partial download
+    std::remove(local_path.c_str());
+    return false;
+  }
+
+  // Check HTTP response code
+  long http_code = 0;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+  
+  if (http_code < 200 || http_code >= 300) {
+    std::cerr << "HTTP error: " << http_code << std::endl;
+    curl_easy_cleanup(curl);
+    // Remove partial download
+    std::remove(local_path.c_str());
+    return false;
+  }
+
+  // Get download size info
+  curl_off_t download_size = 0;
+  curl_easy_getinfo(curl, CURLINFO_SIZE_DOWNLOAD_T, &download_size);
+  
+  std::cout << "✅ Download completed successfully: " << download_size << " bytes" << std::endl;
+
+  // Final progress callback
+  if (progress_callback) {
+    progress_callback(static_cast<size_t>(download_size), static_cast<size_t>(download_size));
+  }
+
+  curl_easy_cleanup(curl);
   return true;
 }
 
@@ -88,135 +198,70 @@ HttpClient::execute_request(const std::string &url, const std::string &method,
                             const std::map<std::string, std::string> &headers) {
   HttpResponse response;
 
-  // Parse URL - simplified implementation for basic URLs
-  std::regex url_regex(R"(^https?://([^/]+)(/.*)?)");
-  std::smatch matches;
-
-  if (!std::regex_match(url, matches, url_regex)) {
-    response.error_message = "Invalid URL format";
+  CURL *curl = curl_easy_init();
+  if (!curl) {
+    response.error_message = "Failed to initialize CURL";
     return response;
   }
 
-  std::string host = matches[1].str();
-  std::string path = matches.size() > 2 ? matches[2].str() : "/";
-  if (path.empty())
-    path = "/";
+  std::string response_body;
 
-  // Extract port if specified
-  size_t port_pos = host.find(':');
-  int port = 80;
-  if (port_pos != std::string::npos) {
-    port = std::stoi(host.substr(port_pos + 1));
-    host = host.substr(0, port_pos);
+  // Configure CURL
+  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_callback);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+  curl_easy_setopt(curl, CURLOPT_USERAGENT, user_agent_.c_str());
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds_ > 0 ? timeout_seconds_ : 30L);
+  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+
+  // Set HTTP method
+  if (method == "POST") {
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, data.length());
+  } else if (method == "HEAD") {
+    curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
   }
+  // GET is the default
 
-  // Create socket
-  int sock = socket(AF_INET, SOCK_STREAM, 0);
-  if (sock < 0) {
-    response.error_message = "Failed to create socket";
-    return response;
-  }
-
-  // Set timeout
-  struct timeval timeout;
-  timeout.tv_sec = timeout_seconds_;
-  timeout.tv_usec = 0;
-  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
-
-  // Resolve hostname
-  struct hostent *server = gethostbyname(host.c_str());
-  if (!server) {
-    close(sock);
-    response.error_message = "Failed to resolve hostname: " + host;
-    return response;
-  }
-
-  // Connect to server
-  struct sockaddr_in serv_addr;
-  memset(&serv_addr, 0, sizeof(serv_addr));
-  serv_addr.sin_family = AF_INET;
-  serv_addr.sin_port = htons(port);
-  memcpy(&serv_addr.sin_addr.s_addr, server->h_addr, server->h_length);
-
-  if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-    close(sock);
-    response.error_message = "Failed to connect to server";
-    return response;
-  }
-
-  // Build HTTP request
-  std::ostringstream request;
-  request << method << " " << path << " HTTP/1.1\r\n";
-  request << "Host: " << host << "\r\n";
-  request << "User-Agent: " << user_agent_ << "\r\n";
-  request << "Connection: close\r\n";
-
-  // Add custom headers
+  // Build custom headers
+  struct curl_slist *header_list = nullptr;
   for (const auto &header : headers) {
-    request << header.first << ": " << header.second << "\r\n";
+    std::string header_line = header.first + ": " + header.second;
+    header_list = curl_slist_append(header_list, header_line.c_str());
+  }
+  if (header_list) {
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header_list);
   }
 
-  // Add content for POST requests
-  if (method == "POST" && !data.empty()) {
-    request << "Content-Length: " << data.length() << "\r\n";
-  }
+  // Perform the request
+  CURLcode res = curl_easy_perform(curl);
 
-  request << "\r\n";
-
-  // Add body for POST requests
-  if (method == "POST" && !data.empty()) {
-    request << data;
-  }
-
-  std::string request_str = request.str();
-
-  // Send request
-  if (send(sock, request_str.c_str(), request_str.length(), 0) < 0) {
-    close(sock);
-    response.error_message = "Failed to send request";
+  if (res != CURLE_OK) {
+    response.error_message = std::string("CURL error: ") + curl_easy_strerror(res);
+    if (header_list) curl_slist_free_all(header_list);
+    curl_easy_cleanup(curl);
     return response;
   }
 
-  // Read response
-  std::ostringstream response_stream;
-  char buffer[4096];
-  ssize_t bytes_received;
+  // Get HTTP response code
+  long http_code = 0;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+  
+  response.status_code = static_cast<int>(http_code);
+  response.body = response_body;
+  response.success = (http_code >= 200 && http_code < 300);
 
-  while ((bytes_received = recv(sock, buffer, sizeof(buffer) - 1, 0)) > 0) {
-    buffer[bytes_received] = '\0';
-    response_stream << buffer;
+  if (!response.success) {
+    response.error_message = "HTTP error: " + std::to_string(http_code);
   }
 
-  close(sock);
-
-  std::string response_str = response_stream.str();
-  if (response_str.empty()) {
-    response.error_message = "Empty response received";
-    return response;
-  }
-
-  // Parse HTTP response
-  size_t header_end = response_str.find("\r\n\r\n");
-  if (header_end == std::string::npos) {
-    response.error_message = "Invalid HTTP response format";
-    return response;
-  }
-
-  std::string header_part = response_str.substr(0, header_end);
-  response.body = response_str.substr(header_end + 4);
-
-  // Extract status code
-  std::regex status_regex(R"(HTTP/1\.[01] (\d+))");
-  std::smatch status_match;
-  if (std::regex_search(header_part, status_match, status_regex)) {
-    response.status_code = std::stoi(status_match[1].str());
-    response.success =
-        (response.status_code >= 200 && response.status_code < 300);
-  } else {
-    response.error_message = "Failed to parse status code";
-    return response;
-  }
+  // Cleanup
+  if (header_list) curl_slist_free_all(header_list);
+  curl_easy_cleanup(curl);
 
   return response;
 }

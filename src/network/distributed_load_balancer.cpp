@@ -14,11 +14,25 @@ namespace slonana {
 namespace network {
 
 DistributedLoadBalancer::DistributedLoadBalancer(const std::string &balancer_id,
-                                                 const ValidatorConfig &config)
-    : balancer_id_(balancer_id), config_(config), running_(false) {
+                                                 const ValidatorConfig &config,
+                                                 size_t queue_capacity)
+    : balancer_id_(balancer_id), config_(config), running_(false),
+      queue_capacity_(queue_capacity) {
 
   // Initialize default statistics
   std::memset(&current_stats_, 0, sizeof(current_stats_));
+
+  // Initialize lock-free request queue if available
+#if HAS_LOCKFREE_QUEUE
+  lock_free_request_queue_ =
+      std::make_unique<boost::lockfree::queue<ConnectionRequest *>>(
+          queue_capacity_);
+  std::cout << "Lock-free request queue enabled (capacity: " << queue_capacity_
+            << ") with ownership tracking" << std::endl;
+#else
+  std::cout << "Using mutex-protected request queue with condition variable"
+            << std::endl;
+#endif
 
   // Create default load balancing rule
   LoadBalancingRule default_rule;
@@ -63,6 +77,11 @@ void DistributedLoadBalancer::stop() {
 
   running_.store(false);
 
+  // Wake up any threads waiting on condition variable
+#ifndef HAS_LOCKFREE_QUEUE
+  request_queue_cv_.notify_all();
+#endif
+
   // Stop all threads
   if (health_monitor_thread_.joinable())
     health_monitor_thread_.join();
@@ -72,6 +91,23 @@ void DistributedLoadBalancer::stop() {
     circuit_breaker_thread_.join();
   if (request_processor_thread_.joinable())
     request_processor_thread_.join();
+
+#if HAS_LOCKFREE_QUEUE
+  // Clean up any remaining items in lock-free queue to prevent memory leaks
+  // This is safe because all producer/consumer threads have been stopped
+  ConnectionRequest *req_ptr = nullptr;
+  while (lock_free_request_queue_->pop(req_ptr)) {
+    delete req_ptr;
+    queue_allocated_count_.fetch_sub(1, std::memory_order_relaxed);
+  }
+
+  // Verify no leaks - all allocations should be cleaned up
+  size_t remaining = queue_allocated_count_.load(std::memory_order_acquire);
+  if (remaining > 0) {
+    std::cerr << "WARNING: " << remaining
+              << " queue items may have leaked during shutdown" << std::endl;
+  }
+#endif
 
   std::cout << "Distributed load balancer stopped: " << balancer_id_
             << std::endl;
@@ -635,7 +671,8 @@ void DistributedLoadBalancer::health_monitor_loop() {
 
     cleanup_expired_affinities();
 
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+    // Reduced sleep time for faster health detection
+    std::this_thread::sleep_for(std::chrono::seconds(2));
   }
 }
 
@@ -682,7 +719,8 @@ void DistributedLoadBalancer::stats_collector_loop() {
       last_requests = current_stats_.total_requests;
     }
 
-    std::this_thread::sleep_for(std::chrono::seconds(10));
+    // Reduced sleep time for more frequent stat updates
+    std::this_thread::sleep_for(std::chrono::seconds(5));
   }
 }
 
@@ -721,24 +759,66 @@ void DistributedLoadBalancer::request_processor_loop() {
   while (running_.load()) {
     std::vector<ConnectionRequest> requests_to_process;
 
-    {
-      std::lock_guard<std::mutex> lock(request_queue_mutex_);
-      if (!request_queue_.empty()) {
-        // Process up to 10 requests at a time
-        for (int i = 0; i < 10 && !request_queue_.empty(); ++i) {
-          requests_to_process.push_back(request_queue_.front());
-          request_queue_.pop();
-        }
+#if HAS_LOCKFREE_QUEUE
+    // Lock-free path with RAII-style ownership management
+    // OWNERSHIP PROTOCOL:
+    // - Producer allocates ConnectionRequest* and increments
+    // queue_allocated_count_ AFTER successful push
+    // - Consumer (this loop) takes ownership via pop and decrements counter
+    // - RAII: unique_ptr ensures cleanup even if exception thrown during
+    // processing
+    // - Memory Order: relaxed on counter is safe - queue operations provide
+    // happens-before
+    ConnectionRequest *req_ptr = nullptr;
+    for (int i = 0; i < 10; ++i) {
+      if (lock_free_request_queue_->pop(req_ptr)) {
+        // Use unique_ptr for automatic cleanup (RAII) - prevents leaks on
+        // exception
+        std::unique_ptr<ConnectionRequest> req_guard(req_ptr);
+        requests_to_process.push_back(*req_guard);
+        // Decrement allocation counter - balances producer's increment
+        // Using relaxed ordering: queue's happens-before ensures no race
+        queue_allocated_count_.fetch_sub(1, std::memory_order_relaxed);
+        // unique_ptr automatically deletes when going out of scope
+      } else {
+        break; // Queue is empty
       }
     }
+
+    // If no requests, sleep briefly (still using minimal sleep for lock-free)
+    // SHUTDOWN NOTE: Relies on running_ flag check with 1ms sleep
+    // Trade-off: Max 1ms delay on shutdown vs zero CPU waste during operation
+    // This is acceptable given the performance benefits of lock-free operation
+    if (requests_to_process.empty()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+#else
+    // Fallback mutex-protected path with event-driven wakeup
+    {
+      std::unique_lock<std::mutex> lock(request_queue_mutex_);
+
+      // Wait for requests with condition variable (event-driven)
+      request_queue_cv_.wait_for(lock, std::chrono::milliseconds(10), [this] {
+        return !request_queue_.empty() || !running_.load();
+      });
+
+      if (!running_.load()) {
+        break;
+      }
+
+      // Process up to 10 requests at a time
+      for (int i = 0; i < 10 && !request_queue_.empty(); ++i) {
+        requests_to_process.push_back(request_queue_.front());
+        request_queue_.pop();
+      }
+    }
+#endif
 
     // Process requests asynchronously
     for (const auto &request : requests_to_process) {
       auto response = route_request(request);
       // Response would be sent back to client in real implementation
     }
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 }
 
@@ -747,13 +827,39 @@ std::string DistributedLoadBalancer::select_server_round_robin(
   if (servers.empty())
     return "";
 
-  std::lock_guard<std::mutex> lock(round_robin_mutex_);
+  // CONCURRENCY PATTERN: Double-checked locking with shared_mutex
+  // Fast path: shared_lock for concurrent reads (most common case)
+  // Slow path: unique_lock only when new service needs to be added (rare)
+  // CONTENTION NOTE: If many new services are added concurrently, unique_lock
+  // may cause brief contention. This is acceptable because:
+  // 1. New service additions are rare in production (happens during startup)
+  // 2. Once added, all subsequent calls use fast lock-free atomic path
+  // 3. shared_mutex allows unlimited concurrent reads without contention
 
-  uint32_t &counter = round_robin_counters_[service_name];
-  std::string selected = servers[counter % servers.size()];
-  counter++;
+  // Try shared lock first for read-only access (concurrent reads allowed)
+  {
+    std::shared_lock<std::shared_mutex> lock(round_robin_mutex_);
+    auto it = round_robin_counters_.find(service_name);
+    if (it != round_robin_counters_.end()) {
+      // Counter exists, use atomic fetch_add (lock-free)
+      uint32_t counter = it->second.fetch_add(1, std::memory_order_relaxed);
+      return servers[counter % servers.size()];
+    }
+  }
 
-  return selected;
+  // Counter doesn't exist, need exclusive lock to insert
+  // RACE SAFETY: Double-check pattern prevents duplicate insertions
+  // Even if multiple threads race to insert same service_name, emplace is
+  // idempotent
+  {
+    std::unique_lock<std::shared_mutex> lock(round_robin_mutex_);
+    // Use emplace return value to avoid duplicate find() call
+    // Returns pair<iterator, bool> where bool indicates if insertion occurred
+    auto [it, inserted] = round_robin_counters_.emplace(service_name, 0);
+    // Use atomic fetch_add for the increment
+    uint32_t counter = it->second.fetch_add(1, std::memory_order_relaxed);
+    return servers[counter % servers.size()];
+  }
 }
 
 std::string DistributedLoadBalancer::select_server_least_connections(
@@ -822,7 +928,11 @@ std::string DistributedLoadBalancer::select_server_weighted(
   if (total_weight == 0)
     return servers[0];
 
-  uint32_t random_value = rand() % total_weight;
+  // Use thread-local RNG for better performance and thread safety
+  thread_local std::random_device rd;
+  thread_local std::mt19937 gen(rd());
+  std::uniform_int_distribution<uint32_t> dis(0, total_weight - 1);
+  uint32_t random_value = dis(gen);
   uint32_t current_weight = 0;
 
   for (const auto &weighted_server : weighted_servers) {
@@ -1113,6 +1223,48 @@ std::string generate_request_id() {
   static std::atomic<uint64_t> counter{0};
   return "req_" + std::to_string(counter.fetch_add(1)) + "_" +
          std::to_string(std::time(nullptr));
+}
+
+void DistributedLoadBalancer::set_queue_capacity(size_t capacity) {
+  if (running_.load()) {
+    std::cerr << "Cannot change queue capacity while load balancer is running"
+              << std::endl;
+    return;
+  }
+#if HAS_LOCKFREE_QUEUE
+  queue_capacity_ = capacity;
+  // Queue will be recreated on next start() call
+  std::cout << "Queue capacity set to " << capacity
+            << " (will take effect on next start)" << std::endl;
+#else
+  std::cout
+      << "Queue capacity configuration not applicable for mutex-based queue"
+      << std::endl;
+#endif
+}
+
+DistributedLoadBalancer::QueueMetrics
+DistributedLoadBalancer::get_queue_metrics() const {
+  QueueMetrics metrics;
+#if HAS_LOCKFREE_QUEUE
+  metrics.allocated_count =
+      queue_allocated_count_.load(std::memory_order_acquire);
+  metrics.capacity = queue_capacity_;
+  metrics.push_failure_count =
+      queue_push_failure_count_.load(std::memory_order_relaxed);
+  metrics.utilization_percent =
+      (metrics.capacity > 0) ? (static_cast<double>(metrics.allocated_count) /
+                                static_cast<double>(metrics.capacity)) *
+                                   100.0
+                             : 0.0;
+#else
+  // For mutex-based fallback, return placeholder values
+  metrics.allocated_count = 0;
+  metrics.capacity = 0;
+  metrics.push_failure_count = 0;
+  metrics.utilization_percent = 0.0;
+#endif
+  return metrics;
 }
 
 } // namespace network

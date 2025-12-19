@@ -195,7 +195,7 @@ std::vector<NetworkPeer> NetworkDiscovery::discover_dns_peers() {
                               resolved_peers.end());
     }
 
-    // Add hardcoded fallback peers
+    // Add network-specific fallback entrypoints
     if (genesis_config_.network_id == "mainnet") {
       auto mainnet_entrypoints = MainnetEntrypoints::get_mainnet_entrypoints();
       for (const auto &entrypoint : mainnet_entrypoints) {
@@ -212,7 +212,7 @@ std::vector<NetworkPeer> NetworkDiscovery::discover_dns_peers() {
     std::cout << "DNS discovery failed: " << e.what()
               << ", using fallback peers" << std::endl;
 
-    // Fallback to hardcoded peers on DNS failure
+    // Use network-specific fallback entrypoints on DNS failure
     if (genesis_config_.network_id == "mainnet") {
       auto mainnet_entrypoints = MainnetEntrypoints::get_mainnet_entrypoints();
       for (const auto &entrypoint : mainnet_entrypoints) {

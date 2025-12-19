@@ -196,6 +196,7 @@ body {
     letter-spacing: 1px;
     cursor: pointer;
     transition: all 0.3s ease;
+    text-decoration: none;
 }
 
 .buy-slonana-btn:hover {
@@ -1086,6 +1087,15 @@ body {
     font-size: 11px;
     margin-bottom: 3px;
     color: #333;
+}
+
+.footer-section a {
+    color: #333;
+    text-decoration: none;
+}
+
+.footer-section a:hover {
+    text-decoration: underline;
 }
 
 .copyright {

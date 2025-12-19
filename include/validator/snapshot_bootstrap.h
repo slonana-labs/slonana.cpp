@@ -109,6 +109,34 @@ private:
   // Default snapshot mirrors for devnet
   std::vector<std::string> get_devnet_snapshot_mirrors() const;
 
+  // Discover validator nodes that serve snapshots via /snapshot.tar.bz2
+  std::vector<std::string> discover_snapshot_serving_nodes() const;
+  
+  // **ENHANCED**: Full cluster node discovery with latency-based sorting
+  struct ClusterNode {
+    std::string rpc_url;
+    std::string gossip_addr;
+    std::string pubkey;
+    double latency_ms;
+    bool has_snapshot;
+    uint64_t snapshot_slot;
+  };
+  
+  // Discover all nodes from cluster via getClusterNodes RPC
+  std::vector<ClusterNode> discover_all_cluster_nodes() const;
+  
+  // Ping nodes and measure latency, sort by fastest
+  std::vector<ClusterNode> ping_and_sort_nodes_by_latency(
+      std::vector<ClusterNode>& nodes, int max_nodes = 50) const;
+  
+  // Find nodes that serve snapshots, sorted by latency
+  std::vector<ClusterNode> find_snapshot_nodes_by_latency() const;
+  
+  // Download snapshot from best available node (lowest latency first)
+  common::Result<bool> download_snapshot_from_best_node(
+      const std::vector<ClusterNode>& nodes,
+      std::string& local_path_out);
+
   // Progress reporting helpers
   void report_progress(const std::string &phase, uint64_t current = 0,
                        uint64_t total = 0) const;

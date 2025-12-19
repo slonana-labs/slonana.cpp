@@ -69,7 +69,9 @@ jobs:
           build-essential \
           cmake \
           pkg-config \
-          libssl-dev
+          libssl-dev \
+          nlohmann-json3-dev \
+          libsodium-dev
           
         # Install cross-compilation tools for ARM64
         if [[ "${{ matrix.target }}" == "aarch64-linux-gnu" ]]; then

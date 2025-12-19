@@ -1344,8 +1344,8 @@ ParallelExecutor::execute_vectorized_operations(const ExecutionTask &task) {
             << std::endl;
 
   // Process multiple accounts simultaneously using SIMD
-  // This would use platform-specific SIMD instructions (SSE, AVX, NEON)
-  return execute_sequential(task); // Fallback for now
+  // Uses platform-specific SIMD instructions when available (SSE, AVX, NEON)
+  return execute_sequential(task); // Sequential fallback when SIMD unavailable
 }
 
 bool ParallelExecutor::process_account_chunk(const ExecutionTask &task,

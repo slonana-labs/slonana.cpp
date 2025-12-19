@@ -1,11 +1,3 @@
-/**
- * @file proof_of_history.h
- * @brief Defines the core components for generating and verifying Proof of History (PoH).
- *
- * This file contains the classes and data structures for creating a verifiable,
- * sequential record of events over time. This is the fundamental clock for the
- * Slonana validator, ensuring a canonical ordering of transactions.
- */
 #pragma once
 
 #include "common/types.h"
@@ -18,7 +10,7 @@
 #include <mutex>
 #include <thread>
 
-// Optional lock-free data structures for performance
+// Lock-free data structures (optional)
 #ifdef BOOST_LOCKFREE_HPP
 #include <boost/lockfree/queue.hpp>
 #define HAS_LOCKFREE_QUEUE 1
@@ -27,7 +19,7 @@
 #include <queue>
 #endif
 
-// SIMD acceleration for hashing
+// SIMD acceleration
 #if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>
 #include <wmmintrin.h>
@@ -42,56 +34,38 @@ namespace consensus {
 using namespace slonana::common;
 
 /**
- * @brief Represents a single entry (a "tick") in the Proof of History sequence.
- * @details Each entry contains a hash that is dependent on the previous entry's
- * hash, forming a verifiable chain.
+ * Proof of History entry representing a single hash in the sequence
  */
 struct PohEntry {
-  /// @brief The hash value of this entry.
-  Hash hash;
-  /// @brief The sequential position of this entry in the chain.
-  uint64_t sequence_number;
-  /// @brief The wall-clock timestamp when this entry was generated.
-  std::chrono::system_clock::time_point timestamp;
-  /// @brief Any external data (like transaction hashes) mixed into this entry's hash.
-  std::vector<Hash> mixed_data;
+  Hash hash;                                       // Current hash value
+  uint64_t sequence_number;                        // Sequential position
+  std::chrono::system_clock::time_point timestamp; // Wall clock time
+  std::vector<Hash> mixed_data; // Any data mixed into this hash
 
   std::vector<uint8_t> serialize() const;
   bool verify_from_previous(const PohEntry &prev) const;
 };
 
 /**
- * @brief Configuration settings for the Proof of History generator.
+ * Configuration for the Proof of History generator
  */
 struct PohConfig {
-  /// @brief The desired time duration for each PoH tick.
-  std::chrono::microseconds target_tick_duration{200};
-  /// @brief The number of ticks that constitute a single slot.
-  uint64_t ticks_per_slot = 64;
-  /// @brief The maximum number of PoH entries to buffer in memory.
-  size_t max_entries_buffer = 2000;
-  /// @brief If true, use dedicated threads for hashing to offload the main thread.
-  bool enable_hashing_threads = true;
-  /// @brief The number of dedicated hashing threads to use.
-  uint32_t hashing_threads = 4;
-  /// @brief If true, use SIMD instructions (if available) to accelerate hashing.
-  bool enable_simd_acceleration = true;
-  /// @brief If true, process multiple hashes in a single batch operation.
-  bool enable_batch_processing = true;
-  /// @brief The number of hashes to process in a single batch.
-  uint32_t batch_size = 8;
-  /// @brief If true, use lock-free queues for data mixing to reduce contention.
-  bool enable_lock_free_structures = true;
-  /// @brief If true, track metrics on lock contention (can have performance overhead).
-  bool enable_lock_contention_tracking = false;
-  /// @brief If true, allow runtime enabling/disabling of contention tracking.
-  bool enable_dynamic_contention_tracking = true;
+  std::chrono::microseconds target_tick_duration{
+      200};                     // Target time per tick (200μs for 5,000 TPS)
+  uint64_t ticks_per_slot = 64; // Number of ticks per slot
+  size_t max_entries_buffer = 2000;        // Maximum buffered entries
+  bool enable_hashing_threads = true;      // Use dedicated hashing threads
+  uint32_t hashing_threads = 4;            // Number of hashing threads
+  bool enable_simd_acceleration = true;    // Use SIMD/hardware acceleration
+  bool enable_batch_processing = true;     // Batch process multiple hashes
+  uint32_t batch_size = 8;                 // Number of hashes to batch process
+  bool enable_lock_free_structures = true; // Use lock-free data structures
+  bool enable_lock_contention_tracking = false; // Track lock contention metrics (can cause overhead under extreme contention)
+  bool enable_dynamic_contention_tracking = true; // Allow runtime enabling/disabling of contention tracking
 };
 
 /**
- * @brief A high-performance generator for creating a verifiable sequence of hashes over time (Proof of History).
- * @details This class manages the continuous generation of PoH "ticks", groups them
- * into slots, and allows external data to be mixed into the hash chain to timestamp events.
+ * Proof of History generator creating verifiable timestamps
  */
 class ProofOfHistory {
 public:
@@ -101,26 +75,87 @@ public:
   explicit ProofOfHistory(const PohConfig &config = PohConfig{});
   ~ProofOfHistory();
 
+  // Non-copyable, non-movable
   ProofOfHistory(const ProofOfHistory &) = delete;
   ProofOfHistory &operator=(const ProofOfHistory &) = delete;
 
+  /**
+   * Initialize and start the PoH generator
+   * @param initial_hash Starting hash for the sequence
+   * @return true if started successfully
+   */
   Result<bool> start(const Hash &initial_hash);
+
+  /**
+   * Stop the PoH generator
+   */
   void stop();
+
+  /**
+   * Check if the generator is running
+   */
   bool is_running() const;
 
+  /**
+   * Get the current PoH entry
+   */
   PohEntry get_current_entry() const;
+
+  /**
+   * Get the current sequence number
+   */
   uint64_t get_current_sequence() const;
+
+  /**
+   * Get the current slot number
+   */
   Slot get_current_slot() const;
 
+  /**
+   * Mix data into the next PoH hash
+   * @param data Data to mix into the hash chain
+   * @return Estimated sequence number where data will be mixed (best-effort).
+   *         This is an immediate estimate and may not reflect the actual
+   *         committed sequence if the data is still pending processing.
+   *         Returns 0 if the PoH generator is not running.
+   *         
+   *         WARNING: This is a best-effort guess, not a committed sequence ID.
+   *         The actual sequence may differ due to concurrent processing.
+   */
   uint64_t mix_data(const Hash &data);
+
+  /**
+   * Get entries for a specific slot
+   * @param slot Slot number to query
+   * @return vector of PoH entries for that slot
+   */
   std::vector<PohEntry> get_slot_entries(Slot slot) const;
+
+  /**
+   * Verify a sequence of PoH entries
+   * @param entries Entries to verify
+   * @return true if sequence is valid
+   */
   static bool verify_sequence(const std::vector<PohEntry> &entries);
 
+  /**
+   * Register callback for each tick
+   * WARNING: Callbacks are invoked while holding internal locks.
+   * Callbacks should NOT call back into ProofOfHistory methods to avoid deadlock.
+   * Keep callbacks fast and simple.
+   */
   void set_tick_callback(TickCallback callback);
+
+  /**
+   * Register callback for slot completion
+   * WARNING: Callbacks are invoked while holding internal locks.
+   * Callbacks should NOT call back into ProofOfHistory methods to avoid deadlock.
+   * Keep callbacks fast and simple.
+   */
   void set_slot_callback(SlotCallback callback);
 
   /**
-   * @brief A collection of performance and status metrics for the PoH generator.
+   * Get performance statistics with detailed breakdown
    */
   struct PohStats {
     uint64_t total_ticks;
@@ -130,13 +165,13 @@ public:
     std::chrono::microseconds min_tick_duration;
     std::chrono::microseconds max_tick_duration;
     double ticks_per_second;
-    double effective_tps;
+    double effective_tps; // Theoretical transaction throughput
     size_t pending_data_mixes;
-    uint64_t batches_processed;
-    double batch_efficiency;
-    bool simd_acceleration_active;
-    double lock_contention_ratio;
-    uint64_t dropped_mixes;
+    uint64_t batches_processed;    // Number of batch operations
+    double batch_efficiency;       // Average batch utilization
+    bool simd_acceleration_active; // Whether SIMD is being used
+    double lock_contention_ratio;  // Lock contention metrics (-1.0 = not tracked, >= 0.0 = contention ratio)
+    uint64_t dropped_mixes;        // Number of mix operations dropped due to queue overflow
   };
 
   PohStats get_stats() const;
@@ -144,77 +179,152 @@ public:
 private:
   void hashing_thread_func();
   void tick_thread_func();
-  Hash compute_next_hash(const Hash &current, const std::vector<Hash> &mixed_data = {});
+  Hash compute_next_hash(const Hash &current,
+                         const std::vector<Hash> &mixed_data = {});
   void process_tick();
   void check_slot_completion();
+
+  // Performance optimizations
   void process_tick_batch();
-  Hash compute_next_hash_simd(const Hash &current, const std::vector<Hash> &mixed_data = {});
-  void batch_hash_computation(std::vector<Hash> &hashes, const std::vector<std::vector<Hash>> &mixed_data_batches);
-  void update_stats_locked(std::chrono::microseconds tick_duration, std::chrono::system_clock::time_point tick_end, bool is_batch_processing, size_t pending_mixes_count = 0);
-  void update_stats_impl(std::chrono::microseconds tick_duration, std::chrono::system_clock::time_point tick_end, bool is_batch_processing, size_t pending_mixes_count);
+  Hash compute_next_hash_simd(const Hash &current,
+                              const std::vector<Hash> &mixed_data = {});
+  void batch_hash_computation(
+      std::vector<Hash> &hashes,
+      const std::vector<std::vector<Hash>> &mixed_data_batches);
+
+  // Helper method to update stats with proper locking and avoid code duplication
+  void update_stats_locked(std::chrono::microseconds tick_duration,
+                          std::chrono::system_clock::time_point tick_end,
+                          bool is_batch_processing,
+                          size_t pending_mixes_count = 0);
+  
+  // Internal stats update implementation (called under lock)
+  void update_stats_impl(std::chrono::microseconds tick_duration,
+                        std::chrono::system_clock::time_point tick_end,
+                        bool is_batch_processing,
+                        size_t pending_mixes_count);
 
   PohConfig config_;
   std::atomic<bool> running_{false};
   std::atomic<bool> stopping_{false};
+
   mutable std::mutex state_mutex_;
   PohEntry current_entry_;
   std::atomic<uint64_t> current_sequence_{0};
   std::atomic<Slot> current_slot_{0};
+
+  // Threading
   std::vector<std::thread> hashing_threads_;
   std::thread tick_thread_;
 
+  // Lock-free data mixing queue for high performance (optional - only if boost
+  // available)
 #if HAS_LOCKFREE_QUEUE
   std::unique_ptr<boost::lockfree::queue<Hash *>> lock_free_mix_queue_;
 #endif
+
+  // Mutex-based data mixing queue (fallback - not lock-free!)
+  // NOTE: This is a traditional mutex-protected queue, not a lock-free structure.
+  // Used as fallback when boost::lockfree is unavailable or disabled.
   mutable std::mutex mix_queue_mutex_;
   std::deque<Hash> pending_mix_data_;
 
+  // Entry history with optimized storage
   mutable std::mutex history_mutex_;
   std::deque<PohEntry> entry_history_;
   std::map<Slot, std::vector<PohEntry>> slot_entries_;
+
+  // Callbacks
   std::mutex callbacks_mutex_;
   TickCallback tick_callback_;
   SlotCallback slot_callback_;
+
+  // Enhanced statistics tracking
   mutable std::mutex stats_mutex_;
   PohStats stats_;
   std::chrono::system_clock::time_point last_tick_time_;
   std::chrono::system_clock::time_point start_time_;
   std::atomic<uint64_t> lock_contention_count_{0};
   std::atomic<uint64_t> lock_attempts_{0};
-  std::atomic<uint64_t> dropped_mixes_{0};
+  std::atomic<uint64_t> dropped_mixes_{0};  // Note: uint64_t wraparound protection handled by modular arithmetic
   
-  static constexpr size_t MAX_SLOT_HISTORY = 1000;
+  // Slot memory management for long-running validators
+  // Limits slot_entries_ map size to prevent unbounded memory growth
+  // during extended validator operation (months/years). When exceeded,
+  // oldest slots are automatically pruned in check_slot_completion().
+  static constexpr size_t MAX_SLOT_HISTORY = 1000;  // Keep only recent slots in memory
   
+  // Helper class for lock contention tracking
   /**
-   * @brief An instrumented lock guard for tracking mutex contention.
-   * @details This helper class wraps `std::unique_lock` and increments counters
-   * to measure how often threads have to wait for a lock, which is useful for
-   * performance profiling. It is only active when contention tracking is enabled.
+   * @brief Instrumented lock guard for stats mutex with contention tracking
+   * 
+   * Tracks lock attempts and contention when enable_lock_contention_tracking is true.
+   * Uses try_lock() first to detect contention with minimal overhead.
+   * 
+   * WARNING: Under extreme contention, try_lock() overhead can impact performance.
+   * Consider disabling via config if profiling shows significant impact.
    */
   class InstrumentedLockGuard {
   private:
     std::unique_lock<std::mutex> guard_;
+    
   public:
-    InstrumentedLockGuard(std::mutex& mutex, std::atomic<uint64_t>& attempts, std::atomic<uint64_t>& contentions);
+    InstrumentedLockGuard(std::mutex& mutex, std::atomic<uint64_t>& attempts, 
+                         std::atomic<uint64_t>& contentions) 
+        : guard_(mutex, std::defer_lock) {
+      attempts.fetch_add(1, std::memory_order_relaxed);
+      // Simple contention detection: try_lock first, if it fails, we have contention
+      if (!guard_.try_lock()) {
+        contentions.fetch_add(1, std::memory_order_relaxed);
+        // Now do the blocking lock
+        guard_.lock();
+      }
+    }
   };
 };
 
 /**
- * @brief Provides static methods for verifying a Proof of History sequence.
+ * Proof of History verifier for validating PoH sequences
  */
 class PohVerifier {
 public:
   PohVerifier() = default;
+
+  /**
+   * Verify a complete PoH sequence
+   * @param entries Sequence of PoH entries to verify
+   * @return true if sequence is cryptographically valid
+   */
   static bool verify_sequence(const std::vector<PohEntry> &entries);
+
+  /**
+   * Verify that an entry follows correctly from the previous
+   * @param prev Previous entry in sequence
+   * @param curr Current entry to verify
+   * @return true if transition is valid
+   */
   static bool verify_transition(const PohEntry &prev, const PohEntry &curr);
-  static bool verify_timing(const std::vector<PohEntry> &entries, const PohConfig &config);
-  static std::vector<Hash> extract_mixed_data(const std::vector<PohEntry> &entries);
+
+  /**
+   * Verify timing constraints for a sequence
+   * @param entries Entries to check timing for
+   * @param config PoH configuration with timing constraints
+   * @return true if timing is within acceptable bounds
+   */
+  static bool verify_timing(const std::vector<PohEntry> &entries,
+                            const PohConfig &config);
+
+  /**
+   * Extract and verify mixed data from PoH entries
+   * @param entries PoH entries containing mixed data
+   * @return vector of extracted data hashes
+   */
+  static std::vector<Hash>
+  extract_mixed_data(const std::vector<PohEntry> &entries);
 };
 
 /**
- * @brief Provides global singleton access to the Proof of History generator.
- * @details This class ensures that there is only one instance of the PoH
- * generator running in the system and provides a safe way to access it.
+ * Global Proof of History instance
  */
 class GlobalProofOfHistory {
 public:
@@ -222,9 +332,15 @@ public:
   static bool initialize(const PohConfig &config = {}, const Hash &initial_hash = Hash(32, 0x42));
   static void shutdown();
   static bool is_initialized();
+
+  // Convenience methods
   static uint64_t mix_transaction(const Hash &tx_hash);
   static PohEntry get_current_entry();
   static Slot get_current_slot();
+  
+  // Safe callback setup
+  // WARNING: Callbacks are invoked while holding internal locks.
+  // Callbacks should NOT call back into ProofOfHistory methods to avoid deadlock.
   static bool set_tick_callback(ProofOfHistory::TickCallback callback);
   static bool set_slot_callback(ProofOfHistory::SlotCallback callback);
 
