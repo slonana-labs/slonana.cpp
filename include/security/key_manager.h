@@ -42,11 +42,6 @@ constexpr auto ROTATION_CHECK_JITTER_MAX = std::chrono::minutes(30);
 constexpr const char* METADATA_VERSION = "1.0";
 constexpr const char* DEFAULT_STORAGE_SUBDIR = ".slonana/keys";
 
-namespace slonana {
-namespace security {
-
-using ::slonana::common::Result;
-
 // Forward declarations
 class SecureBuffer;
 class KeyStore;
