@@ -123,6 +123,7 @@ compile_commands.json
 
 # Test configurations
 test-config.json
+test_config.json
 
 # Docker and deployment artifacts
 .docker/
@@ -190,6 +191,7 @@ slonana-genesis
 # Load test data
 load_test_*/
 load_test_results.json
+load_test_tps.sh
 
 # Test and debug scripts
 test_*.sh
