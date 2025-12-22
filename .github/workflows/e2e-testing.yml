@@ -54,7 +54,10 @@ jobs:
           htop \
           iotop \
           sysstat \
-          jq
+          jq \
+          nlohmann-json3-dev \
+          libsodium-dev \
+          libcurl4-openssl-dev
 
     - name: Create build directory
       run: mkdir -p build

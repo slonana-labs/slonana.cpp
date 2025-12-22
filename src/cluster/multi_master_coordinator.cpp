@@ -266,9 +266,9 @@ bool MultiMasterCoordinator::coordinate_master_promotion(
   if (load_balancer_ && role == MasterRole::RPC_MASTER) {
     BackendServer server;
     server.server_id = node_id;
-    server.address = "127.0.0.1"; // TODO: Get from config
-    server.port = 8899;
-    server.region = "default";
+    server.address = config_.node_address;
+    server.port = config_.node_port;
+    server.region = config_.node_region;
     server.weight = 100;
     server.max_connections = 1000;
     server.is_active = true;
@@ -664,10 +664,13 @@ bool MultiMasterCoordinator::optimize_master_allocation() {
   std::lock_guard<std::mutex> lock(global_state_mutex_);
 
   std::unordered_map<std::string, uint32_t> masters_per_region;
-  for (const auto &assignment : global_consensus_state_.master_assignments) {
-    // Get master's region (simplified)
-    std::string region = "default"; // TODO: Get actual region
-    masters_per_region[region]++;
+
+  // Get active masters and count by region
+  if (multi_master_manager_) {
+    auto active_masters = multi_master_manager_->get_active_masters();
+    for (const auto &master : active_masters) {
+      masters_per_region[master.region]++;
+    }
   }
 
   // Promote additional masters if needed

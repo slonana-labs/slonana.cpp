@@ -1,11 +1,3 @@
-/**
- * @file secure_messaging.h
- * @brief Defines the interfaces and data structures for secure inter-node communication.
- *
- * This file contains the core components for ensuring secure communication
- * between validator nodes, including configuration structs, secure message
- * containers, and managers for TLS and message-level cryptography.
- */
 #pragma once
 
 #include "common/types.h"
@@ -26,119 +18,85 @@ namespace security {
 using namespace slonana::common;
 
 /**
- * @brief Configuration for secure inter-node messaging.
- * @details Contains all cryptographic parameters, file paths, and settings
- * required to establish secure communication channels between validators.
+ * @brief Security configuration for secure inter-node messaging
+ * 
+ * Contains all cryptographic parameters and file paths needed for
+ * secure communication between validator nodes.
  */
 struct SecureMessagingConfig {
-  /// @brief If true, enables TLS for all inter-node communication.
-  bool enable_tls = true;
-  /// @brief If true, requires mutual (two-way) TLS authentication between peers.
-  bool require_mutual_auth = true;
-  /// @brief Path to the node's TLS certificate file.
-  std::string tls_cert_path;
-  /// @brief Path to the node's TLS private key file.
-  std::string tls_key_path;
-  /// @brief Path to the Certificate Authority (CA) certificate for verifying peers.
-  std::string ca_cert_path;
-  /// @brief A string specifying the allowed TLS protocol versions (e.g., "TLSv1.3").
-  std::string tls_protocols = "TLSv1.3";
+  // TLS Configuration
+  bool enable_tls = true;                    ///< Enable TLS for all inter-node communication
+  bool require_mutual_auth = true;          ///< Require mutual (two-way) TLS authentication
+  std::string tls_cert_path;                ///< Path to TLS certificate file
+  std::string tls_key_path;                 ///< Path to TLS private key file
+  std::string ca_cert_path;                 ///< Path to CA certificate for peer verification
+  std::string tls_protocols = "TLSv1.3";   ///< Allowed TLS protocol versions
   
-  /// @brief If true, enables digital signatures for each message.
-  bool enable_message_signing = true;
-  /// @brief If true, enables end-to-end encryption for each message payload.
-  bool enable_message_encryption = true;
-  /// @brief Path to the node's Ed25519 signing key.
-  std::string signing_key_path;
-  /// @brief Directory containing the public keys of trusted peers for signature verification.
-  std::string verification_keys_dir;
+  // Message-level Cryptography
+  bool enable_message_signing = true;       ///< Enable message-level signatures
+  bool enable_message_encryption = true;    ///< Enable message-level encryption
+  std::string signing_key_path;             ///< Path to Ed25519 signing key
+  std::string verification_keys_dir;       ///< Directory containing peer verification keys
   
-  /// @brief If true, enables nonce-based replay attack protection.
-  bool enable_replay_protection = true;
-  /// @brief The time-to-live for a message in seconds, after which it is considered invalid.
-  uint64_t message_ttl_seconds = 300;
-  /// @brief The maximum number of nonces to cache for replay detection.
-  uint32_t nonce_cache_size = 10000;
+  // Replay Protection
+  bool enable_replay_protection = true;     ///< Enable nonce-based replay protection
+  uint64_t message_ttl_seconds = 300;       ///< Message validity time-to-live (5 minutes)
+  uint32_t nonce_cache_size = 10000;        ///< Maximum cached nonces for replay protection
   
-  /// @brief The preferred TLS cipher suite for secure connections.
-  std::string cipher_suite = "ECDHE-ECDSA-AES256-GCM-SHA384";
-  /// @brief The timeout for the TLS handshake in milliseconds.
-  uint32_t handshake_timeout_ms = 10000;
-  /// @brief The interval in hours for TLS session renegotiation.
-  uint32_t renegotiation_interval_hours = 24;
-  /// @brief If true, requires cipher suites that provide Perfect Forward Secrecy (PFS).
-  bool enable_perfect_forward_secrecy = true;
+  // Performance and Security Tuning
+  std::string cipher_suite = "ECDHE-ECDSA-AES256-GCM-SHA384"; ///< Preferred cipher suite
+  uint32_t handshake_timeout_ms = 10000;    ///< TLS handshake timeout
+  uint32_t renegotiation_interval_hours = 24; ///< TLS session renegotiation interval
+  bool enable_perfect_forward_secrecy = true; ///< Require PFS cipher suites
 };
 
 /**
- * @brief A container for encrypted and authenticated messages.
- * @details This struct wraps application messages with the necessary cryptographic
- * metadata for secure transmission, including encryption, signatures, and replay protection.
+ * @brief Encrypted and authenticated message container
+ * 
+ * Wraps application messages with cryptographic protections including
+ * encryption, authentication, and replay protection.
  */
 struct SecureMessage {
-  /// @brief The message content, encrypted using AES-GCM.
-  std::vector<uint8_t> encrypted_payload;
-  /// @brief An Ed25519 signature over the payload and metadata.
-  std::vector<uint8_t> signature;
-  /// @brief The sender's Ed25519 public key for signature verification.
-  std::vector<uint8_t> sender_public_key;
-  /// @brief The timestamp (in milliseconds since epoch) when the message was created.
-  uint64_t timestamp_ms;
-  /// @brief A unique cryptographic nonce to prevent replay attacks.
-  uint64_t nonce;
-  /// @brief The Initialization Vector (IV) used for AES-GCM encryption.
-  std::vector<uint8_t> iv;
-  /// @brief The authentication tag generated by AES-GCM, used for integrity checks.
-  std::vector<uint8_t> auth_tag;
-  /// @brief A string identifying the type of the application message.
-  std::string message_type;
+  std::vector<uint8_t> encrypted_payload;   ///< AES-GCM encrypted message content
+  std::vector<uint8_t> signature;           ///< Ed25519 signature over payload + metadata
+  std::vector<uint8_t> sender_public_key;   ///< Sender's Ed25519 public key
+  uint64_t timestamp_ms;                    ///< Message creation timestamp
+  uint64_t nonce;                           ///< Cryptographic nonce for replay protection
+  std::vector<uint8_t> iv;                  ///< Initialization vector for AES-GCM
+  std::vector<uint8_t> auth_tag;            ///< Authentication tag from AES-GCM
+  std::string message_type;                 ///< Application message type identifier
   
+  /// Serialize message for transmission
   std::vector<uint8_t> serialize() const;
+  
+  /// Deserialize message from received data
   static Result<SecureMessage> deserialize(const std::vector<uint8_t>& data);
 };
 
 /**
- * @brief Manages SSL/TLS contexts for creating secure connections.
- * @details This class handles the loading of certificates and private keys,
- * configures TLS contexts for both client and server roles, and provides
- * methods for verifying peer certificates.
+ * @brief TLS context manager for secure connections
+ * 
+ * Manages SSL/TLS contexts, certificates, and connection state for
+ * secure inter-node communication channels.
  */
 class TlsContextManager {
 public:
   explicit TlsContextManager(const SecureMessagingConfig& config);
   ~TlsContextManager();
   
-  /**
-   * @brief Initializes the TLS contexts by loading certificates and keys.
-   * @return A Result indicating success or failure.
-   */
+  /// Initialize TLS contexts with certificates and keys
   Result<bool> initialize();
   
-  /**
-   * @brief Gets the configured client-side TLS context.
-   * @return A pointer to the client `SSL_CTX` object.
-   */
+  /// Get client TLS context for outbound connections
   SSL_CTX* get_client_context() const { return client_ctx_; }
   
-  /**
-   * @brief Gets the configured server-side TLS context.
-   * @return A pointer to the server `SSL_CTX` object.
-   */
+  /// Get server TLS context for inbound connections  
   SSL_CTX* get_server_context() const { return server_ctx_; }
   
-  /**
-   * @brief Verifies a peer's certificate during a TLS handshake.
-   * @param ssl The SSL connection object.
-   * @param expected_peer_id An optional expected peer identifier to check against.
-   * @return True if the peer certificate is valid and trusted.
-   */
+  /// Verify peer certificate during handshake
   bool verify_peer_certificate(SSL* ssl, const std::string& expected_peer_id = "");
   
-  /**
-   * @brief Creates a new SSL connection object from a configured context.
-   * @param is_client True to create a client-side SSL object, false for a server-side one.
-   * @return A unique pointer to a new `SSL` object.
-   */
+  /// Create new SSL connection object
   std::unique_ptr<SSL, void(*)(SSL*)> create_ssl_connection(bool is_client);
   
 private:
@@ -152,58 +110,33 @@ private:
 };
 
 /**
- * @brief Handles message-level cryptographic operations.
- * @details This class provides an API for end-to-end security, including
- * encrypting, decrypting, signing, and verifying messages, independent of the
- * underlying transport security (like TLS). It also manages replay protection.
+ * @brief Message-level cryptographic operations
+ * 
+ * Provides encryption, decryption, signing, and verification for
+ * application messages independent of transport-level security.
  */
 class MessageCrypto {
 public:
   explicit MessageCrypto(const SecureMessagingConfig& config);
   ~MessageCrypto();
   
-  /**
-   * @brief Initializes the cryptographic context by loading signing keys and peer keys.
-   * @return A Result indicating success or failure.
-   */
+  /// Initialize cryptographic keys and contexts
   Result<bool> initialize();
   
-  /**
-   * @brief Encrypts and signs a plaintext message.
-   * @param plaintext The raw data to protect.
-   * @param message_type A string identifying the type of the message.
-   * @param recipient_id The identifier of the recipient (currently unused, for future use).
-   * @return A Result containing the protected `SecureMessage` on success, or an error.
-   */
+  /// Encrypt and sign an application message
   Result<SecureMessage> protect_message(const std::vector<uint8_t>& plaintext,
                                        const std::string& message_type,
                                        const std::string& recipient_id = "");
   
-  /**
-   * @brief Decrypts and verifies a `SecureMessage`.
-   * @param secure_msg The secure message to unprotect.
-   * @param sender_id The identifier of the sender (currently unused, for future use).
-   * @return A Result containing the original plaintext data on success, or an error.
-   */
+  /// Decrypt and verify a received secure message
   Result<std::vector<uint8_t>> unprotect_message(const SecureMessage& secure_msg,
                                                  const std::string& sender_id = "");
   
-  /**
-   * @brief Verifies the digital signature of a message without decrypting it.
-   * @param secure_msg The message whose signature is to be verified.
-   * @param sender_public_key The public key of the sender.
-   * @return True if the signature is valid, false otherwise.
-   */
+  /// Verify message signature without decryption
   bool verify_message_signature(const SecureMessage& secure_msg,
                                const std::vector<uint8_t>& sender_public_key);
   
-  /**
-   * @brief Validates that a message is fresh and not a replay.
-   * @details Checks if the message timestamp is within the allowed TTL and if
-   * its nonce has been seen before.
-   * @param secure_msg The message to validate.
-   * @return True if the message is fresh, false otherwise.
-   */
+  /// Check if message is within valid time window and not replayed
   bool validate_message_freshness(const SecureMessage& secure_msg);
   
 private:
@@ -220,29 +153,59 @@ private:
   void add_used_nonce(uint64_t nonce);
   void cleanup_expired_nonces();
   
+  // Cryptographic implementation methods
   bool derive_symmetric_key(std::vector<uint8_t>& key);
-  Result<std::vector<uint8_t>> encrypt_aes_gcm(const std::vector<uint8_t>& plaintext, const std::vector<uint8_t>& key, const std::vector<uint8_t>& iv, std::vector<uint8_t>& auth_tag);
-  Result<std::vector<uint8_t>> decrypt_aes_gcm(const std::vector<uint8_t>& ciphertext, const std::vector<uint8_t>& key, const std::vector<uint8_t>& iv, const std::vector<uint8_t>& auth_tag);
+  Result<std::vector<uint8_t>> encrypt_aes_gcm(const std::vector<uint8_t>& plaintext,
+                                              const std::vector<uint8_t>& key,
+                                              const std::vector<uint8_t>& iv,
+                                              std::vector<uint8_t>& auth_tag);
+  Result<std::vector<uint8_t>> decrypt_aes_gcm(const std::vector<uint8_t>& ciphertext,
+                                              const std::vector<uint8_t>& key,
+                                              const std::vector<uint8_t>& iv,
+                                              const std::vector<uint8_t>& auth_tag);
   Result<std::vector<uint8_t>> extract_public_key();
   std::vector<uint8_t> create_signature_data(const SecureMessage& msg);
   Result<std::vector<uint8_t>> sign_ed25519(const std::vector<uint8_t>& data);
-  Result<bool> verify_ed25519(const std::vector<uint8_t>& data, const std::vector<uint8_t>& signature, const std::vector<uint8_t>& public_key);
+  Result<bool> verify_ed25519(const std::vector<uint8_t>& data,
+                             const std::vector<uint8_t>& signature,
+                             const std::vector<uint8_t>& public_key);
 };
 
 /**
- * @brief A high-level manager for the entire secure messaging subsystem.
- * @details This class provides a unified interface for secure inter-node
- * communication, combining transport-level security (TLS) with message-level
- * cryptography (signing and encryption).
+ * @brief High-level secure messaging interface
+ * 
+ * Provides unified interface for secure inter-node communication
+ * combining transport-level TLS with message-level cryptography.
  */
 class SecureMessaging {
 public:
   explicit SecureMessaging(const SecureMessagingConfig& config);
   ~SecureMessaging();
-
-  /**
-   * @brief A collection of statistics about security operations.
-   */
+  
+  /// Initialize secure messaging subsystem
+  Result<bool> initialize();
+  
+  /// Get TLS context manager for connection setup
+  TlsContextManager& get_tls_manager() { return tls_manager_; }
+  
+  /// Prepare message for secure transmission
+  Result<std::vector<uint8_t>> prepare_outbound_message(
+    const std::vector<uint8_t>& plaintext,
+    const std::string& message_type,
+    const std::string& recipient_id = "");
+  
+  /// Process received secure message
+  Result<std::vector<uint8_t>> process_inbound_message(
+    const std::vector<uint8_t>& encrypted_data,
+    const std::string& sender_id = "");
+  
+  /// Check if peer identity is trusted
+  bool is_peer_trusted(const std::string& peer_id) const;
+  
+  /// Add trusted peer identity
+  void add_trusted_peer(const std::string& peer_id, const std::vector<uint8_t>& public_key);
+  
+  /// Get current security statistics
   struct SecurityStats {
     uint64_t messages_encrypted;
     uint64_t messages_decrypted;
@@ -251,16 +214,6 @@ public:
     uint64_t replay_attacks_blocked;
     uint64_t invalid_signatures_rejected;
   };
-
-  Result<bool> initialize();
-  TlsContextManager& get_tls_manager() { return tls_manager_; }
-
-  Result<std::vector<uint8_t>> prepare_outbound_message(const std::vector<uint8_t>& plaintext, const std::string& message_type, const std::string& recipient_id = "");
-  Result<std::vector<uint8_t>> process_inbound_message(const std::vector<uint8_t>& encrypted_data, const std::string& sender_id = "");
-
-  bool is_peer_trusted(const std::string& peer_id) const;
-  void add_trusted_peer(const std::string& peer_id, const std::vector<uint8_t>& public_key);
-
   SecurityStats get_security_stats() const;
   
 private:
@@ -269,6 +222,8 @@ private:
   MessageCrypto message_crypto_;
   mutable SecurityStats stats_;
   mutable std::mutex stats_mutex_;
+  
+  // Trusted peer management
   std::map<std::string, std::vector<uint8_t>> trusted_peers_;
   mutable std::mutex trusted_peers_mutex_;
   
@@ -276,20 +231,29 @@ private:
 };
 
 /**
- * @brief A wrapper for a network connection that provides a secure channel using TLS.
- * @details This class transparently handles encryption and authentication for data
- * sent and received over an underlying network socket.
+ * @brief Secure channel wrapper for network connections
+ * 
+ * Wraps existing network connections with transparent encryption
+ * and authentication without changing application protocols.
  */
 class SecureChannel {
 public:
-  explicit SecureChannel(std::unique_ptr<SSL, void(*)(SSL*)> ssl_connection);
+  SecureChannel(std::unique_ptr<SSL, void(*)(SSL*)> ssl_connection);
   ~SecureChannel();
   
+  /// Send encrypted data over the secure channel
   Result<size_t> send(const std::vector<uint8_t>& data);
+  
+  /// Receive and decrypt data from the secure channel
   Result<std::vector<uint8_t>> receive(size_t max_bytes = 65536);
   
+  /// Check if channel is properly established and authenticated
   bool is_secure() const;
+  
+  /// Get peer certificate information
   std::string get_peer_identity() const;
+  
+  /// Get current cipher suite in use
   std::string get_cipher_suite() const;
   
 private:

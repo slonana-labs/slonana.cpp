@@ -1,0 +1,11 @@
+{
+    "program_id": "CzjPtW4erfFtK3BsobNHce6foVRBHqMLW6vHB3knXmHr",
+    "deployed_at": "2025-12-01T11:09:22Z",
+    "transaction_signature": "54GUyLA4MVmYaaVmhwbkdsQD4ZNTrqvUPmhbPPWVDhwBCE81oiP8NYN6u7XN3jmrX5dNaktgeFGHDg2E1tf4D2yp",
+    "deployer": "2Jybf4mM4W6pGC3fMYhEYhCQopZ6KBEbH4f8T45ByAfE",
+    "slot": 25113,
+    "file_hash": "3f5bb3ac2b18bf85f7225f28c91a052a5fc735acfc4366436460d945b204d9d2",
+    "file_size": 10257,
+    "source_file": "./examples/ml_trading_agent/build/ml_trading_agent.so",
+    "status": "deployed"
+}

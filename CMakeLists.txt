@@ -17,6 +17,7 @@ option(ENABLE_COMPREHENSIVE_TESTING "Enable comprehensive testing features" OFF)
 option(ENABLE_CHAOS_TESTING "Enable chaos testing features" OFF)
 option(ENABLE_TSAN "Enable ThreadSanitizer for race detection" OFF)
 option(ENABLE_ASAN "Enable AddressSanitizer for memory error detection" OFF)
+option(ENABLE_MESHCORE "Enable MeshCore mesh networking support" OFF)
 
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)
@@ -48,6 +49,16 @@ file(GLOB_RECURSE CORE_SOURCES
 # Create core library
 add_library(slonana_core STATIC ${CORE_SOURCES})
 target_include_directories(slonana_core PUBLIC ${INCLUDE_DIR})
+
+# Check for nlohmann_json early and add system includes if needed
+find_package(nlohmann_json QUIET)
+if(NOT nlohmann_json_FOUND)
+    # Check if system headers are available
+    if(EXISTS "/usr/include/nlohmann/json.hpp")
+        message(STATUS "Using system nlohmann_json headers from /usr/include")
+        target_include_directories(slonana_core SYSTEM PUBLIC /usr/include)
+    endif()
+endif()
 
 # Sanitizer configuration
 if(ENABLE_TSAN)
@@ -82,12 +93,28 @@ if(ENABLE_CHAOS_TESTING)
     message(STATUS "Chaos testing features enabled")
 endif()
 
+if(ENABLE_MESHCORE)
+    target_compile_definitions(slonana_core PUBLIC ENABLE_MESHCORE)
+    message(STATUS "MeshCore mesh networking features enabled")
+endif()
+
 # Main executable
 add_executable(slonana_validator ${SRC_DIR}/main.cpp)
 target_link_libraries(slonana_validator slonana_core)
 
 # Enable testing
 enable_testing()
+
+# Fetch GoogleTest for unit testing
+include(FetchContent)
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+# Prevent overriding the parent project's compiler/linker settings
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
 
 # Comprehensive test suite
 set(COMPREHENSIVE_TEST_SOURCES
@@ -192,7 +219,41 @@ target_link_libraries(slonana_shutdown_race_test slonana_core)
 
 # Find OpenSSL for PoH cryptographic operations
 find_package(OpenSSL REQUIRED)
-target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto sodium)
+
+# Find CURL for HTTPS support
+find_package(CURL REQUIRED)
+
+# Find libsodium for cryptographic operations
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(SODIUM QUIET libsodium)
+endif()
+
+if(SODIUM_FOUND)
+    target_include_directories(slonana_core SYSTEM PUBLIC ${SODIUM_INCLUDE_DIRS})
+    target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto ${SODIUM_LIBRARIES} CURL::libcurl)
+else()
+    # Try to find sodium directly
+    find_library(SODIUM_LIBRARY NAMES sodium libsodium)
+    find_path(SODIUM_INCLUDE_DIR NAMES sodium.h)
+    
+    if(SODIUM_LIBRARY AND SODIUM_INCLUDE_DIR)
+        message(STATUS "Found libsodium: ${SODIUM_LIBRARY}")
+        target_include_directories(slonana_core SYSTEM PUBLIC ${SODIUM_INCLUDE_DIR})
+        target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto ${SODIUM_LIBRARY} CURL::libcurl)
+    else()
+        message(WARNING "libsodium not found. Please install: sudo apt-get install libsodium-dev")
+        # Link without sodium for now - build will fail if sodium headers are used
+        target_link_libraries(slonana_core OpenSSL::SSL OpenSSL::Crypto CURL::libcurl)
+    endif()
+endif()
+
+# Link nlohmann_json if found as package
+find_package(nlohmann_json 3.2.0 QUIET)
+if(nlohmann_json_FOUND)
+    target_link_libraries(slonana_core nlohmann_json::nlohmann_json)
+endif()
+
 target_link_libraries(slonana_proof_of_history_tests OpenSSL::SSL OpenSSL::Crypto)
 
 # Add individual test targets
@@ -364,6 +425,16 @@ target_include_directories(slonana_snapshot_tests PRIVATE "${CMAKE_SOURCE_DIR}/t
 target_compile_definitions(slonana_snapshot_tests PRIVATE STANDALONE_SNAPSHOT_TESTS)
 add_test(NAME snapshot_tests COMMAND slonana_snapshot_tests)
 
+# Snapshot download integration test suite (connects to real Solana network)
+add_executable(slonana_snapshot_download_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_snapshot_download.cpp"
+)
+target_link_libraries(slonana_snapshot_download_tests slonana_core)
+target_include_directories(slonana_snapshot_download_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_snapshot_download_tests PRIVATE STANDALONE_SNAPSHOT_DOWNLOAD_TESTS)
+add_test(NAME snapshot_download_tests COMMAND slonana_snapshot_download_tests)
+
 # Hardware wallet test suite
 add_executable(slonana_hardware_wallet_tests
     "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
@@ -440,7 +511,205 @@ target_include_directories(slonana_secure_networking_integration_tests PRIVATE "
 target_compile_definitions(slonana_secure_networking_integration_tests PRIVATE STANDALONE_SECURE_NETWORKING_TESTS)
 add_test(NAME secure_networking_integration_tests COMMAND slonana_secure_networking_integration_tests)
 
+# Gossip protocol tests
+add_executable(slonana_gossip_protocol_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_gossip_protocol.cpp"
+)
+target_link_libraries(slonana_gossip_protocol_tests slonana_core)
+target_include_directories(slonana_gossip_protocol_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME gossip_protocol_tests COMMAND slonana_gossip_protocol_tests)
 
+# Fee market tests
+add_executable(slonana_fee_market_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_fee_market.cpp"
+)
+target_link_libraries(slonana_fee_market_tests slonana_core)
+target_include_directories(slonana_fee_market_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME fee_market_tests COMMAND slonana_fee_market_tests)
+
+# MEV protection tests
+add_executable(slonana_mev_protection_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_mev_protection.cpp"
+)
+target_link_libraries(slonana_mev_protection_tests slonana_core)
+target_include_directories(slonana_mev_protection_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME mev_protection_tests COMMAND slonana_mev_protection_tests)
+
+# CPI depth tracking tests
+add_executable(slonana_cpi_depth_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_cpi_depth.cpp"
+)
+target_link_libraries(slonana_cpi_depth_tests slonana_core)
+target_include_directories(slonana_cpi_depth_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME cpi_depth_tests COMMAND slonana_cpi_depth_tests)
+
+# Banking stage integration tests
+add_executable(slonana_banking_integration_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_banking_integration.cpp"
+)
+target_link_libraries(slonana_banking_integration_tests slonana_core)
+target_include_directories(slonana_banking_integration_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME banking_integration_tests COMMAND slonana_banking_integration_tests)
+
+# Networking enhancements tests
+add_executable(slonana_networking_enhancements_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_networking_enhancements.cpp"
+)
+target_link_libraries(slonana_networking_enhancements_tests slonana_core)
+target_include_directories(slonana_networking_enhancements_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME networking_enhancements_tests COMMAND slonana_networking_enhancements_tests)
+
+# MeshCore adapter tests
+add_executable(slonana_meshcore_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_meshcore_adapter.cpp"
+)
+target_link_libraries(slonana_meshcore_tests slonana_core gtest_main)
+target_include_directories(slonana_meshcore_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME meshcore_tests COMMAND slonana_meshcore_tests)
+
+# Networking performance benchmarks
+add_executable(benchmark_networking
+    "${CMAKE_SOURCE_DIR}/tests/benchmark_networking.cpp"
+)
+target_link_libraries(benchmark_networking slonana_core)
+target_include_directories(benchmark_networking PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+
+# BPF Runtime performance benchmarks
+add_executable(benchmark_bpf_runtime
+    "${CMAKE_SOURCE_DIR}/tests/benchmark_bpf_runtime.cpp"
+)
+target_link_libraries(benchmark_bpf_runtime slonana_core)
+target_include_directories(benchmark_bpf_runtime PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+
+# Lock-free BPF Runtime benchmarks with SIMD optimizations
+add_executable(benchmark_lockfree_bpf
+    "${CMAKE_SOURCE_DIR}/tests/benchmark_lockfree_bpf.cpp"
+)
+target_link_libraries(benchmark_lockfree_bpf slonana_core pthread)
+target_include_directories(benchmark_lockfree_bpf PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_options(benchmark_lockfree_bpf PRIVATE -mavx2 -march=native)
+
+# Ultra-optimized BPF Runtime benchmarks (branchless, multi-level cache, prefetch)
+add_executable(benchmark_ultra_bpf
+    "${CMAKE_SOURCE_DIR}/tests/benchmark_ultra_bpf.cpp"
+)
+target_link_libraries(benchmark_ultra_bpf slonana_core pthread)
+target_include_directories(benchmark_ultra_bpf PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_options(benchmark_ultra_bpf PRIVATE -O3 -mavx2 -march=native -fno-strict-aliasing)
+
+# Assembly hand-tuned BPF Runtime benchmarks (ultimate performance)
+add_executable(benchmark_asm_bpf
+    "${CMAKE_SOURCE_DIR}/tests/benchmark_asm_bpf.cpp"
+)
+target_link_libraries(benchmark_asm_bpf slonana_core pthread)
+target_include_directories(benchmark_asm_bpf PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_options(benchmark_asm_bpf PRIVATE -O3 -mavx2 -march=native -fno-strict-aliasing)
+
+# SVM Syscalls Tests - Cryptographic Operations
+add_executable(slonana_syscalls_crypto_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_syscalls_crypto.cpp"
+)
+target_link_libraries(slonana_syscalls_crypto_tests slonana_core)
+target_include_directories(slonana_syscalls_crypto_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME syscalls_crypto_tests COMMAND slonana_syscalls_crypto_tests)
+
+# SVM Syscalls Tests - Sysvar Access
+add_executable(slonana_syscalls_sysvar_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_syscalls_sysvar.cpp"
+)
+target_link_libraries(slonana_syscalls_sysvar_tests slonana_core)
+
+# Real Validator Deployment Tests - NO MOCKS
+add_executable(test_real_validator_deployment
+    "${CMAKE_SOURCE_DIR}/tests/test_real_validator_deployment.cpp"
+)
+target_link_libraries(test_real_validator_deployment slonana_core)
+target_include_directories(slonana_syscalls_sysvar_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME syscalls_sysvar_tests COMMAND slonana_syscalls_sysvar_tests)
+
+# Enhanced BPF Runtime Tests
+add_executable(slonana_bpf_enhanced_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_bpf_runtime_enhanced.cpp"
+)
+target_link_libraries(slonana_bpf_enhanced_tests slonana_core)
+target_include_directories(slonana_bpf_enhanced_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME bpf_enhanced_tests COMMAND slonana_bpf_enhanced_tests)
+
+# Extended Test Suites for Improved Coverage
+
+# SVM Syscalls Extended Tests - Cryptographic Operations (Edge Cases)
+add_executable(slonana_syscalls_crypto_extended_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_syscalls_crypto_extended.cpp"
+)
+target_link_libraries(slonana_syscalls_crypto_extended_tests slonana_core)
+target_include_directories(slonana_syscalls_crypto_extended_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME syscalls_crypto_extended_tests COMMAND slonana_syscalls_crypto_extended_tests)
+
+# SVM Syscalls Extended Tests - Sysvar Access (Edge Cases)
+add_executable(slonana_syscalls_sysvar_extended_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_syscalls_sysvar_extended.cpp"
+)
+target_link_libraries(slonana_syscalls_sysvar_extended_tests slonana_core gtest_main)
+target_include_directories(slonana_syscalls_sysvar_extended_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME syscalls_sysvar_extended_tests COMMAND slonana_syscalls_sysvar_extended_tests)
+
+# Enhanced BPF Runtime Extended Tests (Stress, Concurrency, Integration)
+add_executable(slonana_bpf_runtime_extended_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_bpf_runtime_extended.cpp"
+)
+target_link_libraries(slonana_bpf_runtime_extended_tests slonana_core gtest_main)
+target_include_directories(slonana_bpf_runtime_extended_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME bpf_runtime_extended_tests COMMAND slonana_bpf_runtime_extended_tests)
+
+# Adversarial Syscall Tests (Bug Discovery)
+add_executable(slonana_adversarial_syscalls_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_adversarial_syscalls.cpp"
+)
+target_link_libraries(slonana_adversarial_syscalls_tests slonana_core gtest_main)
+target_include_directories(slonana_adversarial_syscalls_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME adversarial_syscalls_tests COMMAND slonana_adversarial_syscalls_tests)
+
+# Fuzzing BPF Runtime Tests (Bug Discovery)
+add_executable(slonana_fuzzing_bpf_runtime_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_fuzzing_bpf_runtime.cpp"
+)
+target_link_libraries(slonana_fuzzing_bpf_runtime_tests slonana_core gtest_main)
+target_include_directories(slonana_fuzzing_bpf_runtime_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME fuzzing_bpf_runtime_tests COMMAND slonana_fuzzing_bpf_runtime_tests)
+
+# ML Inference Tests (AI in eBPF/sBPF Runtime)
+add_executable(slonana_ml_inference_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_ml_inference.cpp"
+)
+target_link_libraries(slonana_ml_inference_tests slonana_core)
+target_include_directories(slonana_ml_inference_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME ml_inference_tests COMMAND slonana_ml_inference_tests)
+
+# Async BPF Execution Tests (Autonomous Program Execution)
+add_executable(slonana_async_bpf_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_async_bpf_execution.cpp"
+)
+target_link_libraries(slonana_async_bpf_tests slonana_core)
+target_include_directories(slonana_async_bpf_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME async_bpf_tests COMMAND slonana_async_bpf_tests)
+
+# Economic Opcodes Tests (Native Economic Primitives)
+add_executable(slonana_economic_opcodes_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_economic_opcodes.cpp"
+)
+target_link_libraries(slonana_economic_opcodes_tests slonana_core)
+target_include_directories(slonana_economic_opcodes_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME economic_opcodes_tests COMMAND slonana_economic_opcodes_tests)
+
+# ML BPF Integration Tests (End-to-End ML Trading Agent)
+add_executable(slonana_ml_bpf_integration_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_framework.h"
+    "${CMAKE_SOURCE_DIR}/tests/test_ml_bpf_integration.cpp"
+)
+target_link_libraries(slonana_ml_bpf_integration_tests slonana_core)
+target_include_directories(slonana_ml_bpf_integration_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+add_test(NAME ml_bpf_integration_tests COMMAND slonana_ml_bpf_integration_tests)
 
 # Genesis CLI tool
 add_executable(slonana-genesis "${SRC_DIR}/genesis/cli_tool.cpp")

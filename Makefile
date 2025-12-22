@@ -226,7 +226,7 @@ install-solana-cli: ## Install Solana CLI from GitHub releases
 install-deps: ## Install all required dependencies (Ubuntu/Debian)
 	@echo "📦 Installing dependencies..."
 	@sudo apt-get update
-	@sudo apt-get install -y cmake g++ clang-format cppcheck bc curl git
+	@sudo apt-get install -y cmake g++ clang-format cppcheck bc curl git nlohmann-json3-dev libsodium-dev
 	@echo "🦀 Installing Rust..."
 	@curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 	@echo "☀️  Installing Solana CLI..."
