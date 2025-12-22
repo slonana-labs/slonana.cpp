@@ -2,9 +2,10 @@
 
 ## Document Version
 - **Version**: 2.0
-- **Last Updated**: 2025-11-27
+- **Last Updated**: 2025-12-22
 - **Agave Compatibility**: v2.0.x - v2.3.x
 - **Snapshot Version**: 1.2.0
+- **Target Implementation**: slonana.cpp validator
 
 ## Executive Summary
 
@@ -28,6 +29,41 @@ This document provides complete technical specifications for implementing a cust
 12. [Error Handling and Recovery](#12-error-handling-and-recovery)
 13. [Integration with Turbine](#13-integration-with-turbine)
 14. [Implementation Checklist](#14-implementation-checklist)
+
+---
+
+## Integration with slonana.cpp
+
+This specification complements slonana.cpp's existing snapshot infrastructure:
+
+**Existing Implementation Files:**
+- `include/validator/snapshot.h` - SnapshotManager class and data structures
+- `src/validator/snapshot.cpp` - Current snapshot creation and restoration
+- `src/validator/snapshot_bootstrap.cpp` - Bootstrap orchestration
+- `src/validator/snapshot_finder.cpp` - Snapshot discovery from RPC nodes
+- `tests/test_snapshot.cpp` - Snapshot system tests
+
+**Integration Points:**
+
+The `SnapshotManager` class in slonana.cpp provides the high-level API. This specification details the low-level binary formats and algorithms needed to enhance the implementation with full Agave compatibility.
+
+```cpp
+// Existing slonana.cpp interface (from include/validator/snapshot.h)
+namespace slonana::validator {
+  class SnapshotManager {
+  public:
+    bool restore_from_snapshot(const std::string &snapshot_path,
+                               const std::string &ledger_path);
+    // Implementation will use specifications from sections 2-7
+  };
+}
+```
+
+**Implementation Strategy:**
+1. Use binary format specifications (Sections 2-4) to parse Agave-generated snapshots
+2. Integrate accounts index architecture (Section 5) with existing AccountSnapshot structures
+3. Apply hash verification (Section 6) for snapshot integrity
+4. Leverage parallelization strategies (Section 10) for performance
 
 ---
 
@@ -321,6 +357,39 @@ struct Delegation {
 
 4. **Stream size limit** - Maximum 32 GiB for safety.
 
+### 3.8 C++ Integration with slonana.cpp
+
+The manifest data can be integrated with slonana.cpp's existing `SnapshotMetadata` structure:
+
+```cpp
+// From include/validator/snapshot.h
+namespace slonana::validator {
+  struct SnapshotMetadata {
+    uint64_t slot;                    // Maps to manifest.bank.slot
+    std::string block_hash;           // Maps to manifest.bank.hash (base58)
+    uint64_t timestamp;               // Maps to manifest.bank.unix_timestamp
+    uint64_t lamports_total;          // Maps to manifest.bank.capitalization
+    uint64_t account_count;           // Sum of accounts_count from all storages
+    uint64_t compressed_size;         // Archive file size
+    uint64_t uncompressed_size;       // Sum of AppendVec file_size values
+    std::string version;              // From version file: "1.2.0"
+    bool is_incremental;              // From filename pattern
+    uint64_t base_slot;               // For incremental snapshots
+  };
+}
+
+// Example: Populating SnapshotMetadata from parsed manifest
+SnapshotMetadata metadata;
+metadata.slot = manifest.bank.slot;
+metadata.lamports_total = manifest.bank.capitalization;
+metadata.account_count = 0;
+for (const auto& [slot, storages] : manifest.accounts_db.storages) {
+  for (const auto& storage : storages) {
+    metadata.account_count += storage.accounts_count;
+  }
+}
+```
+
 ---
 
 ## 4. AppendVec Binary Format
@@ -513,6 +582,78 @@ bool validate_executable(uint8_t executable_byte) {
     // If executable is true, only value 0x01 is valid
     // If executable is false, only value 0x00 is valid
     return executable_byte == 0x00 || executable_byte == 0x01;
+}
+```
+
+### 4.8 C++ Integration: Converting to AccountSnapshot
+
+The parsed account data can be converted to slonana.cpp's `AccountSnapshot` structure:
+
+```cpp
+// From include/validator/snapshot.h
+namespace slonana::validator {
+  struct AccountSnapshot {
+    common::PublicKey pubkey;        // std::vector<uint8_t>
+    uint64_t lamports;
+    std::vector<uint8_t> data;
+    common::PublicKey owner;         // std::vector<uint8_t>
+    bool executable;
+    uint64_t rent_epoch;
+  };
+}
+
+// Conversion function: AppendVec entry -> AccountSnapshot
+AccountSnapshot parse_account_from_appendvec(const uint8_t* entry_ptr) {
+  const AccountHeader* header = reinterpret_cast<const AccountHeader*>(entry_ptr);
+  
+  AccountSnapshot account;
+  
+  // Copy pubkey (32 bytes)
+  account.pubkey.assign(header->stored_meta.pubkey, 
+                        header->stored_meta.pubkey + 32);
+  
+  // Copy metadata
+  account.lamports = header->account_meta.lamports;
+  account.rent_epoch = header->account_meta.rent_epoch;
+  account.executable = (header->account_meta.executable & 0x01) != 0;
+  
+  // Copy owner (32 bytes)
+  account.owner.assign(header->account_meta.owner,
+                       header->account_meta.owner + 32);
+  
+  // Copy account data
+  const uint8_t* data_ptr = entry_ptr + STORE_META_OVERHEAD;
+  account.data.assign(data_ptr, data_ptr + header->stored_meta.data_len);
+  
+  return account;
+}
+
+// Integration with SnapshotManager::load_accounts_from_snapshot()
+std::vector<AccountSnapshot> load_from_appendvec(const std::string& path, 
+                                                  size_t valid_length) {
+  std::vector<AccountSnapshot> accounts;
+  
+  // Memory-map the file
+  int fd = open(path.c_str(), O_RDONLY);
+  void* mmap_data = mmap(nullptr, valid_length, PROT_READ, MAP_PRIVATE, fd, 0);
+  
+  size_t offset = 0;
+  while (offset + STORE_META_OVERHEAD <= valid_length) {
+    const uint8_t* entry_ptr = static_cast<const uint8_t*>(mmap_data) + offset;
+    const AccountHeader* header = reinterpret_cast<const AccountHeader*>(entry_ptr);
+    
+    size_t entry_size = aligned_stored_size(header->stored_meta.data_len);
+    if (offset + entry_size > valid_length) break;
+    
+    // Convert and add to vector
+    accounts.push_back(parse_account_from_appendvec(entry_ptr));
+    offset += entry_size;
+  }
+  
+  munmap(mmap_data, valid_length);
+  close(fd);
+  
+  return accounts;
 }
 ```
 
@@ -1209,6 +1350,97 @@ blockdev --setra 8192 /dev/nvme0n1
 4. Blake3 Hash: https://github.com/BLAKE3-team/BLAKE3
 5. Zstandard: https://github.com/facebook/zstd
 6. Turbine Protocol: https://docs.solana.com/cluster/turbine-block-propagation
+
+### slonana.cpp-Specific References
+
+7. slonana.cpp Snapshot Implementation: `include/validator/snapshot.h`
+8. Snapshot Manager Source: `src/validator/snapshot.cpp`
+9. Snapshot Bootstrap: `src/validator/snapshot_bootstrap.cpp`
+10. Snapshot Tests: `tests/test_snapshot.cpp`
+11. Snapshot Download Tests: `tests/test_snapshot_download.cpp`
+
+---
+
+## Appendix D: Testing with slonana.cpp
+
+### Unit Tests
+
+Test individual components using the existing test framework:
+
+```cpp
+// From tests/test_snapshot.cpp - Example test structure
+#include "validator/snapshot.h"
+#include "tests/test_framework.h"
+
+TEST(SnapshotTest, ParseAppendVecBinaryFormat) {
+  // Create test AppendVec data with known format
+  std::vector<uint8_t> test_data = create_test_appendvec();
+  
+  // Parse using specification from Section 4.5
+  auto accounts = parse_appendvec_entries(test_data.data(), test_data.size());
+  
+  // Verify parsed accounts match expected values
+  EXPECT_EQ(accounts.size(), 10);
+  EXPECT_EQ(accounts[0].lamports, 1000000);
+}
+
+TEST(SnapshotTest, VerifyAccountHash) {
+  // Test LtHash implementation from Section 6.1
+  AccountSnapshot account = create_test_account();
+  
+  LtHash hash = compute_account_lthash(account);
+  
+  // Verify hash properties
+  EXPECT_NE(hash.elements[0], 0);  // Non-zero hash
+}
+```
+
+### Integration Tests
+
+Test with real Agave snapshots:
+
+```bash
+# Download devnet snapshot for testing
+cd tests/fixtures
+wget https://api.devnet.solana.com/snapshot.tar.zst -O devnet-snapshot.tar.zst
+
+# Run integration test
+./slonana_snapshot_tests --test=AgaveCompatibility
+```
+
+### Running Snapshot Tests
+
+```bash
+# Build tests
+cd build
+cmake .. -DBUILD_TESTS=ON
+make slonana_snapshot_tests
+
+# Run all snapshot tests
+./slonana_snapshot_tests
+
+# Run specific test categories
+./slonana_snapshot_tests --gtest_filter="SnapshotTest.*"
+./slonana_snapshot_tests --gtest_filter="*AppendVec*"
+./slonana_snapshot_tests --gtest_filter="*Agave*"
+```
+
+### Validation Checklist
+
+Before deploying snapshot loader implementation:
+
+- [ ] Parse version file correctly (Section 2.4)
+- [ ] Decompress zstd archives (Section 2.2)
+- [ ] Extract TAR with correct ordering (Section 2.3)
+- [ ] Parse Bincode manifest (Section 3)
+- [ ] Parse all AppendVec entries with correct alignment (Section 4.3)
+- [ ] Build accounts index with 8192 bins (Section 5.2)
+- [ ] Verify LtHash matches expected value (Section 6.1)
+- [ ] Handle zero-lamport accounts correctly (Section 4.6)
+- [ ] Validate executable byte constraints (Section 4.7)
+- [ ] Test with real Agave mainnet snapshot
+- [ ] Measure bootstrap time and compare to targets (Section 1.3)
+- [ ] Verify memory usage within bounds (Section 11)
 
 ---
 
