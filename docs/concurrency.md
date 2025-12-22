@@ -4,6 +4,8 @@
 
 Slonana.cpp leverages advanced lock-free algorithms and zero-copy designs to maximize concurrency and performance. This document outlines the concurrency architecture, safety guidelines, and best practices for maintaining thread safety.
 
+> **📘 See Also**: For comprehensive coverage of async architecture, failure handling, and detailed async patterns, refer to [Async Design & Failure Modes](async_design.md).
+
 ## Concurrency Architecture
 
 ### Key Design Principles
