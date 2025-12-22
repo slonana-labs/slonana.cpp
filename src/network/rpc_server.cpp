@@ -4617,7 +4617,7 @@ std::string SolanaRpcServer::generate_transaction_signature(
     std::vector<uint8_t> signature_bytes(64);
     
     // Add server-side uniqueness: counter + timestamp + transaction data
-    uint64_t tx_counter = transaction_counter_.fetch_add(1, std::memory_order_relaxed);
+    uint64_t tx_counter = transaction_counter_.fetch_add(1, std::memory_order_seq_cst);
     auto now = std::chrono::system_clock::now();
     auto timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
         now.time_since_epoch()).count();
