@@ -232,3 +232,4 @@ validator_comparison/
 
 # E2E test data
 e2e-test-data/
+# .gitignore cleanup completed
