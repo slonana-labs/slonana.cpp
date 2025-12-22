@@ -115,6 +115,21 @@ public:
   static RetryPolicy create_rpc_retry_policy();
   static RetryPolicy create_network_retry_policy();
   static RetryPolicy create_storage_retry_policy();
+  
+  /**
+   * Convert RetryPolicy to AsyncRetryPolicy for async operations
+   * 
+   * Migration helper: Allows existing RetryPolicy configurations
+   * to be used with the new async retry infrastructure.
+   * 
+   * @param policy Synchronous retry policy to convert
+   * @return Equivalent AsyncRetryPolicy
+   * 
+   * Note: This creates a compatible async policy but callers should
+   * consider using AsyncRetryPolicy::create_*_policy() directly for
+   * async-optimized configurations.
+   */
+  static auto to_async_policy(const RetryPolicy& policy);
 };
 
 /**
