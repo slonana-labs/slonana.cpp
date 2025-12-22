@@ -35,7 +35,7 @@ The slonana.cpp validator employs sophisticated asynchronous patterns and failur
 
 | Component | Async Pattern | Purpose |
 |-----------|---------------|---------|
-| ProofOfHistory | Multi-threaded hashing + lock-free mixing queue | Continuous cryptographic timestamping |
+| ProofOfHistory | Multi-threaded hashing + lock-free mixing queue | Continuous cryptographic timestamping (fixed timing race in recent PR) |
 | Network Layer | Lock-free request queues + background workers | High-throughput packet processing |
 | Banking Stage | Parallel transaction processing | Concurrent transaction execution |
 | Gossip Protocol | Event-driven message propagation | Cluster state synchronization |
@@ -737,7 +737,7 @@ bool is_operation_type_allowed(OperationType op_type, DegradationMode mode) {
 
 ## Known Race Conditions and Fixes
 
-### PR #67: ProofOfHistory Timing Race Condition
+### PR #67: ProofOfHistory Timing Race Condition Fix
 
 **Issue**: Multiple threads writing to `last_tick_time_` without synchronization
 
@@ -888,7 +888,7 @@ void request_processor_loop() {
 ```
 
 **Impact**:
-- Transaction queue throughput: 111,520 TPS (validated)
+- Transaction queue throughput: 111,520 TPS (validated on 8-core Intel Xeon with 32GB RAM, queue capacity 1024)
 - Eliminates CPU waste from busy-waiting
 - Zero manual memory management in hot paths
 - Reduced latency and improved responsiveness
@@ -1564,15 +1564,28 @@ public:
 
 **Goal**: Optimize for multi-socket systems
 
+**Note**: NUMA (Non-Uniform Memory Access) APIs are platform-specific. The example below uses Linux `libnuma`, which is not available on all platforms.
+
 **Strategy**:
 - Pin threads to NUMA nodes
 - Allocate memory on local NUMA node
 - Minimize cross-node memory access
 
+**Platform Support**:
+- Linux: Use `libnuma` (install `libnuma-dev` package)
+- Windows: Use `SetThreadAffinityMask` and VirtualAllocExNuma APIs
+- macOS: Limited NUMA support (use thread affinity APIs instead)
+
 ```cpp
+#ifdef __linux__
 #include <numa.h>
 
 void numa_aware_allocation() {
+    if (numa_available() < 0) {
+        // NUMA not available on this system
+        return;
+    }
+    
     int num_nodes = numa_num_configured_nodes();
     
     for (int node = 0; node < num_nodes; ++node) {
@@ -1586,6 +1599,12 @@ void numa_aware_allocation() {
         });
     }
 }
+#else
+// Platform-specific alternatives or fall back to default allocation
+void numa_aware_allocation() {
+    // Use standard allocation on non-Linux platforms
+}
+#endif
 ```
 
 ### 5. Async/Await Patterns (C++20 Coroutines)
