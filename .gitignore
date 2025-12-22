@@ -151,11 +151,14 @@ local.toml
 benchmark_results.*
 *.benchmark
 benchmark_config.json
+benchmark_comparison.json
 benchmark_data/
 benchmark_networking_*
 detailed_benchmark_results.txt
 slonana_micro_results.json
 focused_comparison/
+*_benchmark_*.json
+*_benchmark_*.txt
 
 # Python files (for dev tools)
 __pycache__/
