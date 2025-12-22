@@ -26,8 +26,11 @@ struct BN254Point {
     uint8_t y[32];
     
     bool is_valid() const {
-        // TODO: Implement point validation
-        // Check if point is on the curve: y^2 = x^3 + 3
+        // NOTE: Point validation not fully implemented
+        // A complete implementation would verify: y^2 = x^3 + 3 (mod p)
+        // where p is the BN254 curve prime
+        // For now, accept all points (basic validation only)
+        // TODO: Integrate BN254 library (e.g., MCL, libff) for proper validation
         return true;
     }
     
@@ -87,9 +90,18 @@ uint64_t sol_alt_bn128_addition(
         return SUCCESS;
     }
     
-    // TODO: Implement actual BN254 point addition
-    // This would require a BN254 library like libff or blst
-    // For now, return a placeholder result (identity point)
+    // NOTE: BN254 point addition not fully implemented
+    // A complete implementation requires:
+    // 1. BN254 elliptic curve library (e.g., MCL, libff, Arkworks via FFI)
+    // 2. Field arithmetic over BN254 prime field
+    // 3. Group law implementation following Ethereum EIP-197 spec
+    // 
+    // CURRENT BEHAVIOR: Returns placeholder point (0, 1)
+    // Programs relying on correct BN254 operations will fail
+    // Most Solana programs (SPL Token, DeFi, NFT) do NOT use this
+    // Only affects advanced cryptographic applications (zkSNARKs, Groth16)
+    // 
+    // TODO: Integrate BN254 library or return ERROR_NOT_IMPLEMENTED
     std::memset(result.x, 0, 32);
     std::memset(result.y, 0, 32);
     result.y[31] = 1; // Point (0, 1) as placeholder
@@ -135,9 +147,9 @@ uint64_t sol_alt_bn128_multiplication(
         return SUCCESS;
     }
     
-    // TODO: Implement actual BN254 scalar multiplication
-    // This would require a BN254 library like libff or blst
-    // For now, return a placeholder result
+    // NOTE: BN254 scalar multiplication not fully implemented
+    // See note in sol_alt_bn128_addition for details
+    // TODO: Integrate BN254 library or return ERROR_NOT_IMPLEMENTED
     std::memset(result.x, 0, 32);
     std::memset(result.y, 0, 32);
     result.y[31] = 1; // Point (0, 1) as placeholder
@@ -161,13 +173,19 @@ uint64_t sol_alt_bn128_pairing(
     
     uint64_t num_pairs = input_len / 192;
     
-    // TODO: Implement actual BN254 pairing check
-    // This is the most complex operation, requiring a pairing-friendly curve library
-    // The pairing check verifies: e(P1, Q1) * e(P2, Q2) * ... = 1
-    
-    // For now, return a placeholder result (pairing succeeds)
+    // NOTE: BN254 pairing check not fully implemented
+    // This is the most complex BN254 operation, requiring:
+    // 1. Pairing-friendly curve library
+    // 2. Optimal Ate pairing computation
+    // 3. Verification: e(P1, Q1) * e(P2, Q2) * ... = 1
+    // 
+    // CURRENT BEHAVIOR: Always returns success (1)
+    // Programs using pairing-based cryptography will get incorrect results
+    // Used primarily for zkSNARK verification (Groth16 proofs)
+    // 
+    // TODO: Integrate BN254 library or return ERROR_NOT_IMPLEMENTED
     std::memset(output, 0, 32);
-    output[31] = 1; // Return 1 to indicate pairing check passed
+    output[31] = 1; // Return 1 to indicate pairing check passed (placeholder)
     *output_len = 32;
     
     return SUCCESS;
@@ -183,9 +201,20 @@ uint64_t sol_blake3(
     uint8_t* output,
     uint64_t* output_len)
 {
-    // TODO: Implement actual BLAKE3 hash
-    // This would require the BLAKE3 library
-    // For now, use a simple placeholder hash (SHA256-like structure)
+    // NOTE: BLAKE3 hash not fully implemented
+    // A complete implementation requires:
+    // 1. Official BLAKE3 C library (https://github.com/BLAKE3-team/BLAKE3)
+    // 2. Proper initialization, update, and finalize functions
+    // 3. Cross-platform build integration via CMake
+    // 
+    // CURRENT BEHAVIOR: XOR-based placeholder (NOT cryptographically secure)
+    // Programs relying on BLAKE3 collision resistance will be vulnerable
+    // However, BLAKE3 is less critical than SHA256/Keccak (already implemented)
+    // 
+    // Agave uses the `blake3` Rust crate: https://docs.rs/blake3
+    // 
+    // TODO: Integrate official BLAKE3 C implementation
+    // Effort: 2-3 days including CMake integration and testing
     
     // Zero out the output buffer
     std::memset(output, 0, 32);
@@ -222,9 +251,23 @@ uint64_t sol_poseidon(
     
     uint64_t num_elements = input_len / 32;
     
-    // TODO: Implement actual Poseidon hash
-    // This is a ZK-friendly hash function with specific S-box and MDS matrix
-    // Requires a Poseidon implementation library
+    // NOTE: Poseidon hash not fully implemented
+    // Poseidon is a ZK-friendly hash function requiring:
+    // 1. Specific S-box function (typically x^α in a prime field)
+    // 2. Maximum Distance Separable (MDS) matrix for mixing
+    // 3. Field arithmetic over large primes
+    // 4. Proper round constants and parameters
+    // 
+    // CURRENT BEHAVIOR: XOR-based placeholder (NOT ZK-friendly or secure)
+    // Programs using Poseidon for ZK proofs will fail
+    // This is a specialized syscall for privacy and ZK applications
+    // Current Solana ecosystem usage is very low
+    // 
+    // Agave uses `poseidon-rust` or custom implementations
+    // Reference: https://www.poseidon-hash.info/
+    // 
+    // TODO: Implement Poseidon or return ERROR_NOT_IMPLEMENTED
+    // Effort: 1-2 weeks (requires research and field arithmetic library)
     
     // For now, use a placeholder
     uint64_t total_output = num_hashes * 32;
@@ -250,9 +293,23 @@ uint64_t sol_curve25519_ristretto_add(
     const uint8_t* right_point,
     uint8_t* result)
 {
-    // TODO: Implement actual Ristretto point addition
-    // This requires libsodium's crypto_core_ristretto255_add
-    // or a similar Ristretto implementation
+    // NOTE: Ristretto point addition not fully implemented
+    // Ristretto255 is a prime-order group built on Curve25519
+    // A complete implementation requires:
+    // 1. libsodium's crypto_core_ristretto255_add function, OR
+    // 2. curve25519-dalek equivalent in C/C++
+    // 3. Proper group law arithmetic
+    // 
+    // CURRENT BEHAVIOR: XOR placeholder (incorrect group operation)
+    // Programs using Ristretto for privacy features will fail
+    // Used for: confidential transactions, bulletproofs, multi-sig protocols
+    // Growing adoption in Solana ecosystem
+    // 
+    // Agave uses `curve25519-dalek` Rust crate for Ristretto operations
+    // 
+    // TODO: Integrate libsodium (widely available via apt/brew)
+    // Effort: 3-5 days including CMake integration
+    // Command: apt-get install libsodium-dev
     
     // For now, simple placeholder
     std::memcpy(result, left_point, 32);
@@ -270,9 +327,9 @@ uint64_t sol_curve25519_ristretto_subtract(
     const uint8_t* right_point,
     uint8_t* result)
 {
-    // TODO: Implement actual Ristretto point subtraction
-    // This requires libsodium's crypto_core_ristretto255_sub
-    // or a similar Ristretto implementation
+    // NOTE: Ristretto point subtraction not fully implemented
+    // See note in sol_curve25519_ristretto_add for details
+    // TODO: Integrate libsodium
     
     // For now, simple placeholder
     std::memcpy(result, left_point, 32);
@@ -290,9 +347,9 @@ uint64_t sol_curve25519_ristretto_multiply(
     const uint8_t* point,
     uint8_t* result)
 {
-    // TODO: Implement actual Ristretto scalar multiplication
-    // This requires libsodium's crypto_scalarmult_ristretto255
-    // or a similar Ristretto implementation
+    // NOTE: Ristretto scalar multiplication not fully implemented
+    // See note in sol_curve25519_ristretto_add for details
+    // TODO: Integrate libsodium
     
     // Handle zero scalar - optimized check
     if (std::all_of(scalar, scalar + 32, [](uint8_t b) { return b == 0; })) {
