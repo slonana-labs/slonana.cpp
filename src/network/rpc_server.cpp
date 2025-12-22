@@ -2760,7 +2760,7 @@ std::string SolanaRpcServer::process_transaction_submission(
         std::vector<uint8_t> tx_signature(64);
         
         // Server-side uniqueness: atomic counter + nanosecond timestamp
-        uint64_t tx_counter = transaction_counter_.fetch_add(1, std::memory_order_relaxed);
+        uint64_t tx_counter = transaction_counter_.fetch_add(1, std::memory_order_seq_cst);
         auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
         
         // Single SHA-256 hash for speed
