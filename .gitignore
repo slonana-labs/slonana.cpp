@@ -96,6 +96,10 @@ Thumbs.db
 
 # Logs
 *.log
+agent.logs
+
+# Temporary files
+--silent
 
 # Package managers
 node_modules/
