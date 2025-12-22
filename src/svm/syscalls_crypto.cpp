@@ -64,6 +64,11 @@ uint64_t sol_alt_bn128_addition(
     uint8_t* output,
     uint64_t* output_len)
 {
+    // Validate pointers
+    if (input == nullptr || output == nullptr || output_len == nullptr) {
+        return ERROR_INVALID_INPUT_LENGTH;
+    }
+    
     // Validate input length
     if (input_len != 128) {
         return ERROR_INVALID_INPUT_LENGTH;
@@ -118,6 +123,11 @@ uint64_t sol_alt_bn128_multiplication(
     uint8_t* output,
     uint64_t* output_len)
 {
+    // Validate pointers
+    if (input == nullptr || output == nullptr || output_len == nullptr) {
+        return ERROR_INVALID_INPUT_LENGTH;
+    }
+    
     // Validate input length (32-byte scalar + 64-byte point)
     if (input_len != 96) {
         return ERROR_INVALID_INPUT_LENGTH;
@@ -166,6 +176,11 @@ uint64_t sol_alt_bn128_pairing(
     uint8_t* output,
     uint64_t* output_len)
 {
+    // Validate pointers
+    if (input == nullptr || output == nullptr || output_len == nullptr) {
+        return ERROR_INVALID_INPUT_LENGTH;
+    }
+    
     // Validate input length (must be multiple of 192: 64 bytes G1 + 128 bytes G2)
     if (input_len == 0 || input_len % 192 != 0) {
         return ERROR_INVALID_INPUT_LENGTH;
@@ -201,6 +216,15 @@ uint64_t sol_blake3(
     uint8_t* output,
     uint64_t* output_len)
 {
+    // Validate pointers
+    if (output == nullptr || output_len == nullptr) {
+        return ERROR_INVALID_INPUT_LENGTH;
+    }
+    // Allow null input only if input_len is 0
+    if (input == nullptr && input_len > 0) {
+        return ERROR_INVALID_INPUT_LENGTH;
+    }
+    
     // NOTE: BLAKE3 hash not fully implemented
     // A complete implementation requires:
     // 1. Official BLAKE3 C library (https://github.com/BLAKE3-team/BLAKE3)
@@ -244,6 +268,20 @@ uint64_t sol_poseidon(
     uint8_t* output,
     uint64_t* output_len)
 {
+    // Validate pointers
+    if (output == nullptr || output_len == nullptr) {
+        return ERROR_INVALID_INPUT_LENGTH;
+    }
+    // Allow null input only if input_len is 0
+    if (input == nullptr && input_len > 0) {
+        return ERROR_INVALID_INPUT_LENGTH;
+    }
+    
+    // Validate num_hashes
+    if (num_hashes == 0) {
+        return ERROR_INVALID_INPUT_LENGTH;
+    }
+    
     // Poseidon operates on field elements, typically 32 bytes each
     if (input_len % 32 != 0) {
         return ERROR_INVALID_INPUT_LENGTH;
@@ -293,6 +331,11 @@ uint64_t sol_curve25519_ristretto_add(
     const uint8_t* right_point,
     uint8_t* result)
 {
+    // Validate pointers
+    if (left_point == nullptr || right_point == nullptr || result == nullptr) {
+        return ERROR_INVALID_INPUT_LENGTH;
+    }
+    
     // NOTE: Ristretto point addition not fully implemented
     // Ristretto255 is a prime-order group built on Curve25519
     // A complete implementation requires:
@@ -327,9 +370,20 @@ uint64_t sol_curve25519_ristretto_subtract(
     const uint8_t* right_point,
     uint8_t* result)
 {
+    // Validate pointers
+    if (left_point == nullptr || right_point == nullptr || result == nullptr) {
+        return ERROR_INVALID_INPUT_LENGTH;
+    }
+    
     // NOTE: Ristretto point subtraction not fully implemented
     // See note in sol_curve25519_ristretto_add for details
     // TODO: Integrate libsodium
+    
+    // Special case: point - point = identity (all zeros)
+    if (std::memcmp(left_point, right_point, 32) == 0) {
+        std::memset(result, 0, 32);
+        return SUCCESS;
+    }
     
     // For now, simple placeholder
     std::memcpy(result, left_point, 32);
@@ -347,6 +401,11 @@ uint64_t sol_curve25519_ristretto_multiply(
     const uint8_t* point,
     uint8_t* result)
 {
+    // Validate pointers
+    if (scalar == nullptr || point == nullptr || result == nullptr) {
+        return ERROR_INVALID_INPUT_LENGTH;
+    }
+    
     // NOTE: Ristretto scalar multiplication not fully implemented
     // See note in sol_curve25519_ristretto_add for details
     // TODO: Integrate libsodium
@@ -355,6 +414,14 @@ uint64_t sol_curve25519_ristretto_multiply(
     if (std::all_of(scalar, scalar + 32, [](uint8_t b) { return b == 0; })) {
         // Return identity element
         std::memset(result, 0, 32);
+        return SUCCESS;
+    }
+    
+    // Special case: scalar = 1 => 1 * point = point
+    bool is_one = (scalar[0] == 1) && 
+                  std::all_of(scalar + 1, scalar + 32, [](uint8_t b) { return b == 0; });
+    if (is_one) {
+        std::memcpy(result, point, 32);
         return SUCCESS;
     }
     

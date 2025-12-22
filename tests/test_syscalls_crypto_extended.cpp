@@ -207,12 +207,12 @@ void test_poseidon_multiple_hashes() {
     input[0] = 1;
     input[32] = 2;
     
-    uint8_t output[32];
+    uint8_t output[64]; // Allocate space for 2 hashes (2 * 32 bytes)
     uint64_t output_len = 0;
     
     uint64_t result = sol_poseidon(input, 64, 2, output, &output_len);
     ASSERT_EQ(result, (uint64_t)0);
-    ASSERT_EQ(output_len, (uint64_t)32);
+    ASSERT_EQ(output_len, (uint64_t)64); // Expect 2 * 32 = 64 bytes
 }
 
 void test_poseidon_deterministic() {
