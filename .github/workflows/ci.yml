@@ -26,7 +26,9 @@ jobs:
           gcc \
           g++ \
           clang-format \
-          cppcheck
+          cppcheck \
+          nlohmann-json3-dev \
+          libsodium-dev
 
     - name: Create build directory
       run: mkdir -p build
@@ -175,7 +177,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y cmake build-essential
+        sudo apt-get install -y cmake build-essential nlohmann-json3-dev libsodium-dev
 
     - name: Build release artifacts
       run: |
