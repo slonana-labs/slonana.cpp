@@ -251,7 +251,7 @@ private:
   // Slot memory management for long-running validators
   // Limits slot_entries_ map size to prevent unbounded memory growth
   // during extended validator operation (months/years). When exceeded,
-  // oldest slots are automatically pruned in check_slot_completion().
+  // oldest slots are automatically pruned by the implementation as slots complete.
   static constexpr size_t MAX_SLOT_HISTORY = 1000;  // Keep only recent slots in memory
   
   // Helper class for lock contention tracking

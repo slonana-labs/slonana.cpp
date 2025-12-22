@@ -16,6 +16,7 @@
 #include <iostream>
 #include <random>
 #include <sstream>
+#include <openssl/rand.h>
 
 namespace slonana {
 
@@ -434,16 +435,19 @@ SolanaValidator::load_validator_identity(const std::string &keypair_path) {
  * @return A vector of 32 random bytes.
  */
 std::vector<uint8_t> SolanaValidator::generate_validator_identity() {
-  // Generate a new validator identity using crypto-secure random
+  // Generate a new validator identity using cryptographically secure random
   std::vector<uint8_t> identity(32);
 
-  // Use system random number generator for production-grade identity generation
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_int_distribution<> dis(0, 255);
+  // Use OpenSSL RAND_bytes for cryptographically secure random generation
+  if (RAND_bytes(identity.data(), identity.size()) != 1) {
+    // Fallback to std::random_device if OpenSSL fails
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, 255);
 
-  for (size_t i = 0; i < 32; ++i) {
-    identity[i] = static_cast<uint8_t>(dis(gen));
+    for (size_t i = 0; i < 32; ++i) {
+      identity[i] = static_cast<uint8_t>(dis(gen));
+    }
   }
 
   // Ensure identity is not all zeros
