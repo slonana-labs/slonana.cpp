@@ -468,7 +468,7 @@ add_test(NAME fault_tolerance_tests COMMAND slonana_fault_tolerance_tests)
 add_executable(slonana_async_retry_tests
     "${CMAKE_SOURCE_DIR}/tests/test_async_retry.cpp"
 )
-target_link_libraries(slonana_async_retry_tests slonana_core)
+target_link_libraries(slonana_async_retry_tests slonana_core gtest_main)
 target_include_directories(slonana_async_retry_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
 target_compile_definitions(slonana_async_retry_tests PRIVATE STANDALONE_ASYNC_RETRY_TESTS)
 add_test(NAME async_retry_tests COMMAND slonana_async_retry_tests)

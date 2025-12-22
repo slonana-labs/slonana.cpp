@@ -153,6 +153,24 @@ private:
 using CancellationTokenPtr = std::shared_ptr<CancellationToken>;
 
 // ============================================================================
+// Type Traits for Result<T> Extraction
+// ============================================================================
+
+/**
+ * Helper to extract T from Result<T>
+ */
+template<typename T>
+struct result_value_type;
+
+template<typename T>
+struct result_value_type<Result<T>> {
+    using type = T;
+};
+
+template<typename T>
+using result_value_type_t = typename result_value_type<T>::type;
+
+// ============================================================================
 // Async Retry Result
 // ============================================================================
 
@@ -170,7 +188,7 @@ struct AsyncRetryResult {
     std::vector<std::string> error_history;
     
     AsyncRetryResult() 
-        : result(Result<T>::err("Not executed")), 
+        : result("Not executed"), 
           attempts_made(0),
           total_duration(0),
           was_cancelled(false) {}
@@ -184,8 +202,7 @@ struct AsyncRetryResult {
     bool is_ok() const { return result.is_ok(); }
     bool is_err() const { return result.is_err(); }
     
-    T& unwrap() { return result.unwrap(); }
-    const T& unwrap() const { return result.unwrap(); }
+    const T& unwrap() const { return result.value(); }
     
     const std::string& error() const { return result.error(); }
 };
@@ -286,7 +303,7 @@ public:
         F&& operation,
         const AsyncRetryPolicy& policy = {},
         CancellationTokenPtr cancellation_token = nullptr
-    ) -> std::future<AsyncRetryResult<typename std::invoke_result_t<F>::value_type>>;
+    ) -> std::future<AsyncRetryResult<result_value_type_t<std::invoke_result_t<F>>>>;
     
     /**
      * Execute multiple operations concurrently with retry
@@ -299,7 +316,7 @@ public:
     auto execute_batch_with_retry(
         std::vector<F> operations,
         const AsyncRetryPolicy& policy = {}
-    ) -> std::vector<std::future<AsyncRetryResult<typename std::invoke_result_t<F>::value_type>>>;
+    ) -> std::vector<std::future<AsyncRetryResult<result_value_type_t<std::invoke_result_t<F>>>>>;
     
     /**
      * Get executor statistics
@@ -391,7 +408,7 @@ auto async_retry(
     F&& operation,
     const AsyncRetryPolicy& policy = {},
     CancellationTokenPtr cancellation_token = nullptr
-) -> std::future<AsyncRetryResult<typename std::invoke_result_t<F>::value_type>> {
+) -> std::future<AsyncRetryResult<result_value_type_t<std::invoke_result_t<F>>>> {
     return global_async_retry_executor().execute_with_retry(
         std::forward<F>(operation),
         policy,
@@ -413,7 +430,7 @@ template<typename F>
 auto sync_retry(
     F&& operation,
     const AsyncRetryPolicy& policy = {}
-) -> AsyncRetryResult<typename std::invoke_result_t<F>::value_type> {
+) -> AsyncRetryResult<result_value_type_t<std::invoke_result_t<F>>> {
     auto future = async_retry(std::forward<F>(operation), policy);
     return future.get();
 }
@@ -427,9 +444,9 @@ auto AsyncRetryExecutor::execute_with_retry(
     F&& operation,
     const AsyncRetryPolicy& policy,
     CancellationTokenPtr cancellation_token
-) -> std::future<AsyncRetryResult<typename std::invoke_result_t<F>::value_type>> {
+) -> std::future<AsyncRetryResult<result_value_type_t<std::invoke_result_t<F>>>> {
     
-    using ResultType = typename std::invoke_result_t<F>::value_type;
+    using ResultType = result_value_type_t<std::invoke_result_t<F>>;
     using RetryResultType = AsyncRetryResult<ResultType>;
     
     // Create promise/future pair
@@ -450,7 +467,7 @@ auto AsyncRetryExecutor::execute_with_retry(
                   cancellation_token,
                   promise]() mutable {
         try {
-            auto result = execute_with_retry_internal<F, ResultType>(
+            auto result = execute_with_retry_internal<decltype(op), ResultType>(
                 std::move(op),
                 policy,
                 cancellation_token
@@ -478,9 +495,9 @@ template<typename F>
 auto AsyncRetryExecutor::execute_batch_with_retry(
     std::vector<F> operations,
     const AsyncRetryPolicy& policy
-) -> std::vector<std::future<AsyncRetryResult<typename std::invoke_result_t<F>::value_type>>> {
+) -> std::vector<std::future<AsyncRetryResult<result_value_type_t<std::invoke_result_t<F>>>>> {
     
-    using ResultType = typename std::invoke_result_t<F>::value_type;
+    using ResultType = result_value_type_t<std::invoke_result_t<F>>;
     std::vector<std::future<AsyncRetryResult<ResultType>>> futures;
     futures.reserve(operations.size());
     
@@ -507,7 +524,7 @@ AsyncRetryResult<T> AsyncRetryExecutor::execute_with_retry_internal(
         // Check cancellation
         if (cancellation_token && cancellation_token->is_cancelled()) {
             retry_result.was_cancelled = true;
-            retry_result.result = Result<T>::err("Operation cancelled");
+            retry_result.result = Result<T>("Operation cancelled");
             cancelled_operations_.fetch_add(1, std::memory_order_relaxed);
             break;
         }
@@ -518,7 +535,7 @@ AsyncRetryResult<T> AsyncRetryExecutor::execute_with_retry_internal(
                 std::chrono::steady_clock::now() - start_time
             );
             if (elapsed >= policy.total_timeout) {
-                retry_result.result = Result<T>::err("Total timeout exceeded");
+                retry_result.result = Result<T>("Total timeout exceeded");
                 retry_result.error_history.push_back("Total timeout exceeded");
                 failed_operations_.fetch_add(1, std::memory_order_relaxed);
                 break;
@@ -574,7 +591,7 @@ AsyncRetryResult<T> AsyncRetryExecutor::execute_with_retry_internal(
         while (std::chrono::steady_clock::now() < sleep_end) {
             if (cancellation_token && cancellation_token->is_cancelled()) {
                 retry_result.was_cancelled = true;
-                retry_result.result = Result<T>::err("Operation cancelled during backoff");
+                retry_result.result = Result<T>("Operation cancelled during backoff");
                 cancelled_operations_.fetch_add(1, std::memory_order_relaxed);
                 goto cleanup;
             }

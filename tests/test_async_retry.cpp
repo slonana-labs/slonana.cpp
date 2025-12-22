@@ -217,7 +217,7 @@ TEST_F(AsyncRetryTest, SuccessfulOperationNoRetry) {
     
     auto operation = [&call_count]() -> Result<int> {
         call_count.fetch_add(1, std::memory_order_relaxed);
-        return Result<int>::ok(42);
+        return Result<int>(42);
     };
     
     AsyncRetryPolicy policy;
@@ -243,9 +243,9 @@ TEST_F(AsyncRetryTest, RetryWithEventualSuccess) {
     auto operation = [&call_count]() -> Result<std::string> {
         int count = call_count.fetch_add(1, std::memory_order_relaxed);
         if (count < 2) {
-            return Result<std::string>::err("Transient error");
+            return Result<std::string>("Transient error");
         }
-        return Result<std::string>::ok("Success");
+        return Result<std::string>("Success", success_tag{});
     };
     
     AsyncRetryPolicy policy;
@@ -271,7 +271,7 @@ TEST_F(AsyncRetryTest, RetryExhaustion) {
     
     auto operation = [&call_count]() -> Result<int> {
         call_count.fetch_add(1, std::memory_order_relaxed);
-        return Result<int>::err("Permanent error");
+        return Result<int>("Transient error");
     };
     
     AsyncRetryPolicy policy;
@@ -302,7 +302,7 @@ TEST_F(AsyncRetryTest, CancellationDuringRetry) {
             // Cancel on second attempt
             cancellation_token->cancel();
         }
-        return Result<int>::err("Transient error");
+        return Result<int>("Transient error");
     };
     
     AsyncRetryPolicy policy;
@@ -328,7 +328,7 @@ TEST_F(AsyncRetryTest, ProgressCallback) {
     std::mutex progress_mutex;
     
     auto operation = []() -> Result<int> {
-        return Result<int>::err("Transient error");
+        return Result<int>("Transient error");
     };
     
     AsyncRetryPolicy policy;
@@ -360,7 +360,7 @@ TEST_F(AsyncRetryTest, ConcurrentOperations) {
     for (int i = 0; i < 20; ++i) {
         auto operation = [&total_operations, i]() -> Result<int> {
             total_operations.fetch_add(1, std::memory_order_relaxed);
-            return Result<int>::ok(i);
+            return Result<int>(i);
         };
         
         futures.push_back(executor.execute_with_retry(operation, AsyncRetryPolicy()));
@@ -387,14 +387,14 @@ TEST_F(AsyncRetryTest, ExecutorStatistics) {
     
     // Run some successful operations
     for (int i = 0; i < 5; ++i) {
-        auto op = []() -> Result<int> { return Result<int>::ok(1); };
+        auto op = []() -> Result<int> { return Result<int>(1); };
         auto future = executor.execute_with_retry(op, AsyncRetryPolicy());
         future.get();
     }
     
     // Run some failed operations
     for (int i = 0; i < 3; ++i) {
-        auto op = []() -> Result<int> { return Result<int>::err("Error"); };
+        auto op = []() -> Result<int> { return Result<int>("Error"); };
         AsyncRetryPolicy policy;
         policy.max_attempts = 2;
         policy.initial_delay = std::chrono::milliseconds(5);
@@ -423,7 +423,7 @@ TEST_F(AsyncRetryTest, GlobalExecutorAccess) {
 
 TEST_F(AsyncRetryTest, AsyncRetryConvenienceFunction) {
     auto operation = []() -> Result<std::string> {
-        return Result<std::string>::ok("Test");
+        return Result<std::string>("Test", success_tag{});
     };
     
     auto future = async_retry(operation);
@@ -439,9 +439,9 @@ TEST_F(AsyncRetryTest, SyncRetryConvenienceFunction) {
     auto operation = [&call_count]() -> Result<int> {
         int count = call_count.fetch_add(1, std::memory_order_relaxed);
         if (count < 1) {
-            return Result<int>::err("Retry me");
+            return Result<int>("Transient error");
         }
-        return Result<int>::ok(100);
+        return Result<int>(100);
     };
     
     AsyncRetryPolicy policy;
@@ -470,11 +470,11 @@ TEST_F(AsyncRetryTest, NetworkRetryScenario) {
         int attempt = attempt_num.fetch_add(1, std::memory_order_relaxed);
         
         if (attempt == 0) {
-            return Result<std::string>::err("Connection timeout");
+            return Result<std::string>("Connection timeout");
         } else if (attempt == 1) {
-            return Result<std::string>::err("Network unreachable");
+            return Result<std::string>("Network unreachable");
         } else {
-            return Result<std::string>::ok("Data fetched");
+            return Result<std::string>("Data fetched", success_tag{});
         }
     };
     
@@ -499,7 +499,7 @@ TEST_F(AsyncRetryTest, RpcRetryWithTimeout) {
     auto rpc_call = []() -> Result<int> {
         // Simulate slow RPC call
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        return Result<int>::ok(123);
+        return Result<int>(123);
     };
     
     auto policy = AsyncRetryPolicy::create_rpc_policy();
@@ -527,11 +527,11 @@ TEST_F(AsyncRetryTest, CustomErrorClassifier) {
     auto operation = [&call_count]() -> Result<int> {
         int count = call_count.fetch_add(1, std::memory_order_relaxed);
         if (count == 0) {
-            return Result<int>::err("CUSTOM_RETRYABLE");
+            return Result<int>("CUSTOM_RETRYABLE");
         } else if (count == 1) {
-            return Result<int>::err("CUSTOM_PERMANENT");
+            return Result<int>("CUSTOM_PERMANENT");
         }
-        return Result<int>::ok(1);
+        return Result<int>(1);
     };
     
     AsyncRetryPolicy policy;

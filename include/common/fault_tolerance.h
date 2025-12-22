@@ -13,6 +13,9 @@
 namespace slonana {
 namespace common {
 
+// Forward declaration for async retry policy
+struct AsyncRetryPolicy;
+
 /**
  * Retry policy configuration for fault tolerance operations
  */
@@ -129,7 +132,7 @@ public:
    * consider using AsyncRetryPolicy::create_*_policy() directly for
    * async-optimized configurations.
    */
-  static auto to_async_policy(const RetryPolicy& policy);
+  static AsyncRetryPolicy to_async_policy(const RetryPolicy& policy);
 };
 
 /**

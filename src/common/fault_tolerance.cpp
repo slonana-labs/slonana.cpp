@@ -296,7 +296,7 @@ bool DegradationManager::is_operation_type_allowed(
 }
 
 // Convert RetryPolicy to AsyncRetryPolicy
-auto FaultTolerance::to_async_policy(const RetryPolicy& policy) {
+AsyncRetryPolicy FaultTolerance::to_async_policy(const RetryPolicy& policy) {
   return AsyncRetryPolicy::from_sync_policy(policy);
 }
 
