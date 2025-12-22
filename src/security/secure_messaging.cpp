@@ -563,9 +563,7 @@ bool MessageCrypto::load_peer_keys() {
 
     closedir(dir);
 #else
-    }
-    while (FindNextFile(hFind, &find_data) != 0)
-      ;
+    } while (FindNextFile(hFind, &find_data) != 0);
     FindClose(hFind);
 #endif
 
