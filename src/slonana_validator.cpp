@@ -16,6 +16,7 @@
 #include <iostream>
 #include <random>
 #include <sstream>
+#include <openssl/rand.h>
 
 namespace slonana {
 
@@ -152,9 +153,9 @@ common::Result<bool> SolanaValidator::start() {
   auto poh_config = consensus::PohConfig{
       .target_tick_duration = std::chrono::microseconds(config_.poh_target_tick_duration_us),
       .ticks_per_slot = config_.poh_ticks_per_slot,
+      .hashing_threads = config_.poh_hashing_threads,
       .enable_batch_processing = config_.poh_enable_batch_processing,
-      .batch_size = config_.poh_batch_size,
-      .hashing_threads = config_.poh_hashing_threads
+      .batch_size = config_.poh_batch_size
   };
   Hash genesis_hash(32, 0x42); // Placeholder genesis hash
   if (!consensus::GlobalProofOfHistory::initialize(poh_config, genesis_hash)) {
@@ -402,7 +403,31 @@ void SolanaValidator::on_gossip_message(const network::NetworkMessage &message) 
  */
 common::Result<std::vector<uint8_t>>
 SolanaValidator::load_validator_identity(const std::string &keypair_path) {
-  // ... (implementation) ...
+  try {
+    std::ifstream file(keypair_path, std::ios::binary);
+    if (!file) {
+      return common::Result<std::vector<uint8_t>>(
+          "Failed to open keypair file");
+    }
+
+    // Read keypair file (32 bytes for public key, 32 bytes for private key)
+    std::vector<uint8_t> keypair_data(64);
+    file.read(reinterpret_cast<char *>(keypair_data.data()), 64);
+
+    if (file.gcount() != 64) {
+      return common::Result<std::vector<uint8_t>>("Invalid keypair file size");
+    }
+
+    // Extract public key (first 32 bytes)
+    std::vector<uint8_t> public_key(keypair_data.begin(),
+                                    keypair_data.begin() + 32);
+
+    std::cout << "Loaded validator identity from keypair file" << std::endl;
+    return common::Result<std::vector<uint8_t>>(public_key);
+  } catch (const std::exception &e) {
+    return common::Result<std::vector<uint8_t>>(
+        std::string("Failed to load keypair: ") + e.what());
+  }
 }
 
 /**
@@ -410,7 +435,29 @@ SolanaValidator::load_validator_identity(const std::string &keypair_path) {
  * @return A vector of 32 random bytes.
  */
 std::vector<uint8_t> SolanaValidator::generate_validator_identity() {
-  // ... (implementation) ...
+  // Generate a new validator identity using cryptographically secure random
+  std::vector<uint8_t> identity(32);
+
+  // Use OpenSSL RAND_bytes for cryptographically secure random generation
+  if (RAND_bytes(identity.data(), identity.size()) != 1) {
+    // Fallback to std::random_device if OpenSSL fails
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, 255);
+
+    for (size_t i = 0; i < 32; ++i) {
+      identity[i] = static_cast<uint8_t>(dis(gen));
+    }
+  }
+
+  // Ensure identity is not all zeros
+  if (std::all_of(identity.begin(), identity.end(),
+                  [](uint8_t b) { return b == 0; })) {
+    identity[0] = 1; // Prevent all-zero identity
+  }
+
+  std::cout << "Generated new 32-byte validator identity" << std::endl;
+  return identity;
 }
 
 /**

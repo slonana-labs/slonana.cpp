@@ -158,3 +158,5 @@ test_ledgers/
 benchmark_results/
 test_ledger/
 test_results/
+# CodeQL artifacts
+_codeql*
