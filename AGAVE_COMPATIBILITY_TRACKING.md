@@ -720,8 +720,12 @@ This document provides detailed tracking of Agave compatibility features in slon
 - [ ] Latest BPF features (3.1)
 
 #### Week 2-4: Syscalls
-- [ ] Audit Agave syscalls
-- [ ] Implement missing syscalls (3.2)
+- [ ] Audit Agave syscalls for latest additions (2024-2025)
+- [ ] Integrate libsodium for Ristretto operations (3-5 days)
+- [ ] Integrate BLAKE3 C library (2-3 days)
+- [ ] Connect sysvar syscalls to actual state managers (3-4 days)
+- [ ] Implement missing syscalls identified in audit (3.2)
+- [ ] Consider BN254/Poseidon based on demand (optional)
 
 #### Week 5: SVM Optimizations
 - [ ] Account loading optimization (3.3)
@@ -792,12 +796,13 @@ cd build && ctest -R slonana_consensus_tests
 - ✅ `IMPLEMENTATION_STATUS_REPORT.md` - Overall implementation status
 - ✅ `AGAVE_TECHNICAL_SPECS.md` - Technical specifications
 - ✅ `AGAVE_TEST_FRAMEWORK.md` - Testing framework
+- ✅ `TECH_DEBT_ANALYSIS.md` - **NEW**: Comprehensive technical debt analysis with priority roadmap
 - ✅ This document (`AGAVE_COMPATIBILITY_TRACKING.md`) - Feature tracking
 
 ### Documentation Needs
 - [ ] Phase 2 detailed implementation guide
 - [ ] Phase 3 storage enhancements guide
-- [ ] Syscall compatibility matrix
+- [ ] Syscall compatibility matrix (partially addressed in TECH_DEBT_ANALYSIS.md)
 - [ ] RPC API migration guide
 
 ---

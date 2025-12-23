@@ -34,9 +34,21 @@ uint64_t sol_get_epoch_stake(
         return ERROR_INVALID_PUBKEY;
     }
     
+    // NOTE: Epoch stake information integration pending
+    // This syscall needs to query the actual StakingManager for real stake data
+    // CURRENT BEHAVIOR: Returns hardcoded placeholder (1 SOL activated)
+    // Programs querying stake will get incorrect values
+    // 
+    // Required integration:
+    // 1. Query StakingManager::get_stake_for_vote_account(vote_pubkey)
+    // 2. Return actual activated and deactivating stake amounts
+    // 3. Handle cases where vote account doesn't exist
+    // 
+    // Used by: Staking protocols, delegation programs, validator dashboards
+    // Impact: Medium - affects staking-related programs
+    // 
     // TODO: Integrate with actual staking system
-    // This would query the staking manager for the vote account's stake
-    // For now, return placeholder stake information
+    // Effort: 1-2 days
     
     EpochStake stake;
     stake.activated_stake = 1000000000; // 1 SOL in lamports as placeholder
@@ -77,9 +89,21 @@ uint64_t sol_get_epoch_rewards_sysvar(
         return ERROR_SYSVAR_NOT_FOUND;
     }
     
+    // NOTE: Epoch rewards information integration pending
+    // This syscall needs to query the actual rewards tracking system
+    // CURRENT BEHAVIOR: Returns hardcoded placeholder (100 SOL total, 50 SOL distributed)
+    // Programs querying rewards will get incorrect values
+    // 
+    // Required integration:
+    // 1. Query rewards manager for current epoch rewards data
+    // 2. Track actual distribution progress
+    // 3. Include proper parent blockhash
+    // 
+    // Used by: Staking protocols, yield calculators, reward distribution programs
+    // Impact: Medium - affects reward-related calculations
+    // 
     // TODO: Integrate with actual rewards system
-    // This would query the rewards manager for current epoch rewards
-    // For now, return placeholder rewards information
+    // Effort: 1-2 days
     
     EpochRewards rewards;
     rewards.total_rewards = 100000000000; // 100 SOL as placeholder
@@ -123,9 +147,21 @@ uint64_t sol_get_last_restart_slot(
         return ERROR_SYSVAR_NOT_FOUND;
     }
     
+    // NOTE: Last restart slot tracking not implemented
+    // This syscall needs to track actual cluster restart events
+    // CURRENT BEHAVIOR: Always returns 0 (indicates no restart or genesis)
+    // Programs checking restart history will see incorrect data
+    // 
+    // Required integration:
+    // 1. Track cluster restart events in validator state
+    // 2. Update on validator initialization from ledger
+    // 3. Persist across validator restarts
+    // 
+    // Used by: Very few programs - mainly for hard fork detection
+    // Impact: Low - most programs don't use this
+    // 
     // TODO: Integrate with actual cluster restart tracking
-    // This would query the ledger or cluster state for the last restart slot
-    // For now, return a placeholder slot number
+    // Effort: 0.5 days
     
     // Return slot 0 as placeholder (indicates no restart or genesis)
     *slot_out = 0;
