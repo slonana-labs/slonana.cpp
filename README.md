@@ -57,6 +57,8 @@ Slonana.cpp is a battle-tested native C++ validator that delivers exceptional pe
 | **[User Manual](docs/USER_MANUAL.md)** | Complete guide for operators and users |
 | **[API Documentation](docs/API.md)** | Comprehensive RPC API reference |
 | **[Architecture Guide](docs/ARCHITECTURE.md)** | Deep dive into system design and components |
+| **[Async Design & Failure Modes](docs/async_design.md)** | Comprehensive async patterns, concurrency, and failure handling |
+| **[Concurrency Safety](docs/concurrency.md)** | Lock-free algorithms and thread safety guidelines |
 | **[Development Guide](docs/DEVELOPMENT.md)** | Contributing and development workflows |
 | **[Contributing Guide](CONTRIBUTING.md)** | Required development workflow and performance standards |
 | **[Deployment Guide](docs/DEPLOYMENT.md)** | Production deployment and configuration |
