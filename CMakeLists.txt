@@ -464,6 +464,15 @@ target_include_directories(slonana_fault_tolerance_tests PRIVATE "${CMAKE_SOURCE
 target_compile_definitions(slonana_fault_tolerance_tests PRIVATE STANDALONE_FAULT_TOLERANCE_TESTS)
 add_test(NAME fault_tolerance_tests COMMAND slonana_fault_tolerance_tests)
 
+# Async retry test suite
+add_executable(slonana_async_retry_tests
+    "${CMAKE_SOURCE_DIR}/tests/test_async_retry.cpp"
+)
+target_link_libraries(slonana_async_retry_tests slonana_core gtest_main)
+target_include_directories(slonana_async_retry_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+target_compile_definitions(slonana_async_retry_tests PRIVATE STANDALONE_ASYNC_RETRY_TESTS)
+add_test(NAME async_retry_tests COMMAND slonana_async_retry_tests)
+
 # Fault tolerance integration test suite
 add_executable(slonana_fault_tolerance_integration_tests
     "${CMAKE_SOURCE_DIR}/tests/test_fault_tolerance_integration.cpp"

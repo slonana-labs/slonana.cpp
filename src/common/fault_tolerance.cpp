@@ -1,4 +1,5 @@
 #include "common/fault_tolerance.h"
+#include "common/async_retry.h"
 #include <algorithm>
 #include <iostream>
 #include <mutex>
@@ -292,6 +293,11 @@ bool DegradationManager::is_operation_type_allowed(
     const std::string &component, OperationType op_type) const {
   DegradationMode mode = get_component_mode(component);
   return ::slonana::common::is_operation_type_allowed(op_type, mode);
+}
+
+// Convert RetryPolicy to AsyncRetryPolicy
+AsyncRetryPolicy FaultTolerance::to_async_policy(const RetryPolicy& policy) {
+  return AsyncRetryPolicy::from_sync_policy(policy);
 }
 
 } // namespace common
